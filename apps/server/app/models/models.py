@@ -1,0 +1,216 @@
+from datetime import date
+
+from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Table, Text, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.session import Base
+
+
+class MailSettings(Base):
+    """Single-row table: editable mail server config (overrides env when set). id=1."""
+    __tablename__ = "mail_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    smtp_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    smtp_from_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_use_tls: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    smtp_use_ssl: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    smtp_user: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    emails_per_hour: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+
+# Many-to-many: a release can have multiple artists (e.g. when sync failed and admin assigns, or collab)
+release_artists_table = Table(
+    "release_artists",
+    Base.metadata,
+    Column("release_id", ForeignKey("releases.id", ondelete="CASCADE"), primary_key=True),
+    Column("artist_id", ForeignKey("artists.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+class Artist(Base):
+    """Artist fields align with reports/artists_from_release_management_raw.csv."""
+    __tablename__ = "artists"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)  # display: artist_brand or full_name
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    # Extra CSV-style fields (artist_brand, full_name, website, soundcloud, facebook, etc.) as JSON
+    extra_json: Mapped[str | None] = mapped_column(Text, nullable=True, default="{}")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    releases: Mapped[list["Release"]] = relationship(
+        "Release",
+        secondary=release_artists_table,
+        back_populates="artists",
+    )
+    tasks: Mapped[list["AutomationTask"]] = relationship(back_populates="artist")
+    social_connections: Mapped[list["SocialConnection"]] = relationship(back_populates="artist")
+    activity_logs: Mapped[list["ArtistActivityLog"]] = relationship(back_populates="artist")
+
+
+class ArtistActivityLog(Base):
+    """Log of activity with an artist (e.g. reminder email sent) to avoid flooding and for history."""
+    __tablename__ = "artist_activity_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), nullable=False)
+    activity_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)  # e.g. reminder_email
+    details: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    artist: Mapped["Artist"] = relationship(back_populates="activity_logs")
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    artist_id: Mapped[int | None] = mapped_column(ForeignKey("artists.id"), nullable=True)
+
+
+class Release(Base):
+    __tablename__ = "releases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    # Primary/first artist (for backward compat). Nullable when sync did not match any artist.
+    artist_id: Mapped[int | None] = mapped_column(ForeignKey("artists.id"), nullable=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="submitted")
+    file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    artist: Mapped[Artist | None] = relationship(foreign_keys=[artist_id])
+    artists: Mapped[list["Artist"]] = relationship(
+        "Artist",
+        secondary=release_artists_table,
+        back_populates="releases",
+    )
+
+
+class CatalogTrack(Base):
+    """Catalog metadata export schema (Proton / SiYu Rec CSV). One row per track."""
+    __tablename__ = "catalog_tracks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    catalog_number: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    release_title: Mapped[str] = mapped_column(String(300), nullable=False)
+    pre_order_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    release_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    upc: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    isrc: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    original_artists: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    original_first_last: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    remix_artists: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    remix_first_last: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    track_title: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    mix_title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    duration: Mapped[str | None] = mapped_column(String(20), nullable=True)  # e.g. 00:05:17
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AutomationTask(Base):
+    __tablename__ = "automation_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id"), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="queued")
+    details: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    artist: Mapped[Artist] = relationship(back_populates="tasks")
+
+
+class SocialConnection(Base):
+    __tablename__ = "social_connections"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    account_label: Mapped[str] = mapped_column(String(120), nullable=False)
+    artist_id: Mapped[int | None] = mapped_column(ForeignKey("artists.id"), nullable=True)
+    external_account_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    scopes_csv: Mapped[str] = mapped_column(Text, default="")
+    oauth_state: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    pkce_code_verifier: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    one_time_token: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    one_time_expires_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="pending")
+    authorized_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    artist: Mapped[Artist | None] = relationship(back_populates="social_connections")
+
+
+class HubConnector(Base):
+    """Advanced connectors hub: Mailchimp, WordPress Codex, etc."""
+    __tablename__ = "hub_connectors"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    connector_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    account_label: Mapped[str] = mapped_column(String(120), nullable=False)
+    config_json: Mapped[str] = mapped_column(Text, default="{}")
+    status: Mapped[str] = mapped_column(String(30), default="active")
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class Campaign(Base):
+    """Unified campaign: one content sent to social, Mailchimp, and/or WordPress."""
+    __tablename__ = "campaigns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    artist_id: Mapped[int | None] = mapped_column(ForeignKey("artists.id"), nullable=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    body_text: Mapped[str] = mapped_column(Text, default="")
+    body_html: Mapped[str | None] = mapped_column(Text, nullable=True)
+    media_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="draft")  # draft | scheduled | sending | sent | failed
+    scheduled_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sent_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    targets: Mapped[list["CampaignTarget"]] = relationship(back_populates="campaign", cascade="all, delete-orphan")
+    deliveries: Mapped[list["CampaignDelivery"]] = relationship(back_populates="campaign", cascade="all, delete-orphan")
+
+
+class CampaignTarget(Base):
+    """Per-channel target: social connection, Mailchimp (connector + list_id), or WordPress connector."""
+    __tablename__ = "campaign_targets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id"), nullable=False)
+    channel_type: Mapped[str] = mapped_column(String(30), nullable=False)  # social | mailchimp | wordpress
+    external_id: Mapped[str] = mapped_column(String(100), nullable=False)  # social_connection_id or hub_connector_id
+    channel_payload: Mapped[str] = mapped_column(Text, default="{}")  # list_id, post_type, etc. as JSON
+
+    campaign: Mapped["Campaign"] = relationship(back_populates="targets")
+    deliveries: Mapped[list["CampaignDelivery"]] = relationship(back_populates="target", cascade="all, delete-orphan")
+
+
+class CampaignDelivery(Base):
+    """Per-channel send result for a campaign."""
+    __tablename__ = "campaign_deliveries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id"), nullable=False)
+    target_id: Mapped[int] = mapped_column(ForeignKey("campaign_targets.id"), nullable=False)
+    channel_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)  # sent | failed
+    external_id: Mapped[str | None] = mapped_column(String(255), nullable=True)  # provider campaign/post id
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    campaign: Mapped["Campaign"] = relationship(back_populates="deliveries")
+    target: Mapped["CampaignTarget"] = relationship(back_populates="deliveries")

@@ -1,0 +1,14 @@
+﻿__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.DS_Store
+
+apps/server/storage/uploads/*
+!apps/server/storage/uploads/.gitkeep
+
+apps/client/.dart_tool/
+apps/client/build/
+apps/client/.flutter-plugins
+apps/client/.flutter-plugins-dependencies

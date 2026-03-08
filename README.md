@@ -1,0 +1,148 @@
+# LabelOps (MVP Foundation)
+
+## What Exists Now
+
+- Flutter client (`apps/client`):
+  - Login
+  - Admin portal: artists, social accounts, advanced connectors, **campaigns**
+  - Artist portal: upload music + view system tasks
+- FastAPI server (`apps/server`):
+  - JWT auth
+  - Artists endpoints
+  - Artist dashboard
+  - Music upload endpoint
+  - Inactivity check endpoint
+  - Social OAuth connection flow + queue-post endpoint
+  - **Unified campaigns**: one content to social + Mailchimp + WordPress; schedule or send now
+- Containers (`docker-compose.yml`):
+  - api, worker (polls for scheduled campaigns and runs send), postgres, redis, minio
+
+## Quick Start
+
+```bash
+docker compose up --build
+```
+
+Seed users (auto-created first run):
+
+- Admin: `admin@label.local` / `admin123`
+- Artist: `artist@label.local` / `artist123`
+
+Flutter run:
+
+```bash
+cd apps/client
+flutter create .
+flutter pub get
+flutter run -d chrome
+```
+
+## Social Providers Configured in Code
+
+- Facebook Page
+- Instagram Business
+- Threads
+- TikTok
+- YouTube
+- X (Twitter)
+- LinkedIn
+- SoundCloud
+
+Social connections use a **browser-only OAuth flow**: the server does not call the social provider's token API. The app opens a connect page in the browser; the user signs in at the provider; the callback page exchanges the code for tokens in the browser (PKCE) and then sends the tokens to the server. So `client_secret` is **not required** for providers that support PKCE; only `client_id` is needed. Set env vars in server runtime:
+
+- `META_CLIENT_ID` (and optionally `META_CLIENT_SECRET` if the provider requires it)
+- `TIKTOK_CLIENT_ID`, `TIKTOK_CLIENT_SECRET` (or PKCE-only where supported)
+- `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`
+- `X_CLIENT_ID`, `X_CLIENT_SECRET`
+- `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`
+- `SOUNDCLOUD_CLIENT_ID`, `SOUNDCLOUD_CLIENT_SECRET`
+- `OAUTH_REDIRECT_BASE` (default: `http://localhost:8000/api/admin/social/callback`)
+- `OAUTH_SUCCESS_REDIRECT` (optional): after connecting an account, redirect the user here (e.g. your Flutter app URL). If unset, a simple "Connected! Close this tab." page is shown.
+
+## API Endpoints
+
+- `POST /api/auth/login`
+- `GET /api/artists` (admin)
+- `POST /api/artists` (admin)
+- `GET /api/artist/me/dashboard` (artist)
+- `POST /api/artist/me/releases/upload` (artist)
+- `POST /api/admin/tasks/run-inactivity-check` (admin)
+- `GET /api/admin/email/rate-limit` (admin) – email rate limit status
+- `POST /api/admin/email/send` (admin) – send email (rate-limited per hour)
+- `GET /api/admin/social/providers` (admin)
+- `GET /api/admin/social/connections` (admin)
+- `POST /api/admin/social/connect/start` (admin; returns `connect_page_url` for browser flow)
+- `GET /api/admin/social/connect-page` (browser: claims one-time token, redirects to provider)
+- `GET /api/admin/social/connect/claim` (one-time: returns PKCE data for connect-page)
+- `GET /api/admin/social/provider-config` (public: token_url, client_id, redirect_uri for callback page)
+- `GET /api/admin/social/callback` (oauth callback; serves HTML that does token exchange in browser)
+- `POST /api/admin/social/connect/complete` (browser posts tokens after exchange)
+- `POST /api/admin/social/connections/{connection_id}/disconnect` (admin)
+- `POST /api/admin/social/posts/publish` (admin)
+- **Advanced connectors hub:** `GET /api/admin/connectors/types`, `GET /api/admin/connectors`, `GET /api/admin/connectors/{id}`, `POST /api/admin/connectors`, `PATCH /api/admin/connectors/{id}`, `DELETE /api/admin/connectors/{id}`, `POST /api/admin/connectors/{id}/test` (admin)
+- **Mailchimp lists:** `GET /api/admin/connectors/{id}/mailchimp/lists` (admin)
+- **Campaigns:** `GET /api/admin/campaigns`, `GET /api/admin/campaigns/{id}`, `POST /api/admin/campaigns`, `PATCH /api/admin/campaigns/{id}`, `DELETE /api/admin/campaigns/{id}`, `POST /api/admin/campaigns/{id}/schedule`, `POST /api/admin/campaigns/{id}/cancel` (admin)
+- `GET /health`
+
+## Advanced Connectors Hub
+
+The admin portal has an **Advanced Connectors** tab that acts as a connections hub. **Credentials are read from the environment** so the UI does not ask for API keys when they are set.
+
+- **Mailchimp** – Set `MAILCHIMP_API_KEY` in the server env (key with datacenter, e.g. `xxxxx-us21`). Then add a connection with just an account label; no API key is asked in the UI. Test uses the ping endpoint.
+- **WordPress (Codex WP)** – Set `WORDPRESS_REST_BASE_URL`, `WORDPRESS_CLIENT_KEY`, and `WORDPRESS_CLIENT_SECRET` in the server env. Then add a connection with just a label. Test uses the signed `/context` request (same as `wp-codex-bridge.ps1`).
+
+If these env vars are not set, the Add form shows the credential fields so you can enter them manually (or set the env vars and restart to stop asking).
+
+## Email Sending (SMTP, rate-limited)
+
+The server sends email **via SMTP** with a **per-hour rate limit** to reduce the risk of being flagged as spam. Configure via environment:
+
+- `SMTP_HOST` – SMTP server host (required to enable sending)
+- `SMTP_PORT` – default `587` (use `465` for implicit SSL)
+- `SMTP_USER` / `SMTP_PASSWORD` – optional, for authenticated SMTP
+- `SMTP_USE_TLS` – default `true` (STARTTLS on port 587)
+- `SMTP_USE_SSL` – set to `true` for port 465 (implicit SSL from connection start)
+- `SMTP_FROM_EMAIL` – "From" address (fallback: `SMTP_USER`)
+- `EMAILS_PER_HOUR` – max emails per hour (default `30`); set to `0` for no limit (not recommended)
+- `REDIS_URL` – used for the rate-limit counter (default `redis://redis:6379/0`)
+
+Admin endpoints: `GET /api/admin/email/rate-limit` (status) and `POST /api/admin/email/send` (send one email). When the hourly limit is reached, send returns `429 Too Many Requests`.
+
+## Unified Campaigns
+
+The admin **Campaigns** tab lets you create one campaign (name, title, body text, optional media URL) and target **social connections** (Facebook Page, Instagram, Threads, etc.), **Mailchimp** (one audience/list), and **WordPress** (Codex Bridge). Create as draft, then **Schedule** to send now or at a future date/time (UTC). The **worker** process polls every 60 seconds for campaigns with `status=scheduled` and `scheduled_at <= now` (or null for “send now”), then runs the senders and records per-channel delivery status.
+
+- **Social:** Meta (Facebook Page, Instagram Business), Threads are implemented; others (TikTok, X, etc.) can be added in `app/services/social_publisher.py`.
+- **Mailchimp:** Creates campaign, sets HTML content, sends (or schedules) to the chosen list.
+- **WordPress:** Uses Codex Bridge `POST /content` to create/update a post or page.
+
+The worker container needs the same Mailchimp and WordPress env vars as the API (`MAILCHIMP_API_KEY`, `WORDPRESS_REST_BASE_URL`, `WORDPRESS_CLIENT_KEY`, `WORDPRESS_CLIENT_SECRET`) so it can send when processing campaigns.
+
+## Current Limitations
+
+- Social connections are browser-only: token exchange happens in the browser; the server never calls the provider's token API.
+- If a provider's token endpoint does not allow CORS from your domain, the callback page may show a network error; use a provider that supports PKCE from the browser or host the app on a domain the provider allows.
+- If you have an existing DB and added social OAuth, ensure columns exist: `pkce_code_verifier`, and for browser flow `one_time_token`, `one_time_expires_at` (the server adds these on startup if missing).
+- Standalone **queue post** (single social post) is still stored as an automation task; the worker does not process it. Use **Campaigns** to actually publish to social (and Mailchimp/WordPress).
+- Security defaults are development-only.
+
+## Restart Script
+
+Use this script to re-initialize and restart the full dev system. It starts the backend (Docker) and launches the **admin app** with `flutter run` so the admin comes up the same way every time.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\restart-system.ps1 -Rebuild
+```
+
+By default the script:
+
+1. Stops and starts the backend stack (API, Postgres, Redis, MinIO, worker).
+2. Waits for the API health check.
+3. Runs `flutter pub get` and then `flutter run -d chrome` for the admin client (opens in a new window).
+
+Useful flags:
+
+- `-NoFlutter` : restart only backend containers (do not launch admin app)
+- `-CleanVolumes` : reset Docker volumes (wipes local DB data)
+- `-FlutterDevice chrome` : device for `flutter run` (default: chrome)
+- `-FlutterTarget lib/main.dart` : entry target for Flutter

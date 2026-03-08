@@ -1,0 +1,21 @@
+---
+description: Always allow copying error messages in the system
+alwaysApply: true
+---
+
+# Copyable Error Messages
+
+Error messages shown to the user must always be copyable.
+
+## Requirements
+
+- Use **SelectableText** (or equivalent) for error message content so users can select and copy.
+- Prefer also providing a **copy button** (e.g. IconButton with Icons.copy) that copies the full error to the clipboard in one tap.
+- Apply to all error displays: login errors, dashboard errors, admin banner errors, snackbars when they show errors, and any other user-facing error text.
+
+## Implementation
+
+- **Flutter/Dart**: Wrap error strings in `SelectableText(...)` and add an `IconButton(icon: Icon(Icons.copy), ...)` or a **SnackBar** with `action: SnackBarAction(label: 'Copy', onPressed: () => Clipboard.setData(ClipboardData(text: message)))` for error toasts. Import `package:flutter/services.dart` for `Clipboard`.
+- **Web/JS**: Use `user-select: text` and optionally a copy button that calls `navigator.clipboard.writeText(error)`.
+
+Do not show error messages in non-selectable `Text` widgets when the user might need to copy them (e.g. for support or debugging).
