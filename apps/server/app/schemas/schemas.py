@@ -13,13 +13,65 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     role: str
+    email: str
+    full_name: str | None = None
+    permissions: list[str] = []
 
 
 class UserContext(BaseModel):
     user_id: int
     role: str
+    email: str
+    full_name: str | None = None
+    permissions: list[str] = []
     artist_id: int | None = None
+    is_active: bool = True
 
+
+class UserIdentityOut(BaseModel):
+    id: int
+    provider: str
+    provider_subject: str
+    email: str | None
+    display_name: str | None
+    created_at: datetime
+    last_login_at: datetime | None
+
+    class Config:
+        from_attributes = True
+
+
+class UserOut(BaseModel):
+    id: int
+    email: str
+    full_name: str | None = None
+    role: str
+    permissions: list[str] = []
+    artist_id: int | None = None
+    artist_name: str | None = None
+    is_active: bool = True
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    last_login_at: datetime | None = None
+    identities: list[UserIdentityOut] = []
+
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    full_name: str | None = None
+    password: str | None = None
+    role: str
+    artist_id: int | None = None
+    is_active: bool = True
+
+
+class UserUpdate(BaseModel):
+    email: EmailStr | None = None
+    full_name: str | None = None
+    password: str | None = None
+    role: str | None = None
+    artist_id: int | None = None
+    is_active: bool | None = None
 
 # Artist fields match reports/artists_from_release_management_raw.csv
 class ArtistCreate(BaseModel):
@@ -132,6 +184,7 @@ class ReleaseOut(BaseModel):
     id: int
     artist_id: int | None  # Primary/first artist (backward compat)
     artist_ids: list[int] = []  # All artists linked to this release (one or more)
+    artist_names: list[str] = []  # Display names for linked artists
     title: str
     status: str
     file_path: str | None
@@ -144,12 +197,16 @@ class ReleaseOut(BaseModel):
     def from_release(cls, release) -> "ReleaseOut":
         """Build ReleaseOut from ORM Release; artist_ids from release.artists or fallback to [artist_id]."""
         artist_ids = [a.id for a in release.artists] if getattr(release, "artists", None) else []
+        artist_names = [a.name for a in release.artists] if getattr(release, "artists", None) else []
         if not artist_ids and getattr(release, "artist_id", None):
             artist_ids = [release.artist_id]
+        if not artist_names and getattr(release, "artist", None):
+            artist_names = [release.artist.name]
         return cls(
             id=release.id,
             artist_id=release.artist_id,
             artist_ids=artist_ids,
+            artist_names=artist_names,
             title=release.title,
             status=release.status,
             file_path=release.file_path,
@@ -448,6 +505,80 @@ class CampaignOut(BaseModel):
         )
 
 
+
+class MailingListCreate(BaseModel):
+    name: str
+    description: str = ""
+    from_name: str | None = None
+    reply_to_email: EmailStr | None = None
+    company_name: str | None = None
+    physical_address: str | None = None
+    default_language: str = "en"
+
+
+class MailingListUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    from_name: str | None = None
+    reply_to_email: EmailStr | None = None
+    company_name: str | None = None
+    physical_address: str | None = None
+    default_language: str | None = None
+
+
+class MailingListOut(BaseModel):
+    id: int
+    name: str
+    description: str
+    from_name: str | None
+    reply_to_email: str | None
+    company_name: str | None
+    physical_address: str | None
+    default_language: str
+    subscribed_count: int = 0
+    unsubscribed_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class MailingSubscriberCreate(BaseModel):
+    email: EmailStr
+    full_name: str | None = None
+    status: str = "subscribed"
+    consent_source: str | None = None
+    consent_at: datetime | None = None
+    notes: str | None = None
+
+
+class MailingSubscriberUpdate(BaseModel):
+    email: EmailStr | None = None
+    full_name: str | None = None
+    status: str | None = None
+    consent_source: str | None = None
+    consent_at: datetime | None = None
+    notes: str | None = None
+
+
+class MailingSubscriberOut(BaseModel):
+    id: int
+    list_id: int
+    email: str
+    full_name: str | None
+    status: str
+    consent_source: str | None
+    consent_at: datetime | None
+    unsubscribed_at: datetime | None
+    notes: str | None
+    unsubscribe_url: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
 class ScheduleCampaignRequest(BaseModel):
     scheduled_at: datetime | None = None  # None = send now
 
@@ -455,7 +586,7 @@ class ScheduleCampaignRequest(BaseModel):
 class SystemSettingsOut(BaseModel):
     """Read-only view of server config for admin UI. Secrets are never returned."""
     # SMTP
-    smtp_host: str = ""
+    smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587
     smtp_from_email: str = ""
     smtp_use_tls: bool = True
@@ -466,6 +597,28 @@ class SystemSettingsOut(BaseModel):
     # OAuth / redirects
     oauth_redirect_base: str = ""
     oauth_success_redirect: str = ""
+    google_oauth_configured: bool = False
+    gmail_connected: bool = False
+    gmail_connected_email: str = ""
+
+
+
+class SystemSettingsMailTestRequest(BaseModel):
+    """Test SMTP connectivity or send a test email with optional unsaved overrides."""
+    smtp_host: str | None = None
+    smtp_port: int | None = None
+    smtp_from_email: str | None = None
+    smtp_use_tls: bool | None = None
+    smtp_use_ssl: bool | None = None
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    emails_per_hour: int | None = None
+    test_email: EmailStr | None = None
+
+
+class SystemSettingsMailTestResponse(BaseModel):
+    success: bool
+    message: str
 
 
 class SystemSettingsMailUpdate(BaseModel):
@@ -478,3 +631,7 @@ class SystemSettingsMailUpdate(BaseModel):
     smtp_user: str | None = None
     smtp_password: str | None = None
     emails_per_hour: int | None = None
+
+
+
+

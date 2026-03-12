@@ -1,18 +1,63 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
-import '../../../core/models/artist.dart';
 import '../../../core/models/catalog_track.dart';
 import '../../../core/models/release.dart';
 import '../admin_dashboard_delegate.dart';
 
-/// Releases tab: catalog (import, sync, DataTable) + releases list with set artists.
-class ReleasesTab extends StatelessWidget {
+/// Releases tab: catalog (import, sync, list) + releases list with set artists.
+class ReleasesTab extends StatefulWidget {
   const ReleasesTab({super.key, required this.delegate});
 
   final AdminDashboardDelegate delegate;
 
+  @override
+  State<ReleasesTab> createState() => _ReleasesTabState();
+}
+
+class _ReleasesTabState extends State<ReleasesTab> {
+  final _catalogController = ScrollController();
+  final _releasesController = ScrollController();
+  final _catalogHorizontalController = ScrollController();
+
+  static const double _catalogRowHeight = 44;
+  static const double _catalogHeaderHeight = 44;
+  static const double _catalogMinWidth = 1300;
+  static const double _releaseItemHeight = 84;
+
+  AdminDashboardDelegate get delegate => widget.delegate;
+
   static int _compareString(String a, String b) =>
       a.toLowerCase().compareTo(b.toLowerCase());
+
+  @override
+  void initState() {
+    super.initState();
+    _catalogController.addListener(_handleScroll);
+    _releasesController.addListener(_handleScroll);
+  }
+
+  @override
+  void dispose() {
+    _catalogController.removeListener(_handleScroll);
+    _releasesController.removeListener(_handleScroll);
+    _catalogController.dispose();
+    _releasesController.dispose();
+    _catalogHorizontalController.dispose();
+    super.dispose();
+  }
+
+  void _handleScroll() {
+    for (final controller in [_catalogController, _releasesController]) {
+      if (!controller.hasClients) continue;
+      final position = controller.position;
+      if (position.pixels >= position.maxScrollExtent - 240) {
+        delegate.loadMoreReleasesPage();
+        return;
+      }
+    }
+  }
 
   List<CatalogTrack> _filteredCatalogTracks() {
     final q = delegate.releasesSearchController.text.trim().toLowerCase();
@@ -42,7 +87,7 @@ class ReleasesTab extends StatelessWidget {
     list.sort((a, b) {
       final av = _cellValue(a, col);
       final bv = _cellValue(b, col);
-      int cmp = col == 2 ? _compareDate(av, bv) : _compareString(av, bv);
+      final cmp = col == 2 ? _compareDate(av, bv) : _compareString(av, bv);
       return delegate.catalogSortAsc ? cmp : -cmp;
     });
     return list;
@@ -108,26 +153,23 @@ class ReleasesTab extends StatelessWidget {
     return list;
   }
 
-  String _artistNameForId(int id) {
-    for (final a in delegate.artistsListForReleases) {
-      if (a is Map<String, dynamic> && a['id'] == id) {
-        final artist = Artist.fromJson(a);
-        return artist.displayName;
-      }
-    }
-    return 'Artist $id';
-  }
-
   @override
   Widget build(BuildContext context) {
     final catalogTracks = delegate.catalogTracksList;
-    final filteredCount = _filteredCatalogTracks().length;
     final sortedCatalog = _sortedCatalogTracks();
     final sortedReleases = _sortedAdminReleases();
     final searchQuery = delegate.releasesSearchController.text.trim();
+    final catalogListHeight = math.min<double>(
+      math.max<double>(sortedCatalog.length * _catalogRowHeight, 220),
+      520,
+    );
+    final releasesListHeight = math.min<double>(
+      math.max<double>(sortedReleases.length * _releaseItemHeight, 220),
+      520,
+    );
 
     return RefreshIndicator(
-      onRefresh: delegate.load,
+      onRefresh: delegate.loadReleases,
       child: ListView(
         padding: const EdgeInsets.all(12),
         children: [
@@ -137,10 +179,7 @@ class ReleasesTab extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Catalog metadata from Proton export. Import CSV, then Sync to '
-            'artists to create releases. Schema: Catalog Number, Release '
-            'Title, Pre-Order/Release Date, UPC, ISRC, Artists, Track Title, '
-            'Mix, Duration.',
+            'Catalog metadata from Proton export. Import CSV, then Sync to artists to create releases.',
             style: TextStyle(
               fontSize: 12,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -157,9 +196,7 @@ class ReleasesTab extends StatelessWidget {
                 label: const Text('Import CSV'),
               ),
               FilledButton.icon(
-                onPressed: catalogTracks.isEmpty
-                    ? null
-                    : delegate.syncReleasesFromCatalog,
+                onPressed: catalogTracks.isEmpty ? null : delegate.syncReleasesFromCatalog,
                 icon: const Icon(Icons.sync),
                 label: const Text('Sync to artists'),
                 style: FilledButton.styleFrom(
@@ -169,16 +206,12 @@ class ReleasesTab extends StatelessWidget {
                 ),
               ),
               FilledButton.icon(
-                onPressed: catalogTracks.isEmpty
-                    ? null
-                    : delegate.syncOriginalArtistsFromArtists,
+                onPressed: catalogTracks.isEmpty ? null : delegate.syncOriginalArtistsFromArtists,
                 icon: const Icon(Icons.sync_alt),
-                label: const Text('Original Artist ← Brand'),
+                label: const Text('Original Artist <- Brand'),
               ),
               FilledButton.icon(
-                onPressed: catalogTracks.isEmpty
-                    ? null
-                    : delegate.createMissingOriginalArtists,
+                onPressed: catalogTracks.isEmpty ? null : delegate.createMissingOriginalArtists,
                 icon: const Icon(Icons.person_add),
                 label: const Text('Create missing artists'),
               ),
@@ -186,89 +219,51 @@ class ReleasesTab extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           if (catalogTracks.isNotEmpty) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: delegate.releasesSearchController,
-                    decoration: InputDecoration(
-                      hintText:
-                          'Search releases by catalog #, title, artist, '
-                          'ISRC, UPC, mix…',
-                      prefixIcon: const Icon(Icons.search),
-                      border: const OutlineInputBorder(),
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                    ),
+            TextField(
+              controller: delegate.releasesSearchController,
+              decoration: const InputDecoration(
+                hintText: 'Search releases by catalog #, title, artist, ISRC, UPC, mix...',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(),
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+            ),
+            if (searchQuery.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  '${sortedCatalog.length} loaded matches',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
-                if (searchQuery.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 12),
-                    child: Text(
-                      '$filteredCount of ${catalogTracks.length}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+              ),
             const SizedBox(height: 8),
           ],
           if (catalogTracks.isEmpty)
             const Padding(
               padding: EdgeInsets.all(24),
               child: Center(
-                child: Text(
-                  'No catalog tracks. Use Import CSV to load a Proton '
-                  'catalog export.',
-                ),
+                child: Text('No catalog tracks. Use Import CSV to load a Proton catalog export.'),
               ),
             )
           else
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.vertical,
-                child: DataTable(
-                  sortColumnIndex: delegate.catalogSortColumnIndex,
-                  sortAscending: delegate.catalogSortAsc,
-                  columns: [
-                    _dataColumn('Catalog #', 0),
-                    _dataColumn('Release', 1),
-                    _dataColumn('Release Date', 2),
-                    _dataColumn('UPC', 3),
-                    _dataColumn('ISRC', 4),
-                    _dataColumn('Original Artists', 5),
-                    _dataColumn('Track', 6),
-                    _dataColumn('Mix', 7),
-                    _dataColumn('Duration', 8),
-                  ],
-                  rows: sortedCatalog
-                      .map(
-                        (t) => DataRow(
-                          cells: [
-                            DataCell(SelectableText(t.catalogNumber)),
-                            DataCell(SelectableText(t.releaseTitle)),
-                            DataCell(SelectableText(t.releaseDateDisplay)),
-                            DataCell(SelectableText(t.upc ?? '')),
-                            DataCell(SelectableText(t.isrc ?? '')),
-                            DataCell(SelectableText(t.originalArtists ?? '')),
-                            DataCell(SelectableText(t.trackTitle ?? '')),
-                            DataCell(SelectableText(t.mixTitle ?? '')),
-                            DataCell(SelectableText(t.duration ?? '')),
-                          ],
+            _buildCatalogList(context, sortedCatalog, catalogListHeight),
+          if (delegate.releasesPageLoadingMore || delegate.releasesPageHasMore)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Center(
+                child: delegate.releasesPageLoadingMore
+                    ? const CircularProgressIndicator()
+                    : Text(
+                        'Scroll to the bottom of the lists to load more',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
-                      )
-                      .toList(),
-                ),
+                      ),
               ),
             ),
           const SizedBox(height: 24),
@@ -276,10 +271,7 @@ class ReleasesTab extends StatelessWidget {
             children: [
               const Text(
                 'Releases (from API)',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
               const SizedBox(width: 16),
               Text(
@@ -297,14 +289,11 @@ class ReleasesTab extends StatelessWidget {
                   DropdownMenuItem(value: 0, child: Text('Title')),
                   DropdownMenuItem(value: 1, child: Text('Date')),
                 ],
-                onChanged: (v) =>
-                    delegate.setReleasesSort(v ?? 0, delegate.releasesSortAsc),
+                onChanged: (v) => delegate.setReleasesSort(v ?? 0, delegate.releasesSortAsc),
               ),
               IconButton(
                 icon: Icon(
-                  delegate.releasesSortAsc
-                      ? Icons.arrow_upward
-                      : Icons.arrow_downward,
+                  delegate.releasesSortAsc ? Icons.arrow_upward : Icons.arrow_downward,
                   size: 18,
                 ),
                 tooltip: delegate.releasesSortAsc ? 'Ascending' : 'Descending',
@@ -317,65 +306,169 @@ class ReleasesTab extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Releases without an artist are highlighted in orange. Use '
-            '"Associate with artist" to link a release to an artist.',
+            'Releases without an artist are highlighted in orange.',
             style: TextStyle(
               fontSize: 12,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 12),
-          if (delegate.adminReleasesList.isEmpty)
+          if (sortedReleases.isEmpty)
             const Padding(
               padding: EdgeInsets.only(bottom: 16),
-              child: Text(
-                'No releases yet. Import catalog above and use Sync to '
-                'artists to create releases.',
-              ),
+              child: Text('No releases loaded yet.'),
             )
           else
-            ...sortedReleases.map<Widget>((r) {
-              final release = Release.fromJson(r);
-              final artistNames = release.artistIds
-                  .map((id) => _artistNameForId(id))
-                  .join(', ');
-              return Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                color: release.hasNoArtist
-                    ? Colors.orange.withValues(alpha: 0.12)
-                    : null,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: release.hasNoArtist
-                      ? const BorderSide(color: Colors.orange, width: 2)
-                      : BorderSide(color: Theme.of(context).dividerColor),
-                ),
-                child: ListTile(
-                  title: SelectableText(release.title),
-                  subtitle: SelectableText(
-                    release.hasNoArtist
-                        ? 'No artist assigned'
-                        : artistNames,
-                  ),
-                  trailing: OutlinedButton.icon(
-                    icon: const Icon(Icons.person_add, size: 18),
-                    label: const Text('Associate with artist'),
-                    onPressed: () => delegate.showSetArtistsDialog(r),
-                  ),
-                ),
-              );
-            }),
+            SizedBox(
+              height: releasesListHeight,
+              child: ListView.builder(
+                controller: _releasesController,
+                itemCount: sortedReleases.length,
+                itemBuilder: (context, index) {
+                  final release = Release.fromJson(sortedReleases[index]);
+                  final artistNames = release.artistNames.join(', ');
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    color: release.hasNoArtist ? Colors.orange.withValues(alpha: 0.12) : null,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: release.hasNoArtist
+                          ? const BorderSide(color: Colors.orange, width: 2)
+                          : BorderSide(color: Theme.of(context).dividerColor),
+                    ),
+                    child: ListTile(
+                      title: Text(
+                        release.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        release.hasNoArtist ? 'No artist assigned' : artistNames,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: OutlinedButton.icon(
+                        icon: const Icon(Icons.person_add, size: 18),
+                        label: const Text('Associate with artist'),
+                        onPressed: () => delegate.showSetArtistsDialog(sortedReleases[index]),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
         ],
       ),
     );
   }
 
-  DataColumn _dataColumn(String label, int columnIndex) {
-    return DataColumn(
-      label: Text(label),
-      onSort: (int index, bool ascending) {
-        delegate.setCatalogSort(index, ascending);
-      },
+  Widget _buildCatalogList(BuildContext context, List<CatalogTrack> tracks, double height) {
+    const columns = <double>[140, 220, 130, 140, 140, 220, 220, 180, 110];
+    const labels = <String>[
+      'Catalog #',
+      'Release',
+      'Release Date',
+      'UPC',
+      'ISRC',
+      'Original Artists',
+      'Track',
+      'Mix',
+      'Duration',
+    ];
+    final width = math.max<double>(
+      columns.reduce((value, element) => value + element).toDouble(),
+      _catalogMinWidth,
+    );
+
+    return Scrollbar(
+      controller: _catalogHorizontalController,
+      thumbVisibility: true,
+      child: SingleChildScrollView(
+        controller: _catalogHorizontalController,
+        scrollDirection: Axis.horizontal,
+        child: SizedBox(
+          width: width,
+          child: Column(
+            children: [
+              Container(
+                height: _catalogHeaderHeight,
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: Row(
+                  children: List.generate(labels.length, (index) {
+                    return InkWell(
+                      onTap: () => delegate.setCatalogSort(index, delegate.catalogSortColumnIndex == index ? !delegate.catalogSortAsc : true),
+                      child: SizedBox(
+                        width: columns[index],
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  labels[index],
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (delegate.catalogSortColumnIndex == index)
+                                Icon(
+                                  delegate.catalogSortAsc ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+                                  size: 20,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+              SizedBox(
+                height: height,
+                child: ListView.builder(
+                  controller: _catalogController,
+                  itemCount: tracks.length,
+                  itemBuilder: (context, index) {
+                    final t = tracks[index];
+                    final values = <String>[
+                      t.catalogNumber,
+                      t.releaseTitle,
+                      t.releaseDateDisplay,
+                      t.upc ?? '',
+                      t.isrc ?? '',
+                      t.originalArtists ?? '',
+                      t.trackTitle ?? '',
+                      t.mixTitle ?? '',
+                      t.duration ?? '',
+                    ];
+                    return SizedBox(
+                      height: _catalogRowHeight,
+                      child: Row(
+                        children: List.generate(values.length, (cellIndex) {
+                          return SizedBox(
+                            width: columns[cellIndex],
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  values[cellIndex].isEmpty ? '-' : values[cellIndex],
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

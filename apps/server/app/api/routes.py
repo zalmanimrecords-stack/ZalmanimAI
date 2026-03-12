@@ -5,6 +5,9 @@ import logging
 import os
 import uuid
 from datetime import date, datetime, timedelta, timezone
+from urllib.parse import urlencode
+
+import httpx
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -42,6 +45,8 @@ from app.schemas.schemas import (
     ScheduleCampaignRequest,
     SendEmailRequest,
     SendEmailResponse,
+    SystemSettingsMailTestRequest,
+    SystemSettingsMailTestResponse,
     _artist_extra_from_model,
     LoginRequest,
     ReleaseOut,
@@ -52,13 +57,15 @@ from app.schemas.schemas import (
     TokenResponse,
     UserContext,
 )
-from app.services.auth import create_access_token, decode_token, hash_password, verify_password
+from app.services.auth import create_access_token, decode_token, hash_password, permissions_for_role, verify_password
 from app.services.email_service import (
     get_emails_sent_this_hour,
     is_email_configured,
     send_email as send_email_service,
+    send_test_smtp_email,
+    test_smtp_connection,
 )
-from app.services.mail_settings import get_effective_mail_config_for_api, save_mail_settings
+from app.services.mail_settings import build_mail_config, get_effective_mail_config_for_api, save_mail_settings
 from app.services.campaign_service import (
     cancel_schedule,
     create_campaign as create_campaign_svc,
@@ -72,6 +79,342 @@ from app.services.campaign_service import (
 router = APIRouter()
 security = HTTPBearer()
 
+_GOOGLE_AUTH_SCOPES = [
+    "openid",
+    "email",
+    "profile",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/gmail.compose",
+]
+
+_FACEBOOK_AUTH_SCOPES = ["email", "public_profile"]
+_ALLOWED_USER_ROLES = {"admin", "manager", "artist"}
+
+
+def _oauth_callback_url(request: Request, provider: str) -> str:
+    return str(request.url_for("oauth_callback", provider=provider))
+
+
+
+def _build_oauth_state(*, provider: str, purpose: str, app_redirect: str, user_id: int | None = None) -> str:
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
+    payload = {
+        "provider": provider,
+        "purpose": purpose,
+        "app_redirect": app_redirect,
+        "user_id": user_id,
+        "exp": int(expires_at.timestamp()),
+    }
+    from jose import jwt
+
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+
+def _decode_oauth_state(state: str) -> dict:
+    from jose import JWTError, jwt
+
+    try:
+        return jwt.decode(state, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    except JWTError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OAuth state") from exc
+
+
+
+def _build_google_auth_url(*, request: Request, state: str) -> str:
+    if not settings.google_client_id or not settings.google_client_secret:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Google OAuth is not configured")
+    query = {
+        "client_id": settings.google_client_id,
+        "redirect_uri": _oauth_callback_url(request, "google"),
+        "response_type": "code",
+        "scope": " ".join(_GOOGLE_AUTH_SCOPES),
+        "access_type": "offline",
+        "include_granted_scopes": "true",
+        "prompt": "consent",
+        "state": state,
+    }
+    return f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(query)}"
+
+
+
+def _exchange_google_code(*, request: Request, code: str) -> dict:
+    response = httpx.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "client_id": settings.google_client_id,
+            "client_secret": settings.google_client_secret,
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": _oauth_callback_url(request, "google"),
+        },
+        timeout=20.0,
+    )
+    if response.status_code >= 400:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Google token exchange failed: {response.text[:300]}")
+    payload = response.json()
+    if not payload.get("access_token"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Google token exchange returned no access_token")
+    return payload
+
+
+
+def _fetch_google_userinfo(access_token: str) -> dict:
+    response = httpx.get(
+        "https://openidconnect.googleapis.com/v1/userinfo",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=20.0,
+    )
+    if response.status_code >= 400:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to load Google profile: {response.text[:300]}")
+    data = response.json()
+    if not data.get("email"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Google profile did not include email")
+    return data
+
+
+
+def _build_facebook_auth_url(*, request: Request, state: str) -> str:
+    if not settings.meta_client_id or not settings.meta_client_secret:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Facebook OAuth is not configured")
+    query = {
+        "client_id": settings.meta_client_id,
+        "redirect_uri": _oauth_callback_url(request, "facebook"),
+        "response_type": "code",
+        "scope": ",".join(_FACEBOOK_AUTH_SCOPES),
+        "state": state,
+    }
+    return f"https://www.facebook.com/v22.0/dialog/oauth?{urlencode(query)}"
+
+
+
+def _exchange_facebook_code(*, request: Request, code: str) -> dict:
+    response = httpx.get(
+        "https://graph.facebook.com/v22.0/oauth/access_token",
+        params={
+            "client_id": settings.meta_client_id,
+            "client_secret": settings.meta_client_secret,
+            "code": code,
+            "redirect_uri": _oauth_callback_url(request, "facebook"),
+        },
+        timeout=20.0,
+    )
+    if response.status_code >= 400:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Facebook token exchange failed: {response.text[:300]}")
+    payload = response.json()
+    if not payload.get("access_token"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Facebook token exchange returned no access_token")
+    return payload
+
+
+
+def _fetch_facebook_userinfo(access_token: str) -> dict:
+    response = httpx.get(
+        "https://graph.facebook.com/me",
+        params={"fields": "id,name,email", "access_token": access_token},
+        timeout=20.0,
+    )
+    if response.status_code >= 400:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to load Facebook profile: {response.text[:300]}")
+    data = response.json()
+    if not data.get("email"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Facebook profile did not include email")
+    return data
+
+
+
+def _build_provider_auth_url(provider: str, *, request: Request, state: str) -> str:
+    if provider == "google":
+        return _build_google_auth_url(request=request, state=state)
+    if provider == "facebook":
+        return _build_facebook_auth_url(request=request, state=state)
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unsupported auth provider")
+
+
+
+def _exchange_provider_code(provider: str, *, request: Request, code: str) -> dict:
+    if provider == "google":
+        return _exchange_google_code(request=request, code=code)
+    if provider == "facebook":
+        return _exchange_facebook_code(request=request, code=code)
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unsupported auth provider")
+
+
+
+def _fetch_provider_profile(provider: str, access_token: str) -> tuple[str, str, str | None]:
+    if provider == "google":
+        profile = _fetch_google_userinfo(access_token)
+        return str(profile.get("sub") or ""), str(profile.get("email") or "").strip(), profile.get("name")
+    if provider == "facebook":
+        profile = _fetch_facebook_userinfo(access_token)
+        return str(profile.get("id") or ""), str(profile.get("email") or "").strip(), profile.get("name")
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unsupported auth provider")
+
+
+
+def _serialize_user(user: User) -> UserOut:
+    artist_name = user.artist.name if getattr(user, "artist", None) else None
+    identities = [UserIdentityOut.model_validate(identity) for identity in getattr(user, "identities", [])]
+    return UserOut(
+        id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        role=user.role,
+        permissions=permissions_for_role(user.role),
+        artist_id=user.artist_id,
+        artist_name=artist_name,
+        is_active=user.is_active,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+        last_login_at=user.last_login_at,
+        identities=identities,
+    )
+
+
+
+def _user_token_response(user: User) -> TokenResponse:
+    return TokenResponse(
+        access_token=create_access_token(str(user.id)),
+        role=user.role,
+        email=user.email,
+        full_name=user.full_name,
+        permissions=permissions_for_role(user.role),
+    )
+
+
+
+def _touch_user_login(db: Session, user: User) -> None:
+    now = datetime.now(timezone.utc)
+    user.last_login_at = now
+    db.commit()
+    db.refresh(user)
+
+
+
+def _validate_user_role(role: str) -> str:
+    role_value = (role or "").strip().lower()
+    if role_value not in _ALLOWED_USER_ROLES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported role: {role}")
+    return role_value
+
+
+
+def _find_or_create_oauth_user(
+    db: Session,
+    *,
+    provider: str,
+    provider_subject: str,
+    email: str,
+    display_name: str | None,
+) -> User:
+    identity = (
+        db.query(UserIdentity)
+        .options(joinedload(UserIdentity.user).joinedload(User.artist), joinedload(UserIdentity.user).joinedload(User.identities))
+        .filter(UserIdentity.provider == provider, UserIdentity.provider_subject == provider_subject)
+        .first()
+    )
+    if identity:
+        user = identity.user
+        if not user.is_active:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
+        identity.email = email or identity.email
+        identity.display_name = display_name or identity.display_name
+        identity.last_login_at = datetime.now(timezone.utc)
+        if display_name and not user.full_name:
+            user.full_name = display_name
+        db.commit()
+        db.refresh(user)
+        return user
+
+    user = (
+        db.query(User)
+        .options(joinedload(User.artist), joinedload(User.identities))
+        .filter(func.lower(User.email) == email.lower())
+        .first()
+    )
+    if user:
+        if not user.is_active:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
+    else:
+        artist = db.query(Artist).filter(func.lower(Artist.email) == email.lower()).first()
+        if not artist:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"{provider.title()} account is not allowed in this system yet. Create a matching user first.",
+            )
+        user = User(
+            email=email,
+            full_name=display_name,
+            password_hash=None,
+            role="artist",
+            artist_id=artist.id,
+            is_active=True,
+        )
+        db.add(user)
+        db.flush()
+
+    identity = UserIdentity(
+        user_id=user.id,
+        provider=provider,
+        provider_subject=provider_subject,
+        email=email,
+        display_name=display_name,
+        last_login_at=datetime.now(timezone.utc),
+    )
+    db.add(identity)
+    if display_name and not user.full_name:
+        user.full_name = display_name
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+
+def _upsert_google_mail_connection(
+    db: Session,
+    *,
+    email: str,
+    access_token: str,
+    refresh_token: str | None,
+    scopes: list[str],
+) -> SocialConnection:
+    connection = db.query(SocialConnection).filter(SocialConnection.provider == "google_mail").first()
+    if not connection:
+        connection = SocialConnection(provider="google_mail", account_label=email, status="active")
+        db.add(connection)
+
+    connection.account_label = email
+    connection.external_account_id = email
+    connection.access_token = access_token
+    if refresh_token:
+        connection.refresh_token = refresh_token
+    connection.scopes_csv = ",".join(scopes)
+    connection.status = "active"
+    connection.authorized_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(connection)
+    return connection
+
+
+
+def _gmail_connection_status(db: Session) -> tuple[bool, str]:
+    connection = (
+        db.query(SocialConnection)
+        .filter(SocialConnection.provider == "google_mail", SocialConnection.status == "active")
+        .order_by(SocialConnection.authorized_at.desc().nullslast(), SocialConnection.id.desc())
+        .first()
+    )
+    if not connection:
+        return False, ""
+    return True, (connection.external_account_id or connection.account_label or "")
+
+
+
+def _redirect_with_params(base_url: str, **params: str) -> RedirectResponse:
+    clean_params = {k: v for k, v in params.items() if v}
+    separator = "&" if "?" in base_url else "?"
+    url = f"{base_url}{separator}{urlencode(clean_params)}" if clean_params else base_url
+    return RedirectResponse(url=url)
 
 @router.on_event("startup")
 def init_db() -> None:
@@ -176,9 +519,74 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
     return TokenResponse(access_token=token, role=user.role)
 
 
+@router.get("/auth/google/start")
+def start_google_login(request: Request, redirect_uri: str) -> dict:
+    state = _build_google_state(purpose="login", app_redirect=redirect_uri)
+    return {"auth_url": _build_google_auth_url(request=request, state=state)}
+
+
+@router.get("/admin/google-mail/start")
+def start_google_mail_connect(
+    request: Request,
+    redirect_uri: str,
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    require_admin(user)
+    state = _build_google_state(purpose="connect_gmail", app_redirect=redirect_uri, user_id=user.user_id)
+    return {"auth_url": _build_google_auth_url(request=request, state=state)}
+
+
+@router.get("/auth/google/callback", name="google_auth_callback")
+def google_auth_callback(
+    request: Request,
+    state: str,
+    code: str | None = None,
+    error: str | None = None,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    state_payload = _decode_google_state(state)
+    app_redirect = state_payload.get("app_redirect") or settings.oauth_success_redirect or "/"
+    if error:
+        return _redirect_with_params(app_redirect, google_error=error)
+    if not code:
+        return _redirect_with_params(app_redirect, google_error="missing_code")
+
+    token_payload = _exchange_google_code(request=request, code=code)
+    access_token = str(token_payload.get("access_token") or "")
+    refresh_token = token_payload.get("refresh_token")
+    scope_value = str(token_payload.get("scope") or "")
+    scopes = [s for s in scope_value.split(" ") if s]
+    profile = _fetch_google_userinfo(access_token)
+    email = str(profile.get("email") or "").strip()
+    if state_payload.get("purpose") == "connect_gmail":
+        _upsert_google_mail_connection(
+            db,
+            email=email,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            scopes=scopes,
+        )
+        return _redirect_with_params(app_redirect, gmail_connected="1", gmail_email=email)
+
+    user = _find_or_create_google_user(db, email=email)
+    if user.role == "admin":
+        _upsert_google_mail_connection(
+            db,
+            email=email,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            scopes=scopes,
+        )
+    app_token = create_access_token(str(user.id), user.role, user.artist_id)
+    return _redirect_with_params(app_redirect, token=app_token, role=user.role, google_email=email)
+
+
+
 @router.get("/artists", response_model=list[ArtistOut])
 def list_artists(
     include_inactive: bool = Query(False, description="Include inactive artists"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> list[ArtistOut]:
@@ -186,7 +594,7 @@ def list_artists(
     q = db.query(Artist).order_by(Artist.id)
     if not include_inactive:
         q = q.filter(Artist.is_active.is_(True))
-    artists = q.all()
+    artists = q.offset(offset).limit(limit).all()
     out = []
     for a in artists:
         latest = (
@@ -421,6 +829,8 @@ def upload_release(
 
 @router.get("/admin/releases", response_model=list[ReleaseOut])
 def list_admin_releases(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> list[ReleaseOut]:
@@ -430,6 +840,8 @@ def list_admin_releases(
         db.query(Release)
         .options(joinedload(Release.artists))
         .order_by(desc(Release.created_at))
+        .offset(offset)
+        .limit(limit)
         .all()
     )
     return [ReleaseOut.from_release(r) for r in releases]
@@ -530,11 +942,15 @@ def run_inactivity_check(
 
 # System settings (mail editable via UI; OAuth read-only from env)
 @router.get("/admin/settings", response_model=SystemSettingsOut)
-def get_system_settings(user: UserContext = Depends(get_current_user)) -> SystemSettingsOut:
+def get_system_settings(
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> SystemSettingsOut:
     require_admin(user)
     from app.core.config import settings
 
     mail = get_effective_mail_config_for_api()
+    gmail_connected, gmail_email = _gmail_connection_status(db)
     return SystemSettingsOut(
         smtp_host=mail["smtp_host"],
         smtp_port=mail["smtp_port"],
@@ -545,6 +961,9 @@ def get_system_settings(user: UserContext = Depends(get_current_user)) -> System
         emails_per_hour=mail["emails_per_hour"],
         email_configured=is_email_configured(),
         oauth_redirect_base=settings.oauth_redirect_base or "",
+        google_oauth_configured=bool(settings.google_client_id and settings.google_client_secret),
+        gmail_connected=gmail_connected,
+        gmail_connected_email=gmail_email,
         oauth_success_redirect=settings.oauth_success_redirect or "",
     )
 
@@ -552,6 +971,7 @@ def get_system_settings(user: UserContext = Depends(get_current_user)) -> System
 @router.patch("/admin/settings/mail", response_model=SystemSettingsOut)
 def update_system_settings_mail(
     payload: SystemSettingsMailUpdate,
+    db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> SystemSettingsOut:
     """Update mail server settings (stored in DB; overrides env)."""
@@ -569,6 +989,7 @@ def update_system_settings_mail(
         emails_per_hour=payload.emails_per_hour,
     )
     mail = get_effective_mail_config_for_api()
+    gmail_connected, gmail_email = _gmail_connection_status(db)
     return SystemSettingsOut(
         smtp_host=mail["smtp_host"],
         smtp_port=mail["smtp_port"],
@@ -579,9 +1000,36 @@ def update_system_settings_mail(
         emails_per_hour=mail["emails_per_hour"],
         email_configured=is_email_configured(),
         oauth_redirect_base=settings.oauth_redirect_base or "",
+        google_oauth_configured=bool(settings.google_client_id and settings.google_client_secret),
+        gmail_connected=gmail_connected,
+        gmail_connected_email=gmail_email,
         oauth_success_redirect=settings.oauth_success_redirect or "",
     )
 
+
+
+@router.post("/admin/settings/mail/test", response_model=SystemSettingsMailTestResponse)
+def test_system_settings_mail(
+    payload: SystemSettingsMailTestRequest,
+    user: UserContext = Depends(get_current_user),
+) -> SystemSettingsMailTestResponse:
+    """Test SMTP connection or send a test email using unsaved mail settings overrides."""
+    require_admin(user)
+    cfg = build_mail_config(
+        smtp_host=payload.smtp_host,
+        smtp_port=payload.smtp_port,
+        smtp_from_email=payload.smtp_from_email,
+        smtp_use_tls=payload.smtp_use_tls,
+        smtp_use_ssl=payload.smtp_use_ssl,
+        smtp_user=payload.smtp_user,
+        smtp_password=payload.smtp_password,
+        emails_per_hour=payload.emails_per_hour,
+    )
+    if payload.test_email:
+        success, message = send_test_smtp_email(cfg, to_email=str(payload.test_email))
+    else:
+        success, message = test_smtp_connection(cfg)
+    return SystemSettingsMailTestResponse(success=success, message=message)
 
 # Email sending with per-hour rate limit (admin only)
 @router.get("/admin/email/rate-limit", response_model=EmailRateLimitStatus)
@@ -638,11 +1086,13 @@ def send_email(
 # Catalog metadata (Proton CSV schema) - list and import
 @router.get("/admin/catalog-tracks", response_model=list[CatalogTrackOut])
 def list_catalog_tracks(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> list[CatalogTrackOut]:
     require_admin(user)
-    items = db.query(CatalogTrack).order_by(CatalogTrack.id).all()
+    items = db.query(CatalogTrack).order_by(CatalogTrack.id).offset(offset).limit(limit).all()
     return [CatalogTrackOut.model_validate(t) for t in items]
 
 
@@ -1331,3 +1781,6 @@ def cancel_campaign_schedule_route(
     if not campaign:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Campaign not found or not scheduled")
     return CampaignOut.from_campaign(campaign)
+
+
+

@@ -30,11 +30,30 @@ class LabelOpsApp extends StatefulWidget {
 
 class _LabelOpsAppState extends State<LabelOpsApp> {
   late final ApiClient _apiClient;
+  late final Future<AuthSession?> _sessionFuture;
+  String? _authError;
 
   @override
   void initState() {
     super.initState();
     _apiClient = ApiClient(baseUrl: _apiBaseUrl);
+    _sessionFuture = _resolveInitialSession();
+  }
+
+  Future<AuthSession?> _resolveInitialSession() async {
+    final params = Uri.base.queryParameters;
+    final token = params['token'];
+    final role = params['role'];
+    final googleError = params['google_error'];
+    if (googleError != null && googleError.isNotEmpty) {
+      _authError = 'Google sign-in failed: $googleError';
+    }
+    if (token != null && token.isNotEmpty && role != null && role.isNotEmpty) {
+      final session = AuthSession(token: token, role: role);
+      await saveSession(session);
+      return session;
+    }
+    return loadSession();
   }
 
   @override
@@ -46,7 +65,7 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
         useMaterial3: true,
       ),
       home: FutureBuilder<AuthSession?>(
-        future: loadSession(),
+        future: _sessionFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(
@@ -60,7 +79,7 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
             }
             return ArtistDashboardPage(apiClient: _apiClient, token: session.token);
           }
-          return LoginPage(apiClient: _apiClient);
+          return LoginPage(apiClient: _apiClient, initialError: _authError);
         },
       ),
     );

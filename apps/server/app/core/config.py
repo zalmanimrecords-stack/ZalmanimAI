@@ -13,6 +13,8 @@ class Settings(BaseSettings):
 
     oauth_redirect_base: str = "http://localhost:8000/api/admin/social/callback"
     oauth_success_redirect: str = ""  # Optional: redirect here after connect (e.g. Flutter app URL)
+    google_client_id: str = ""
+    google_client_secret: str = ""
 
     meta_client_id: str = ""
     meta_client_secret: str = ""
@@ -39,7 +41,7 @@ class Settings(BaseSettings):
     wordpress_client_secret: str = ""
 
     # Email sending via SMTP with per-hour rate limit to avoid spam listing
-    smtp_host: str = ""
+    smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587  # 587 = STARTTLS, 465 = implicit SSL (use smtp_use_ssl=True)
     smtp_user: str = ""
     smtp_password: str = ""
@@ -51,3 +53,5 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+

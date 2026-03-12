@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Table, Text, func
+from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Table, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -71,9 +71,32 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     artist_id: Mapped[int | None] = mapped_column(ForeignKey("artists.id"), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    last_login_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    artist: Mapped[Artist | None] = relationship()
+    identities: Mapped[list["UserIdentity"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+
+
+class UserIdentity(Base):
+    __tablename__ = "user_identities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    provider_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_login_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped["User"] = relationship(back_populates="identities")
 
 
 class Release(Base):
@@ -164,6 +187,46 @@ class HubConnector(Base):
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+
+class MailingList(Base):
+    __tablename__ = "mailing_lists"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    from_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    reply_to_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    company_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    physical_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    default_language: Mapped[str] = mapped_column(String(10), default="en", nullable=False)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    subscribers: Mapped[list["MailingSubscriber"]] = relationship(
+        back_populates="mailing_list",
+        cascade="all, delete-orphan",
+    )
+
+
+class MailingSubscriber(Base):
+    __tablename__ = "mailing_subscribers"
+    __table_args__ = (UniqueConstraint("list_id", "email", name="uq_mailing_subscribers_list_email"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    list_id: Mapped[int] = mapped_column(ForeignKey("mailing_lists.id", ondelete="CASCADE"), nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    full_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="subscribed", nullable=False, index=True)
+    consent_source: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    consent_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    unsubscribed_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    unsubscribe_token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    mailing_list: Mapped["MailingList"] = relationship(back_populates="subscribers")
+
 class Campaign(Base):
     """Unified campaign: one content sent to social, Mailchimp, and/or WordPress."""
     __tablename__ = "campaigns"
@@ -214,3 +277,5 @@ class CampaignDelivery(Base):
 
     campaign: Mapped["Campaign"] = relationship(back_populates="deliveries")
     target: Mapped["CampaignTarget"] = relationship(back_populates="deliveries")
+
+

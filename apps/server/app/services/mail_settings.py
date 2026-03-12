@@ -85,3 +85,27 @@ def save_mail_settings(
         if emails_per_hour is not None:
             row.emails_per_hour = emails_per_hour
         db.commit()
+
+def build_mail_config(
+    *,
+    smtp_host: str | None = None,
+    smtp_port: int | None = None,
+    smtp_from_email: str | None = None,
+    smtp_use_tls: bool | None = None,
+    smtp_use_ssl: bool | None = None,
+    smtp_user: str | None = None,
+    smtp_password: str | None = None,
+    emails_per_hour: int | None = None,
+):
+    """Build effective mail config with optional in-memory overrides."""
+    base = get_effective_mail_config()
+    return type("MailConfig", (), {
+        "smtp_host": base.smtp_host if smtp_host is None else (smtp_host or ""),
+        "smtp_port": base.smtp_port if smtp_port is None else smtp_port,
+        "smtp_from_email": base.smtp_from_email if smtp_from_email is None else (smtp_from_email or ""),
+        "smtp_use_tls": base.smtp_use_tls if smtp_use_tls is None else smtp_use_tls,
+        "smtp_use_ssl": base.smtp_use_ssl if smtp_use_ssl is None else smtp_use_ssl,
+        "smtp_user": base.smtp_user if smtp_user is None else (smtp_user or ""),
+        "smtp_password": base.smtp_password if smtp_password is None else (smtp_password or ""),
+        "emails_per_hour": base.emails_per_hour if emails_per_hour is None else emails_per_hour,
+    })()

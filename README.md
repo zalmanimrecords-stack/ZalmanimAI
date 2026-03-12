@@ -1,4 +1,27 @@
-# LabelOps (MVP Foundation)
+﻿# LabelOps (MVP Foundation)
+
+## Pushing to GitHub
+
+The project is already a git repo with an initial commit. To push to GitHub:
+
+1. Create a **new repository** on [GitHub](https://github.com/new) (do not add a README or .gitignore).
+2. Add the remote and push (replace `YOUR_USERNAME` and `YOUR_REPO` with your GitHub username and repo name):
+
+```bash
+git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO.git
+git branch -M main
+git push -u origin main
+```
+
+Or with SSH:
+
+```bash
+git remote add origin git@github.com:YOUR_USERNAME/YOUR_REPO.git
+git branch -M main
+git push -u origin main
+```
+
+---
 
 ## What Exists Now
 
@@ -67,8 +90,8 @@ Social connections use a **browser-only OAuth flow**: the server does not call t
 - `GET /api/artist/me/dashboard` (artist)
 - `POST /api/artist/me/releases/upload` (artist)
 - `POST /api/admin/tasks/run-inactivity-check` (admin)
-- `GET /api/admin/email/rate-limit` (admin) – email rate limit status
-- `POST /api/admin/email/send` (admin) – send email (rate-limited per hour)
+- `GET /api/admin/email/rate-limit` (admin) - email rate limit status
+- `POST /api/admin/email/send` (admin) - send email (rate-limited per hour)
 - `GET /api/admin/social/providers` (admin)
 - `GET /api/admin/social/connections` (admin)
 - `POST /api/admin/social/connect/start` (admin; returns `connect_page_url` for browser flow)
@@ -88,8 +111,8 @@ Social connections use a **browser-only OAuth flow**: the server does not call t
 
 The admin portal has an **Advanced Connectors** tab that acts as a connections hub. **Credentials are read from the environment** so the UI does not ask for API keys when they are set.
 
-- **Mailchimp** – Set `MAILCHIMP_API_KEY` in the server env (key with datacenter, e.g. `xxxxx-us21`). Then add a connection with just an account label; no API key is asked in the UI. Test uses the ping endpoint.
-- **WordPress (Codex WP)** – Set `WORDPRESS_REST_BASE_URL`, `WORDPRESS_CLIENT_KEY`, and `WORDPRESS_CLIENT_SECRET` in the server env. Then add a connection with just a label. Test uses the signed `/context` request (same as `wp-codex-bridge.ps1`).
+- **Mailchimp** - Set `MAILCHIMP_API_KEY` in the server env (key with datacenter, e.g. `xxxxx-us21`). Then add a connection with just an account label; no API key is asked in the UI. Test uses the ping endpoint.
+- **WordPress (Codex WP)** - Set `WORDPRESS_REST_BASE_URL`, `WORDPRESS_CLIENT_KEY`, and `WORDPRESS_CLIENT_SECRET` in the server env. Then add a connection with just a label. Test uses the signed `/context` request (same as `wp-codex-bridge.ps1`).
 
 If these env vars are not set, the Add form shows the credential fields so you can enter them manually (or set the env vars and restart to stop asking).
 
@@ -97,20 +120,20 @@ If these env vars are not set, the Add form shows the credential fields so you c
 
 The server sends email **via SMTP** with a **per-hour rate limit** to reduce the risk of being flagged as spam. Configure via environment:
 
-- `SMTP_HOST` – SMTP server host (required to enable sending)
-- `SMTP_PORT` – default `587` (use `465` for implicit SSL)
-- `SMTP_USER` / `SMTP_PASSWORD` – optional, for authenticated SMTP
-- `SMTP_USE_TLS` – default `true` (STARTTLS on port 587)
-- `SMTP_USE_SSL` – set to `true` for port 465 (implicit SSL from connection start)
-- `SMTP_FROM_EMAIL` – "From" address (fallback: `SMTP_USER`)
-- `EMAILS_PER_HOUR` – max emails per hour (default `30`); set to `0` for no limit (not recommended)
-- `REDIS_URL` – used for the rate-limit counter (default `redis://redis:6379/0`)
+- `SMTP_HOST` - SMTP server host (required to enable sending)
+- `SMTP_PORT` - default `587` (use `465` for implicit SSL)
+- `SMTP_USER` / `SMTP_PASSWORD` - optional, for authenticated SMTP
+- `SMTP_USE_TLS` - default `true` (STARTTLS on port 587)
+- `SMTP_USE_SSL` - set to `true` for port 465 (implicit SSL from connection start)
+- `SMTP_FROM_EMAIL` - "From" address (fallback: `SMTP_USER`)
+- `EMAILS_PER_HOUR` - max emails per hour (default `30`); set to `0` for no limit (not recommended)
+- `REDIS_URL` - used for the rate-limit counter (default `redis://redis:6379/0`)
 
 Admin endpoints: `GET /api/admin/email/rate-limit` (status) and `POST /api/admin/email/send` (send one email). When the hourly limit is reached, send returns `429 Too Many Requests`.
 
 ## Unified Campaigns
 
-The admin **Campaigns** tab lets you create one campaign (name, title, body text, optional media URL) and target **social connections** (Facebook Page, Instagram, Threads, etc.), **Mailchimp** (one audience/list), and **WordPress** (Codex Bridge). Create as draft, then **Schedule** to send now or at a future date/time (UTC). The **worker** process polls every 60 seconds for campaigns with `status=scheduled` and `scheduled_at <= now` (or null for “send now”), then runs the senders and records per-channel delivery status.
+The admin **Campaigns** tab lets you create one campaign (name, title, body text, optional media URL) and target **social connections** (Facebook Page, Instagram, Threads, etc.), **Mailchimp** (one audience/list), and **WordPress** (Codex Bridge). Create as draft, then **Schedule** to send now or at a future date/time (UTC). The **worker** process polls every 60 seconds for campaigns with `status=scheduled` and `scheduled_at <= now` (or null for "send now"), then runs the senders and records per-channel delivery status.
 
 - **Social:** Meta (Facebook Page, Instagram Business), Threads are implemented; others (TikTok, X, etc.) can be added in `app/services/social_publisher.py`.
 - **Mailchimp:** Creates campaign, sets HTML content, sends (or schedules) to the chosen list.
@@ -128,7 +151,7 @@ The worker container needs the same Mailchimp and WordPress env vars as the API 
 
 ## Restart Script
 
-Use this script to re-initialize and restart the full dev system. It starts the backend (Docker) and launches the **admin app** with `flutter run` so the admin comes up the same way every time.
+Use this script to re-initialize and restart the full dev system. It starts the backend and launches the Flutter app as a **web server**, then opens the browser automatically.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\restart-system.ps1 -Rebuild
@@ -138,11 +161,16 @@ By default the script:
 
 1. Stops and starts the backend stack (API, Postgres, Redis, MinIO, worker).
 2. Waits for the API health check.
-3. Runs `flutter pub get` and then `flutter run -d chrome` for the admin client (opens in a new window).
+3. Runs `flutter pub get`.
+4. Starts `flutter run -d web-server --web-hostname 127.0.0.1 --web-port 3000` in a new PowerShell window.
+5. Opens the browser to `http://127.0.0.1:3000`.
 
 Useful flags:
 
-- `-NoFlutter` : restart only backend containers (do not launch admin app)
+- `-NoFlutter` : restart only backend containers
+- `-NoBrowser` : start Flutter web server but do not open browser automatically
 - `-CleanVolumes` : reset Docker volumes (wipes local DB data)
-- `-FlutterDevice chrome` : device for `flutter run` (default: chrome)
+- `-FlutterDevice chrome` : use another Flutter device instead of the local web server
 - `-FlutterTarget lib/main.dart` : entry target for Flutter
+- `-WebHost 127.0.0.1` : host for `web-server`
+- `-WebPort 3000` : port for `web-server`

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,12 +14,189 @@ import 'tabs/releases_tab.dart';
 import 'tabs/reports_tab.dart';
 
 // Default subject/body for artist reminder emails (used by Reports > Artist reminders).
-const String _defaultReminderSubject = 'Checking in – do you have new music for us?';
+const String _defaultReminderSubject = 'Checking in - do you have new music for us?';
 const String _defaultReminderBody = r'''Hi {name},
 
 Hope you're doing well. We're reaching out to see if you have any new music you'd like to send us. We'd love to hear from you.
 
 Best regards''';
+
+const List<_ReminderTemplateField> _reminderTemplateFields = [
+  _ReminderTemplateField('name', 'Artist name', 'Preferred display name for the artist'),
+  _ReminderTemplateField('artist_brand', 'Artist brand', 'Artist brand field from the profile'),
+  _ReminderTemplateField('full_name', 'Full name', 'Artist full name from the profile'),
+  _ReminderTemplateField('email', 'Email', 'Primary artist email address'),
+  _ReminderTemplateField('website', 'Website', 'Artist website URL'),
+  _ReminderTemplateField('instagram', 'Instagram', 'Instagram URL'),
+  _ReminderTemplateField('spotify', 'Spotify', 'Spotify URL'),
+  _ReminderTemplateField('soundcloud', 'SoundCloud', 'SoundCloud URL'),
+  _ReminderTemplateField('youtube', 'YouTube', 'YouTube URL'),
+  _ReminderTemplateField('apple_music', 'Apple Music', 'Apple Music URL'),
+  _ReminderTemplateField('address', 'Address', 'Address from the artist profile'),
+  _ReminderTemplateField('comments', 'Comments', 'Internal comments stored on the artist'),
+];
+
+const Map<String, String> _sampleReminderTemplateValues = {
+  'name': 'Test Artist',
+  'artist_brand': 'Test Artist',
+  'full_name': 'Test Artist',
+  'email': 'test.artist@example.com',
+  'website': 'https://example.com',
+  'instagram': 'https://instagram.com/testartist',
+  'spotify': 'https://open.spotify.com/artist/testartist',
+  'soundcloud': 'https://soundcloud.com/testartist',
+  'youtube': 'https://youtube.com/@testartist',
+  'apple_music': 'https://music.apple.com/artist/testartist',
+  'address': 'Tel Aviv, Israel',
+  'comments': 'Looking for new demos this quarter.',
+};
+
+class _ReminderTemplateField {
+  const _ReminderTemplateField(this.key, this.label, this.description);
+
+  final String key;
+  final String label;
+  final String description;
+
+  String get token => '{' + key + '}';
+}
+
+class _RenderedReminderEmail {
+  const _RenderedReminderEmail({
+    required this.subject,
+    required this.bodyHtml,
+    required this.bodyText,
+  });
+
+  final String subject;
+  final String bodyHtml;
+  final String bodyText;
+}
+
+Map<String, String> _buildReminderTemplateValues(Map<String, dynamic>? artist) {
+  final item = artist ?? const <String, dynamic>{};
+  final extra = item['extra'] is Map<String, dynamic>
+      ? item['extra'] as Map<String, dynamic>
+      : const <String, dynamic>{};
+  final name = (extra['artist_brand'] ?? item['name'] ?? item['email'] ?? 'there')
+      .toString()
+      .trim();
+
+  String readValue(String key) {
+    if (key == 'name') return name;
+    final direct = item[key];
+    if (direct != null && direct.toString().trim().isNotEmpty) {
+      return direct.toString().trim();
+    }
+    final extraValue = extra[key];
+    if (extraValue != null && extraValue.toString().trim().isNotEmpty) {
+      return extraValue.toString().trim();
+    }
+    return '';
+  }
+
+  return {
+    for (final field in _reminderTemplateFields) field.key: readValue(field.key),
+  };
+}
+
+String _applyReminderTemplate(String template, Map<String, String> values) {
+  var output = template;
+  for (final entry in values.entries) {
+    output = output.replaceAll(
+      RegExp('\\{' + RegExp.escape(entry.key) + '\\}', caseSensitive: false),
+      entry.value,
+    );
+  }
+  return output;
+}
+
+bool _looksLikeHtml(String value) => RegExp(r'<[a-zA-Z][\\s\\S]*>').hasMatch(value);
+
+String _renderReminderHtml(String value, Map<String, String> values) {
+  final rendered = _applyReminderTemplate(value, values);
+  if (_looksLikeHtml(rendered)) return rendered;
+  return const HtmlEscape(HtmlEscapeMode.element)
+      .convert(rendered)
+      .replaceAll('\n', '<br>');
+}
+
+String _htmlToPlainText(String value) {
+  return value
+      .replaceAll(RegExp(r'(?i)<br\\s*/?>'), '\n')
+      .replaceAll(RegExp(r'(?i)</p>'), '\n\n')
+      .replaceAll(RegExp(r'(?i)</div>'), '\n')
+      .replaceAll(RegExp(r'(?i)</li>'), '\n')
+      .replaceAll(RegExp(r'<[^>]+>'), '')
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+      .trim();
+}
+
+_RenderedReminderEmail _renderReminderEmail({
+  required String subjectTemplate,
+  required String bodyTemplate,
+  required Map<String, String> values,
+}) {
+  final subject = _applyReminderTemplate(subjectTemplate, values).trim();
+  final bodyHtml = _renderReminderHtml(bodyTemplate, values).trim();
+  final bodyText = _htmlToPlainText(bodyHtml);
+  return _RenderedReminderEmail(
+    subject: subject,
+    bodyHtml: bodyHtml,
+    bodyText: bodyText,
+  );
+}
+
+void _insertIntoController(TextEditingController controller, String value) {
+  final selection = controller.selection;
+  if (!selection.isValid) {
+    controller.text += value;
+    controller.selection = TextSelection.collapsed(offset: controller.text.length);
+    return;
+  }
+  final start = selection.start < 0 ? controller.text.length : selection.start;
+  final end = selection.end < 0 ? controller.text.length : selection.end;
+  final newText = controller.text.replaceRange(start, end, value);
+  controller.value = controller.value.copyWith(
+    text: newText,
+    selection: TextSelection.collapsed(offset: start + value.length),
+    composing: TextRange.empty,
+  );
+}
+
+void _wrapControllerSelection(
+  TextEditingController controller, {
+  required String before,
+  required String after,
+  String? placeholder,
+}) {
+  final selection = controller.selection;
+  final start = selection.isValid ? selection.start : controller.text.length;
+  final end = selection.isValid ? selection.end : controller.text.length;
+  final normalizedStart = start < 0 ? controller.text.length : start;
+  final normalizedEnd = end < 0 ? controller.text.length : end;
+  final selectedText = normalizedStart < normalizedEnd
+      ? controller.text.substring(normalizedStart, normalizedEnd)
+      : (placeholder ?? '');
+  final replacement = '$before$selectedText$after';
+  final newText = controller.text.replaceRange(
+    normalizedStart,
+    normalizedEnd,
+    replacement,
+  );
+  final caretOffset = normalizedStart + before.length + selectedText.length;
+  controller.value = controller.value.copyWith(
+    text: newText,
+    selection: TextSelection.collapsed(offset: caretOffset),
+    composing: TextRange.empty,
+  );
+}
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key, required this.apiClient, required this.token});
@@ -33,9 +211,12 @@ class AdminDashboardPage extends StatefulWidget {
 class _AdminDashboardPageState extends State<AdminDashboardPage>
     with SingleTickerProviderStateMixin
     implements AdminDashboardDelegate {
+  static const int _pageSize = 50;
+
   bool loading = false;
   bool showInactiveArtists = false;
   List<dynamic> artists = const [];
+  List<dynamic> _allArtistsForSelection = const [];
   final _artistSearchController = TextEditingController();
   String _artistSearchQuery = '';
   List<dynamic> catalogTracks = const [];
@@ -49,6 +230,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   bool _loadedArtists = false;
   bool _loadedReleases = false;
   bool _loadedCampaigns = false;
+  bool _artistsHasMore = true;
+  bool _artistsLoadingMore = false;
+  bool _catalogHasMore = true;
+  bool _catalogLoadingMore = false;
+  bool _adminReleasesHasMore = true;
+  bool _adminReleasesLoadingMore = false;
+  bool _campaignsHasMore = true;
+  bool _campaignsLoadingMore = false;
+  bool _loadingAllArtistsForSelection = false;
 
   int _artistsSortColumn = 0;
   bool _artistsSortAsc = true;
@@ -87,6 +277,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   bool get artistsSortAsc => _artistsSortAsc;
 
   @override
+  bool get artistsHasMore => _artistsHasMore;
+
+  @override
+  bool get artistsLoadingMore => _artistsLoadingMore;
+
+  @override
   void setArtistsSort(int column, bool asc) => setState(() {
         _artistsSortColumn = column;
         _artistsSortAsc = asc;
@@ -99,7 +295,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   List<dynamic> get catalogTracksList => catalogTracks;
 
   @override
-  List<dynamic> get artistsListForReleases => artists;
+  List<dynamic> get artistsListForReleases =>
+      _allArtistsForSelection.isNotEmpty ? _allArtistsForSelection : artists;
 
   @override
   TextEditingController get releasesSearchController =>
@@ -124,6 +321,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   bool get releasesSortAsc => _releasesSortAsc;
 
   @override
+  bool get releasesPageHasMore => _catalogHasMore || _adminReleasesHasMore;
+
+  @override
+  bool get releasesPageLoadingMore =>
+      _catalogLoadingMore || _adminReleasesLoadingMore;
+
+  @override
   void setReleasesSort(int by, bool asc) => setState(() {
         _releasesSortBy = by;
         _releasesSortAsc = asc;
@@ -145,6 +349,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   bool get campaignsSortAsc => _campaignsSortAsc;
 
   @override
+  bool get campaignsHasMore => _campaignsHasMore;
+
+  @override
+  bool get campaignsLoadingMore => _campaignsLoadingMore;
+
+  @override
   void setCampaignsSort(int by, bool asc) => setState(() {
         _campaignsSortBy = by;
         _campaignsSortAsc = asc;
@@ -153,15 +363,23 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _tabController.addListener(_onTabChanged);
-    _artistSearchController.addListener(() => setState(
-        () => _artistSearchQuery =
-            _artistSearchController.text.trim().toLowerCase()));
-    _releasesSearchController.addListener(() => setState(
-        () => _releasesSearchQuery =
-            _releasesSearchController.text.trim().toLowerCase()));
+    _artistSearchController.addListener(_onArtistSearchChanged);
+    _releasesSearchController.addListener(_onReleasesSearchChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadTabIfNeeded());
+  }
+
+  void _onArtistSearchChanged() {
+    final query = _artistSearchController.text.trim().toLowerCase();
+    if (_artistSearchQuery == query) return;
+    setState(() => _artistSearchQuery = query);
+  }
+
+  void _onReleasesSearchChanged() {
+    final query = _releasesSearchController.text.trim().toLowerCase();
+    if (_releasesSearchQuery == query) return;
+    setState(() => _releasesSearchQuery = query);
   }
 
   void _onTabChanged() {
@@ -183,74 +401,217 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
   }
 
-  Future<void> _loadArtists() async {
+  Future<void> _loadArtists({bool reset = true, bool withOverlay = true}) async {
+    if (_artistsLoadingMore || (!reset && !_artistsHasMore)) return;
+    final showOverlay = withOverlay && (reset || artists.isEmpty);
+    if (mounted) {
+      setState(() {
+        if (showOverlay) loading = true;
+        _artistsLoadingMore = !reset;
+        if (reset) _artistsHasMore = true;
+      });
+    }
     try {
-      setState(() => loading = true);
-      final list = await widget.apiClient.fetchArtists(widget.token,
-          includeInactive: showInactiveArtists);
+      final list = await widget.apiClient.fetchArtists(
+        widget.token,
+        includeInactive: showInactiveArtists,
+        limit: _pageSize,
+        offset: reset ? 0 : artists.length,
+      );
       if (!mounted) return;
       setState(() {
-        artists = list;
-        loading = false;
+        artists = reset ? list : [...artists, ...list];
+        if (reset && _allArtistsForSelection.isNotEmpty) {
+          _allArtistsForSelection = const [];
+        }
+        _artistsHasMore = list.length >= _pageSize;
+        _artistsLoadingMore = false;
+        if (showOverlay) loading = false;
         error = null;
         _loadedArtists = true;
       });
     } catch (e) {
+      if (mounted) setState(() => _artistsLoadingMore = false);
       _setError(e);
       if (mounted) setState(() => _loadedArtists = true);
     }
   }
 
-  Future<void> _loadReleases() async {
-    try {
-      setState(() => loading = true);
-      final futures = <Future<List<dynamic>>>[
-        widget.apiClient
-            .fetchCatalogTracks(widget.token)
-            .catchError((_) => <dynamic>[]),
-        widget.apiClient
-            .fetchAdminReleases(widget.token)
-            .catchError((_) => <dynamic>[]),
-      ];
-      if (!_loadedArtists) {
-        futures.add(widget.apiClient
-            .fetchArtists(widget.token)
-            .catchError((_) => <dynamic>[]));
-      }
-      final results = await Future.wait(futures);
-      if (!mounted) return;
+  Future<void> _loadReleases({bool reset = true, bool withOverlay = true}) async {
+    if ((_catalogLoadingMore || _adminReleasesLoadingMore) ||
+        (!reset && !_catalogHasMore && !_adminReleasesHasMore)) {
+      return;
+    }
+    final showOverlay = withOverlay &&
+        (reset || (catalogTracks.isEmpty && adminReleases.isEmpty));
+    if (mounted) {
       setState(() {
-        catalogTracks = results[0];
-        adminReleases = results[1];
-        if (!_loadedArtists && results.length > 2) {
-          artists = results[2];
-          _loadedArtists = true;
+        if (showOverlay) loading = true;
+        _catalogLoadingMore = !reset && _catalogHasMore;
+        _adminReleasesLoadingMore = !reset && _adminReleasesHasMore;
+        if (reset) {
+          _catalogHasMore = true;
+          _adminReleasesHasMore = true;
         }
-        loading = false;
+      });
+    }
+
+    final catalogFuture = (reset || _catalogHasMore)
+        ? widget.apiClient
+            .fetchCatalogTracks(
+              widget.token,
+              limit: _pageSize,
+              offset: reset ? 0 : catalogTracks.length,
+            )
+            .catchError((_) => <dynamic>[])
+        : Future<List<dynamic>>.value(const <dynamic>[]);
+    final releasesFuture = (reset || _adminReleasesHasMore)
+        ? widget.apiClient
+            .fetchAdminReleases(
+              widget.token,
+              limit: _pageSize,
+              offset: reset ? 0 : adminReleases.length,
+            )
+            .catchError((_) => <dynamic>[])
+        : Future<List<dynamic>>.value(const <dynamic>[]);
+
+    try {
+      final results = await Future.wait([catalogFuture, releasesFuture]);
+      if (!mounted) return;
+      final catalogPage = results[0];
+      final releasesPage = results[1];
+      setState(() {
+        catalogTracks = reset ? catalogPage : [...catalogTracks, ...catalogPage];
+        adminReleases = reset ? releasesPage : [...adminReleases, ...releasesPage];
+        _catalogHasMore = catalogPage.length >= _pageSize;
+        _adminReleasesHasMore = releasesPage.length >= _pageSize;
+        _catalogLoadingMore = false;
+        _adminReleasesLoadingMore = false;
+        if (showOverlay) loading = false;
         error = null;
         _loadedReleases = true;
       });
     } catch (e) {
+      if (mounted) {
+        setState(() {
+          _catalogLoadingMore = false;
+          _adminReleasesLoadingMore = false;
+        });
+      }
       _setError(e);
       if (mounted) setState(() => _loadedReleases = true);
     }
   }
 
-  Future<void> _loadCampaigns() async {
+  Future<void> _loadCampaigns({bool reset = true, bool withOverlay = true}) async {
+    if (_campaignsLoadingMore || (!reset && !_campaignsHasMore)) return;
+    final showOverlay = withOverlay && (reset || campaigns.isEmpty);
+    if (mounted) {
+      setState(() {
+        if (showOverlay) loading = true;
+        _campaignsLoadingMore = !reset;
+        if (reset) _campaignsHasMore = true;
+      });
+    }
     try {
-      setState(() => loading = true);
-      final list = await widget.apiClient.fetchCampaigns(widget.token);
+      final list = await widget.apiClient.fetchCampaigns(
+        widget.token,
+        limit: _pageSize,
+        offset: reset ? 0 : campaigns.length,
+      );
       if (!mounted) return;
       setState(() {
-        campaigns = list;
-        loading = false;
+        campaigns = reset ? list : [...campaigns, ...list];
+        _campaignsHasMore = list.length >= _pageSize;
+        _campaignsLoadingMore = false;
+        if (showOverlay) loading = false;
         error = null;
         _loadedCampaigns = true;
       });
     } catch (e) {
+      if (mounted) setState(() => _campaignsLoadingMore = false);
       _setError(e);
       if (mounted) setState(() => _loadedCampaigns = true);
     }
+  }
+
+
+  Future<void> _loadAudiences({bool reset = true, bool withOverlay = true}) async {
+    final showOverlay = withOverlay && (reset || audiences.isEmpty);
+    if (mounted) {
+      setState(() {
+        if (showOverlay) loading = true;
+      });
+    }
+    try {
+      final list = await widget.apiClient.fetchAudiences(widget.token);
+      int? nextSelectedId = _selectedAudienceId;
+      if (list.isEmpty) {
+        nextSelectedId = null;
+      } else {
+        final ids = list.map((e) => (e as Map<String, dynamic>)['id']).toSet();
+        if (nextSelectedId == null || !ids.contains(nextSelectedId)) {
+          nextSelectedId = (list.first as Map<String, dynamic>)['id'] as int;
+        }
+      }
+      List<dynamic> subscribers = audienceSubscribers;
+      if (nextSelectedId != null) {
+        subscribers = await widget.apiClient.fetchAudienceSubscribers(
+          token: widget.token,
+          audienceId: nextSelectedId,
+        );
+      } else {
+        subscribers = const [];
+      }
+      if (!mounted) return;
+      setState(() {
+        audiences = list;
+        audienceSubscribers = subscribers;
+        _selectedAudienceId = nextSelectedId;
+        if (showOverlay) loading = false;
+        error = null;
+        _loadedAudiences = true;
+      });
+    } catch (e) {
+      _setError(e);
+      if (mounted) setState(() => _loadedAudiences = true);
+    }
+  }
+  Future<void> _ensureAllArtistsForSelectionLoaded() async {
+    if (_allArtistsForSelection.isNotEmpty || _loadingAllArtistsForSelection) {
+      return;
+    }
+    _loadingAllArtistsForSelection = true;
+    try {
+      final allArtists = <dynamic>[];
+      var offset = 0;
+      while (true) {
+        final page = await widget.apiClient.fetchArtists(
+          widget.token,
+          includeInactive: showInactiveArtists,
+          limit: _pageSize,
+          offset: offset,
+        );
+        allArtists.addAll(page);
+        if (page.length < _pageSize) break;
+        offset += page.length;
+      }
+      if (!mounted) return;
+      setState(() => _allArtistsForSelection = allArtists);
+    } finally {
+      _loadingAllArtistsForSelection = false;
+    }
+  }
+
+  Future<void> _reloadAllTabs() async {
+    if (mounted) setState(() => loading = true);
+    await Future.wait([
+      _loadArtists(reset: true, withOverlay: false),
+      _loadReleases(reset: true, withOverlay: false),
+      _loadCampaigns(reset: true, withOverlay: false),
+    ]);
+    if (!mounted) return;
+    setState(() => loading = false);
   }
 
   void _setError(Object e) {
@@ -272,46 +633,33 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   void dispose() {
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
+    _artistSearchController.removeListener(_onArtistSearchChanged);
+    _releasesSearchController.removeListener(_onReleasesSearchChanged);
     _artistSearchController.dispose();
     _releasesSearchController.dispose();
     super.dispose();
   }
 
   @override
-  Future<void> load() async {
-    try {
-      setState(() => loading = true);
-      final results = await Future.wait([
-        widget.apiClient.fetchArtists(widget.token).catchError((e) => <dynamic>[]),
-        widget.apiClient.fetchCatalogTracks(widget.token).catchError((e) => <dynamic>[]),
-        widget.apiClient.fetchAdminReleases(widget.token).catchError((e) => <dynamic>[]),
-        widget.apiClient.fetchCampaigns(widget.token).catchError((e) => <dynamic>[]),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        artists = results[0];
-        catalogTracks = results[1];
-        adminReleases = results[2];
-        campaigns = results[3];
-        loading = false;
-        error = null;
-        _loadedArtists = true;
-        _loadedReleases = true;
-        _loadedCampaigns = true;
-      });
-    } catch (e) {
-      _setError(e);
-    }
-  }
+  Future<void> load() => _reloadAllTabs();
 
   @override
-  Future<void> loadArtists() => _loadArtists();
+  Future<void> loadArtists() => _loadArtists(reset: true);
 
   @override
-  Future<void> loadReleases() => _loadReleases();
+  Future<void> loadMoreArtists() => _loadArtists(reset: false, withOverlay: false);
 
   @override
-  Future<void> loadCampaigns() => _loadCampaigns();
+  Future<void> loadReleases() => _loadReleases(reset: true);
+
+  @override
+  Future<void> loadMoreReleasesPage() => _loadReleases(reset: false, withOverlay: false);
+
+  @override
+  Future<void> loadCampaigns() => _loadCampaigns(reset: true);
+
+  @override
+  Future<void> loadMoreCampaigns() => _loadCampaigns(reset: false, withOverlay: false);
 
   @override
   void showAddArtistDialog() => _showAddArtistDialog();
@@ -646,12 +994,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     );
   }
 
-  /// Format last release for display: "Title" or "Title (date)" or "—".
+  /// Format last release for display: "Title" or "Title (date)" or "-".
   String _artistLastRelease(Map<String, dynamic> artist) {
     final lr = artist['last_release'];
-    if (lr == null || lr is! Map<String, dynamic>) return '—';
+    if (lr == null || lr is! Map<String, dynamic>) return '-';
     final title = lr['title'] as String?;
-    if (title == null || title.isEmpty) return '—';
+    if (title == null || title.isEmpty) return '-';
     final created = lr['created_at'] as String?;
     if (created != null && created.isNotEmpty) {
       try {
@@ -818,7 +1166,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                                   Expanded(
                                     child: ClipRect(
                                       child: SelectableText(
-                                        brand.isEmpty ? '—' : brand,
+                                        brand.isEmpty ? '-' : brand,
                                         maxLines: 1,
                                       ),
                                     ),
@@ -830,7 +1178,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
                               child: ClipRect(
                                 child: SelectableText(
-                                  fullName.isEmpty ? '—' : fullName,
+                                  fullName.isEmpty ? '-' : fullName,
                                   maxLines: 1,
                                 ),
                               ),
@@ -1363,6 +1711,19 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     final currentIds = (release['artist_ids'] as List<dynamic>?)?.map((e) => e as int).toList() ?? [];
     if (releaseId == null) return;
 
+    try {
+      if (_allArtistsForSelection.isEmpty) {
+        if (mounted) setState(() => loading = true);
+        await _ensureAllArtistsForSelectionLoaded();
+      }
+    } catch (e) {
+      if (mounted) setState(() => loading = false);
+      _showErrorSnackBar(e.toString());
+      return;
+    }
+    if (mounted) setState(() => loading = false);
+
+    final selectableArtists = artistsListForReleases;
     Set<int> selectedIds = Set<int>.from(currentIds);
 
     if (!mounted) return;
@@ -1375,13 +1736,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               title: Text('Set artists: $title'),
               content: SizedBox(
                 width: 360,
-                child: artists.isEmpty
+                child: selectableArtists.isEmpty
                     ? const Text('No artists in the system.')
                     : ListView.builder(
                         shrinkWrap: true,
-                        itemCount: artists.length,
+                        itemCount: selectableArtists.length,
                         itemBuilder: (_, i) {
-                          final a = artists[i] as Map<String, dynamic>;
+                          final a = selectableArtists[i] as Map<String, dynamic>;
                           final id = a['id'] as int?;
                           if (id == null) return const SizedBox.shrink();
                           final name = (a['name'] as String?) ?? 'Artist $id';
@@ -1640,41 +2001,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         title: const Text('Send personal email'),
         content: SingleChildScrollView(
           child: SizedBox(
-            width: 480,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  'Subject and body will be sent to each selected artist. Use {name} in the body to insert the artist name.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: subjectController,
-                  decoration: const InputDecoration(
-                    labelText: 'Subject',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 1,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: bodyController,
-                  decoration: const InputDecoration(
-                    labelText: 'Body',
-                    border: OutlineInputBorder(),
-                    alignLabelWithHint: true,
-                  ),
-                  maxLines: 8,
-                  minLines: 5,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '${selectedIndices.length} artist(s) will receive this email.',
-                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                ),
-              ],
+            width: 680,
+            child: _ReminderTemplateEditor(
+              subjectController: subjectController,
+              bodyController: bodyController,
+              previewValues: _sampleReminderTemplateValues,
+              helperText: 'Subject and body support dynamic artist fields. The body is sent as HTML, with a text fallback generated automatically.',
+              footerText: '${selectedIndices.length} artist(s) will receive this email.',
             ),
           ),
         ),
@@ -1693,12 +2026,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     );
     if (proceed != true || !context.mounted) return;
 
-    final subject = subjectController.text.trim();
+    final subjectTemplate = subjectController.text.trim();
     final bodyTemplate = bodyController.text;
     subjectController.dispose();
     bodyController.dispose();
 
-    if (subject.isEmpty) {
+    if (subjectTemplate.isEmpty) {
       _showErrorSnackBar('Subject is required.');
       return;
     }
@@ -1719,7 +2052,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Sent: ${sent.length} — Failed: ${failed.length}'),
+                  Text('Sent: ${sent.length} - Failed: ${failed.length}'),
                   if (failed.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     ...failed.entries.map((e) => Padding(
@@ -1746,22 +2079,27 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     for (final i in selectedIndices) {
       if (i < 0 || i >= reportList.length) continue;
       final a = reportList[i] as Map<String, dynamic>;
-      final extra = a['extra'] as Map<String, dynamic>? ?? {};
-      final name = (extra['artist_brand'] ?? a['name'] ?? 'there').toString();
+      final values = _buildReminderTemplateValues(a);
       final email = (a['email'] ?? '').toString().trim();
+      final displayName = values['name']?.isNotEmpty == true ? values['name']! : email;
       if (email.isEmpty) {
-        failed[name] = 'No email';
+        failed[displayName] = 'No email';
         refreshProgress?.call();
         continue;
       }
-      final body = bodyTemplate.replaceAll(RegExp(r'\{name\}', caseSensitive: false), name);
+      final rendered = _renderReminderEmail(
+        subjectTemplate: subjectTemplate,
+        bodyTemplate: bodyTemplate,
+        values: values,
+      );
       final artistId = a['id'] is int ? a['id'] as int : null;
       try {
         await widget.apiClient.sendEmail(
           token: widget.token,
           toEmail: email,
-          subject: subject,
-          bodyText: body,
+          subject: rendered.subject,
+          bodyText: rendered.bodyText,
+          bodyHtml: rendered.bodyHtml,
           artistId: artistId,
         );
         if (!context.mounted) return;
@@ -1817,7 +2155,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               FilledButton.icon(
                 onPressed: catalogTracks.isEmpty ? null : () => _syncOriginalArtistsFromArtists(),
                 icon: const Icon(Icons.sync_alt),
-                label: const Text('Original Artist ← Brand'),
+                label: const Text('Original Artist <- Brand'),
               ),
               FilledButton.icon(
                 onPressed: catalogTracks.isEmpty ? null : () => _createMissingOriginalArtists(),
@@ -1834,7 +2172,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   child: TextField(
                     controller: _releasesSearchController,
                     decoration: InputDecoration(
-                      hintText: 'Search releases by catalog #, title, artist, ISRC, UPC, mix…',
+                      hintText: 'Search releases by catalog #, title, artist, ISRC, UPC, mix...',
                       prefixIcon: const Icon(Icons.search),
                       border: const OutlineInputBorder(),
                       isDense: true,
@@ -2163,8 +2501,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   title: Text(name),
                   subtitle: Text(
                     'Status: $status'
-                    '${scheduledAt != null ? ' · Scheduled: $scheduledAt' : ''}'
-                    '${sentAt != null ? ' · Sent: $sentAt' : ''}',
+                    '${scheduledAt != null ? ' ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Scheduled: $scheduledAt' : ''}'
+                    '${sentAt != null ? ' ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Sent: $sentAt' : ''}',
                   ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -2916,6 +3254,219 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
   }
 
+
+  Future<void> _showCreateAudienceDialog({Map<String, dynamic>? existingAudience}) async {
+    final nameController = TextEditingController(text: (existingAudience?['name'] ?? '').toString());
+    final descriptionController = TextEditingController(text: (existingAudience?['description'] ?? '').toString());
+    final fromNameController = TextEditingController(text: (existingAudience?['from_name'] ?? '').toString());
+    final replyToController = TextEditingController(text: (existingAudience?['reply_to_email'] ?? '').toString());
+    final companyController = TextEditingController(text: (existingAudience?['company_name'] ?? '').toString());
+    final addressController = TextEditingController(text: (existingAudience?['physical_address'] ?? '').toString());
+    final languageController = TextEditingController(text: (existingAudience?['default_language'] ?? 'en').toString());
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(existingAudience == null ? 'Create mailing list' : 'Edit mailing list'),
+        content: SingleChildScrollView(
+          child: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: nameController, decoration: const InputDecoration(labelText: 'List name')),
+                const SizedBox(height: 8),
+                TextField(controller: descriptionController, decoration: const InputDecoration(labelText: 'Description')),
+                const SizedBox(height: 8),
+                TextField(controller: fromNameController, decoration: const InputDecoration(labelText: 'From name')),
+                const SizedBox(height: 8),
+                TextField(controller: replyToController, decoration: const InputDecoration(labelText: 'Reply-to email')),
+                const SizedBox(height: 8),
+                TextField(controller: companyController, decoration: const InputDecoration(labelText: 'Company name')),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: addressController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Physical mailing address',
+                    alignLabelWithHint: true,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(controller: languageController, decoration: const InputDecoration(labelText: 'Default language (en/he)')),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Save')),
+        ],
+      ),
+    );
+
+    if (saved != true) return;
+    if (nameController.text.trim().isEmpty) {
+      _showErrorSnackBar('List name is required.');
+      return;
+    }
+
+    final body = <String, dynamic>{
+      'name': nameController.text.trim(),
+      'description': descriptionController.text.trim(),
+      'from_name': fromNameController.text.trim().isEmpty ? null : fromNameController.text.trim(),
+      'reply_to_email': replyToController.text.trim().isEmpty ? null : replyToController.text.trim(),
+      'company_name': companyController.text.trim().isEmpty ? null : companyController.text.trim(),
+      'physical_address': addressController.text.trim().isEmpty ? null : addressController.text.trim(),
+      'default_language': languageController.text.trim().isEmpty ? 'en' : languageController.text.trim(),
+    };
+
+    try {
+      setState(() => loading = true);
+      if (existingAudience == null) {
+        await widget.apiClient.createAudience(token: widget.token, body: body);
+      } else {
+        await widget.apiClient.updateAudience(
+          token: widget.token,
+          id: existingAudience['id'] as int,
+          body: body,
+        );
+      }
+      await _loadAudiences(reset: true, withOverlay: false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(existingAudience == null ? 'Mailing list created.' : 'Mailing list updated.')),
+      );
+    } catch (e) {
+      _showErrorSnackBar(e.toString());
+    }
+  }
+
+  Future<void> _showAudienceSubscriberDialog({Map<String, dynamic>? existingSubscriber}) async {
+    final audienceId = _selectedAudienceId;
+    if (audienceId == null) {
+      _showErrorSnackBar('Select a mailing list first.');
+      return;
+    }
+    final nameController = TextEditingController(text: (existingSubscriber?['full_name'] ?? '').toString());
+    final emailController = TextEditingController(text: (existingSubscriber?['email'] ?? '').toString());
+    final consentController = TextEditingController(text: (existingSubscriber?['consent_source'] ?? '').toString());
+    final notesController = TextEditingController(text: (existingSubscriber?['notes'] ?? '').toString());
+    String statusValue = (existingSubscriber?['status'] ?? 'subscribed').toString();
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(existingSubscriber == null ? 'Add subscriber' : 'Edit subscriber'),
+          content: SingleChildScrollView(
+            child: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Full name')),
+                  const SizedBox(height: 8),
+                  TextField(controller: emailController, decoration: const InputDecoration(labelText: 'Email')),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: statusValue,
+                    decoration: const InputDecoration(labelText: 'Status'),
+                    items: const [
+                      DropdownMenuItem(value: 'subscribed', child: Text('Subscribed')),
+                      DropdownMenuItem(value: 'unsubscribed', child: Text('Unsubscribed')),
+                      DropdownMenuItem(value: 'cleaned', child: Text('Cleaned')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setDialogState(() => statusValue = value);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(controller: consentController, decoration: const InputDecoration(labelText: 'Consent source')),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: notesController,
+                    maxLines: 3,
+                    decoration: const InputDecoration(labelText: 'Notes', alignLabelWithHint: true),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Save')),
+          ],
+        ),
+      ),
+    );
+
+    if (saved != true) return;
+    if (emailController.text.trim().isEmpty) {
+      _showErrorSnackBar('Subscriber email is required.');
+      return;
+    }
+
+    final body = <String, dynamic>{
+      'email': emailController.text.trim(),
+      'full_name': nameController.text.trim().isEmpty ? null : nameController.text.trim(),
+      'status': statusValue,
+      'consent_source': consentController.text.trim().isEmpty ? null : consentController.text.trim(),
+      'notes': notesController.text.trim().isEmpty ? null : notesController.text.trim(),
+    };
+
+    try {
+      setState(() => loading = true);
+      if (existingSubscriber == null) {
+        await widget.apiClient.createAudienceSubscriber(
+          token: widget.token,
+          audienceId: audienceId,
+          body: body,
+        );
+      } else {
+        await widget.apiClient.updateAudienceSubscriber(
+          token: widget.token,
+          audienceId: audienceId,
+          subscriberId: existingSubscriber['id'] as int,
+          body: body,
+        );
+      }
+      await selectAudience(audienceId);
+      await _loadAudiences(reset: true, withOverlay: false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(existingSubscriber == null ? 'Subscriber added.' : 'Subscriber updated.')),
+      );
+    } catch (e) {
+      _showErrorSnackBar(e.toString());
+    }
+  }
+
+  Future<void> _toggleAudienceSubscriberStatus(Map<String, dynamic> subscriber) async {
+    final audienceId = _selectedAudienceId;
+    if (audienceId == null) return;
+    final currentStatus = (subscriber['status'] ?? 'subscribed').toString();
+    final nextStatus = currentStatus == 'unsubscribed' ? 'subscribed' : 'unsubscribed';
+    try {
+      setState(() => loading = true);
+      await widget.apiClient.updateAudienceSubscriber(
+        token: widget.token,
+        audienceId: audienceId,
+        subscriberId: subscriber['id'] as int,
+        body: {'status': nextStatus},
+      );
+      await selectAudience(audienceId);
+      await _loadAudiences(reset: true, withOverlay: false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(nextStatus == 'subscribed' ? 'Subscriber resubscribed.' : 'Subscriber unsubscribed.')),
+      );
+    } catch (e) {
+      _showErrorSnackBar(e.toString());
+    }
+  }
   void _showErrorSnackBar(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -2931,38 +3482,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   }
 
   Future<void> _load() async {
-    try {
-      // Load in parallel; if one fails (e.g. missing DB table), others still show.
-      final results = await Future.wait([
-        widget.apiClient.fetchArtists(widget.token).catchError((e) => <dynamic>[]),
-        widget.apiClient.fetchCatalogTracks(widget.token).catchError((e) => <dynamic>[]),
-        widget.apiClient.fetchAdminReleases(widget.token).catchError((e) => <dynamic>[]),
-        widget.apiClient.fetchCampaigns(widget.token).catchError((e) => <dynamic>[]),
-      ]);
-
-      if (!mounted) return;
-      setState(() {
-        artists = results[0];
-        catalogTracks = results[1];
-        adminReleases = results[2];
-        campaigns = results[3];
-        loading = false;
-        error = null;
-      });
-    } catch (e) {
-      final msg = e.toString();
-      final isConnectionError = msg.contains('Failed to fetch') ||
-          msg.contains('Connection refused') ||
-          msg.contains('SocketException') ||
-          msg.contains('ClientException');
-      if (!mounted) return;
-      setState(() {
-        error = isConnectionError
-            ? 'Cannot reach API at ${widget.apiClient.baseUrl}. Backend running? Stop the app and run again (full restart). Or run: docker compose up -d'
-            : msg;
-        loading = false;
-      });
-    }
+    await _reloadAllTabs();
   }
 }
 
@@ -3037,39 +3557,15 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Mail settings – reminder emails'),
+        title: const Text('Mail settings - reminder emails'),
         content: SingleChildScrollView(
           child: SizedBox(
-            width: 480,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  'Default subject and body for artist reminder emails. Use {name} in the body to insert the artist name.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: subjectController,
-                  decoration: const InputDecoration(
-                    labelText: 'Subject',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 1,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: bodyController,
-                  decoration: const InputDecoration(
-                    labelText: 'Body',
-                    border: OutlineInputBorder(),
-                    alignLabelWithHint: true,
-                  ),
-                  maxLines: 8,
-                  minLines: 5,
-                ),
-              ],
+            width: 680,
+            child: _ReminderTemplateEditor(
+              subjectController: subjectController,
+              bodyController: bodyController,
+              previewValues: _sampleReminderTemplateValues,
+              helperText: 'Default subject and body for artist reminder emails. The body editor supports HTML snippets and dynamic fields from the artist profile.',
             ),
           ),
         ),
@@ -3097,9 +3593,11 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
   Future<void> _showSendTestEmail() async {
     final savedSubject = await getArtistReminderEmailSubject();
     final savedBody = await getArtistReminderEmailBody();
-    final subject = savedSubject ?? _defaultReminderSubject;
-    final bodyTemplate = savedBody ?? _defaultReminderBody;
-    final body = bodyTemplate.replaceAll(RegExp(r'\{name\}', caseSensitive: false), 'Test');
+    final rendered = _renderReminderEmail(
+      subjectTemplate: savedSubject ?? _defaultReminderSubject,
+      bodyTemplate: savedBody ?? _defaultReminderBody,
+      values: _sampleReminderTemplateValues,
+    );
     final toController = TextEditingController();
     if (!mounted) return;
     final toEmail = await showDialog<String>(
@@ -3139,8 +3637,9 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
       await widget.apiClient.sendEmail(
         token: widget.token,
         toEmail: toEmail,
-        subject: subject,
-        bodyText: body,
+        subject: rendered.subject,
+        bodyText: rendered.bodyText,
+        bodyHtml: rendered.bodyHtml,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Test email sent to $toEmail.')));
@@ -3393,6 +3892,310 @@ class _ArtistInfoTab extends StatelessWidget {
   }
 }
 
+class _ReminderTemplateEditor extends StatefulWidget {
+  const _ReminderTemplateEditor({
+    required this.subjectController,
+    required this.bodyController,
+    required this.previewValues,
+    required this.helperText,
+    this.footerText,
+  });
+
+  final TextEditingController subjectController;
+  final TextEditingController bodyController;
+  final Map<String, String> previewValues;
+  final String helperText;
+  final String? footerText;
+
+  @override
+  State<_ReminderTemplateEditor> createState() => _ReminderTemplateEditorState();
+}
+
+class _ReminderTemplateEditorState extends State<_ReminderTemplateEditor> {
+  bool _previewMode = false;
+  final FocusNode _bodyFocusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _bodyFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _insertSubjectField(_ReminderTemplateField field) {
+    _insertIntoController(widget.subjectController, field.token);
+    setState(() {});
+  }
+
+  void _insertBodyField(_ReminderTemplateField field) {
+    _insertIntoController(widget.bodyController, field.token);
+    _bodyFocusNode.requestFocus();
+    setState(() {});
+  }
+
+  void _wrapBodySelection({
+    required String before,
+    required String after,
+    String? placeholder,
+  }) {
+    _wrapControllerSelection(
+      widget.bodyController,
+      before: before,
+      after: after,
+      placeholder: placeholder,
+    );
+    _bodyFocusNode.requestFocus();
+    setState(() {});
+  }
+
+  void _insertBodySnippet(String snippet) {
+    _insertIntoController(widget.bodyController, snippet);
+    _bodyFocusNode.requestFocus();
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final preview = _renderReminderEmail(
+      subjectTemplate: widget.subjectController.text,
+      bodyTemplate: widget.bodyController.text,
+      values: widget.previewValues,
+    );
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          widget.helperText,
+          style: const TextStyle(fontSize: 12, color: Colors.grey),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: widget.subjectController,
+          decoration: const InputDecoration(
+            labelText: 'Subject',
+            border: OutlineInputBorder(),
+          ),
+          maxLines: 1,
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 8),
+        _ReminderFieldChips(
+          title: 'Insert subject field',
+          onFieldSelected: _insertSubjectField,
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            const Text('Body editor', style: TextStyle(fontWeight: FontWeight.w600)),
+            const Spacer(),
+            ChoiceChip(
+              label: const Text('Edit'),
+              selected: !_previewMode,
+              onSelected: (_) => setState(() => _previewMode = false),
+            ),
+            const SizedBox(width: 8),
+            ChoiceChip(
+              label: const Text('Preview'),
+              selected: _previewMode,
+              onSelected: (_) => setState(() => _previewMode = true),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _ReminderBodyToolbar(
+          onWrapSelection: _wrapBodySelection,
+          onInsertSnippet: _insertBodySnippet,
+          onInsertField: _insertBodyField,
+        ),
+        const SizedBox(height: 8),
+        if (!_previewMode)
+          TextField(
+            controller: widget.bodyController,
+            focusNode: _bodyFocusNode,
+            decoration: const InputDecoration(
+              labelText: 'HTML body template',
+              hintText: 'Write plain text or HTML. Use the toolbar to insert styled sections.',
+              border: OutlineInputBorder(),
+              alignLabelWithHint: true,
+            ),
+            maxLines: 16,
+            minLines: 10,
+            onChanged: (_) => setState(() {}),
+          )
+        else
+          Container(
+            constraints: const BoxConstraints(minHeight: 260),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              border: Border.all(color: Theme.of(context).dividerColor),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Preview subject', style: Theme.of(context).textTheme.labelLarge),
+                  const SizedBox(height: 4),
+                  SelectableText(preview.subject.isEmpty ? '(empty subject)' : preview.subject),
+                  const SizedBox(height: 12),
+                  Text('Text fallback preview', style: Theme.of(context).textTheme.labelLarge),
+                  const SizedBox(height: 4),
+                  SelectableText(preview.bodyText.isEmpty ? '(empty body)' : preview.bodyText),
+                  const SizedBox(height: 12),
+                  Text('HTML source', style: Theme.of(context).textTheme.labelLarge),
+                  const SizedBox(height: 4),
+                  SelectableText(
+                    preview.bodyHtml.isEmpty ? '(empty html)' : preview.bodyHtml,
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        const SizedBox(height: 8),
+        if (widget.footerText != null)
+          Text(
+            widget.footerText!,
+            style: TextStyle(
+              fontSize: 12,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ReminderFieldChips extends StatelessWidget {
+  const _ReminderFieldChips({
+    required this.title,
+    required this.onFieldSelected,
+  });
+
+  final String title;
+  final ValueChanged<_ReminderTemplateField> onFieldSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: Theme.of(context).textTheme.labelMedium),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final field in _reminderTemplateFields)
+              ActionChip(
+                label: Text(field.token),
+                onPressed: () => onFieldSelected(field),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ReminderBodyToolbar extends StatelessWidget {
+  const _ReminderBodyToolbar({
+    required this.onWrapSelection,
+    required this.onInsertSnippet,
+    required this.onInsertField,
+  });
+
+  final void Function({
+    required String before,
+    required String after,
+    String? placeholder,
+  }) onWrapSelection;
+  final ValueChanged<String> onInsertSnippet;
+  final ValueChanged<_ReminderTemplateField> onInsertField;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton(
+              onPressed: () => onWrapSelection(
+                before: '<strong>',
+                after: '</strong>',
+                placeholder: 'Bold text',
+              ),
+              child: const Text('Bold'),
+            ),
+            OutlinedButton(
+              onPressed: () => onWrapSelection(
+                before: '<em>',
+                after: '</em>',
+                placeholder: 'Italic text',
+              ),
+              child: const Text('Italic'),
+            ),
+            OutlinedButton(
+              onPressed: () => onWrapSelection(
+                before: '<h2>',
+                after: '</h2>',
+                placeholder: 'Heading',
+              ),
+              child: const Text('Heading'),
+            ),
+            OutlinedButton(
+              onPressed: () => onWrapSelection(
+                before: '<p>',
+                after: '</p>',
+                placeholder: 'Paragraph',
+              ),
+              child: const Text('Paragraph'),
+            ),
+            OutlinedButton(
+              onPressed: () => onInsertSnippet(
+                '<ul>\n  <li>First item</li>\n  <li>Second item</li>\n</ul>',
+              ),
+              child: const Text('List'),
+            ),
+            OutlinedButton(
+              onPressed: () => onInsertSnippet(
+                '<p><a href="https://example.com">Open link</a></p>',
+              ),
+              child: const Text('Link'),
+            ),
+            OutlinedButton(
+              onPressed: () => onInsertSnippet(
+                '<div style="margin: 24px 0;"><a href="https://example.com" style="display:inline-block;padding:12px 20px;background:#111827;color:#ffffff;text-decoration:none;border-radius:8px;">Call to action</a></div>',
+              ),
+              child: const Text('Button'),
+            ),
+            OutlinedButton(
+              onPressed: () => onInsertSnippet(
+                '<hr style="border:none;border-top:1px solid #d1d5db;margin:24px 0;">',
+              ),
+              child: const Text('Divider'),
+            ),
+            OutlinedButton(
+              onPressed: () => onInsertSnippet(
+                '<p>Hi {name},</p>\n\n<p>Hope you are doing well.</p>',
+              ),
+              child: const Text('Greeting'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _ReminderFieldChips(
+          title: 'Insert body field',
+          onFieldSelected: onInsertField,
+        ),
+      ],
+    );
+  }
+}
 class _ArtistLogsTab extends StatefulWidget {
   const _ArtistLogsTab({
     required this.apiClient,
@@ -3499,4 +4302,11 @@ class _ArtistLogsTabState extends State<_ArtistLogsTab> {
     );
   }
 }
+
+
+
+
+
+
+
 

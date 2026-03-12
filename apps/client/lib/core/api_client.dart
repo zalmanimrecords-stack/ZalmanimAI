@@ -41,9 +41,47 @@ class ApiClient {
     return AuthSession(token: data['access_token'] as String, role: data['role'] as String);
   }
 
-  Future<List<dynamic>> fetchArtists(String token, {bool includeInactive = false}) async {
+
+  Future<String> startGoogleLogin({required String redirectUri}) async {
+    final uri = Uri.parse('$baseUrl/auth/google/start').replace(
+      queryParameters: {'redirect_uri': redirectUri},
+    );
+    final response = await http.get(uri);
+    if (response.statusCode != 200) {
+      throw Exception('Google login setup failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return data['auth_url'] as String;
+  }
+
+  Future<String> startGoogleMailConnect({
+    required String token,
+    required String redirectUri,
+  }) async {
+    final uri = Uri.parse('$baseUrl/admin/google-mail/start').replace(
+      queryParameters: {'redirect_uri': redirectUri},
+    );
+    final response = await http.get(uri, headers: _authHeaders(token));
+    if (response.statusCode != 200) {
+      throw Exception('Google mail connect failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return data['auth_url'] as String;
+  }
+
+  Future<List<dynamic>> fetchArtists(
+    String token, {
+    bool includeInactive = false,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final queryParameters = <String, String>{
+      'limit': '$limit',
+      'offset': '$offset',
+      if (includeInactive) 'include_inactive': 'true',
+    };
     final uri = Uri.parse('$baseUrl/artists').replace(
-      queryParameters: includeInactive ? {'include_inactive': 'true'} : null,
+      queryParameters: queryParameters,
     );
     final response = await http.get(
       uri,
@@ -110,9 +148,15 @@ class ApiClient {
     return jsonDecode(response.body) as List<dynamic>;
   }
 
-  Future<List<dynamic>> fetchAdminReleases(String token) async {
+  Future<List<dynamic>> fetchAdminReleases(
+    String token, {
+    int limit = 50,
+    int offset = 0,
+  }) async {
     final response = await http.get(
-      Uri.parse('$baseUrl/admin/releases'),
+      Uri.parse('$baseUrl/admin/releases').replace(
+        queryParameters: {'limit': '$limit', 'offset': '$offset'},
+      ),
       headers: _authHeaders(token),
     );
     if (response.statusCode != 200) {
@@ -244,9 +288,15 @@ class ApiClient {
     }
   }
 
-  Future<List<dynamic>> fetchCatalogTracks(String token) async {
+  Future<List<dynamic>> fetchCatalogTracks(
+    String token, {
+    int limit = 50,
+    int offset = 0,
+  }) async {
     final response = await http.get(
-      Uri.parse('$baseUrl/admin/catalog-tracks'),
+      Uri.parse('$baseUrl/admin/catalog-tracks').replace(
+        queryParameters: {'limit': '$limit', 'offset': '$offset'},
+      ),
       headers: _authHeaders(token),
     );
     if (response.statusCode != 200) {
@@ -299,10 +349,20 @@ class ApiClient {
   }
 
   // Campaigns (unified: social + Mailchimp + WordPress)
-  Future<List<dynamic>> fetchCampaigns(String token, {String? status}) async {
-    final uri = status != null && status.isNotEmpty
-        ? Uri.parse('$baseUrl/admin/campaigns').replace(queryParameters: {'status': status})
-        : Uri.parse('$baseUrl/admin/campaigns');
+  Future<List<dynamic>> fetchCampaigns(
+    String token, {
+    String? status,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final queryParameters = <String, String>{
+      'limit': '$limit',
+      'offset': '$offset',
+      if (status != null && status.isNotEmpty) 'status': status,
+    };
+    final uri = Uri.parse('$baseUrl/admin/campaigns').replace(
+      queryParameters: queryParameters,
+    );
     final response = await http.get(uri, headers: _authHeaders(token));
     if (response.statusCode != 200) {
       throw Exception(
@@ -420,6 +480,43 @@ class ApiClient {
     if (response.statusCode != 200) {
       throw Exception(
         'Update settings failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+
+  Future<Map<String, dynamic>> testSystemSettingsMail({
+    required String token,
+    String? smtpHost,
+    int? smtpPort,
+    String? smtpFromEmail,
+    bool? smtpUseTls,
+    bool? smtpUseSsl,
+    String? smtpUser,
+    String? smtpPassword,
+    int? emailsPerHour,
+    String? testEmail,
+  }) async {
+    final body = <String, dynamic>{};
+    if (smtpHost != null) body['smtp_host'] = smtpHost;
+    if (smtpPort != null) body['smtp_port'] = smtpPort;
+    if (smtpFromEmail != null) body['smtp_from_email'] = smtpFromEmail;
+    if (smtpUseTls != null) body['smtp_use_tls'] = smtpUseTls;
+    if (smtpUseSsl != null) body['smtp_use_ssl'] = smtpUseSsl;
+    if (smtpUser != null) body['smtp_user'] = smtpUser;
+    if (smtpPassword != null) body['smtp_password'] = smtpPassword;
+    if (emailsPerHour != null) body['emails_per_hour'] = emailsPerHour;
+    if (testEmail != null && testEmail.isNotEmpty) body['test_email'] = testEmail;
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/admin/settings/mail/test'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Mail test failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
       );
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
@@ -573,7 +670,109 @@ class ApiClient {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+
+  Future<List<dynamic>> fetchAudiences(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/admin/audiences'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Audiences failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> createAudience({
+    required String token,
+    required Map<String, dynamic> body,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/admin/audiences'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Create audience failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateAudience({
+    required String token,
+    required int id,
+    required Map<String, dynamic> body,
+  }) async {
+    final response = await http.patch(
+      Uri.parse('$baseUrl/admin/audiences/$id'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Update audience failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<List<dynamic>> fetchAudienceSubscribers({
+    required String token,
+    required int audienceId,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/admin/audiences/$audienceId/subscribers'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Audience subscribers failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> createAudienceSubscriber({
+    required String token,
+    required int audienceId,
+    required Map<String, dynamic> body,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/admin/audiences/$audienceId/subscribers'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Create subscriber failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateAudienceSubscriber({
+    required String token,
+    required int audienceId,
+    required int subscriberId,
+    required Map<String, dynamic> body,
+  }) async {
+    final response = await http.patch(
+      Uri.parse('$baseUrl/admin/audiences/$audienceId/subscribers/$subscriberId'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Update subscriber failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
   Map<String, String> _authHeaders(String token) {
     return {'Authorization': 'Bearer $token'};
   }
 }
+

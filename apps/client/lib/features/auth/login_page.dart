@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api_client.dart';
 import '../../core/session.dart';
@@ -9,9 +10,10 @@ import '../admin/admin_dashboard_page.dart';
 import '../artist/artist_dashboard_page.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key, required this.apiClient});
+  const LoginPage({super.key, required this.apiClient, this.initialError});
 
   final ApiClient apiClient;
+  final String? initialError;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -22,7 +24,14 @@ class _LoginPageState extends State<LoginPage> {
   final passwordController = TextEditingController(text: 'admin123');
   bool rememberMe = true;
   bool loading = false;
+  bool googleLoading = false;
   String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    error = widget.initialError;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -83,10 +92,21 @@ class _LoginPageState extends State<LoginPage> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: loading ? null : _login,
+                      onPressed: loading || googleLoading ? null : _login,
                       child: loading
                           ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
                           : const Text('Login'),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: loading || googleLoading ? null : _loginWithGoogle,
+                      icon: googleLoading
+                          ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.login),
+                      label: const Text('Continue with Google'),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -111,23 +131,7 @@ class _LoginPageState extends State<LoginPage> {
         email: emailController.text.trim(),
         password: passwordController.text,
       );
-
-      if (!mounted) return;
-      if (rememberMe) {
-        await saveSession(session);
-      } else {
-        await clearSession();
-      }
-      if (!mounted) return;
-      if (session.role == 'admin') {
-        Navigator.of(context).pushReplacement(MaterialPageRoute(
-          builder: (_) => AdminDashboardPage(apiClient: widget.apiClient, token: session.token),
-        ));
-      } else {
-        Navigator.of(context).pushReplacement(MaterialPageRoute(
-          builder: (_) => ArtistDashboardPage(apiClient: widget.apiClient, token: session.token),
-        ));
-      }
+      await _completeLogin(session);
     } catch (e) {
       final msg = e.toString();
       final isConnection = msg.contains('Failed to fetch') || msg.contains('Connection refused') || msg.contains('SocketException');
@@ -138,4 +142,44 @@ class _LoginPageState extends State<LoginPage> {
       if (mounted) setState(() => loading = false);
     }
   }
+
+  Future<void> _loginWithGoogle() async {
+    setState(() {
+      googleLoading = true;
+      error = null;
+    });
+    try {
+      final authUrl = await widget.apiClient.startGoogleLogin(redirectUri: Uri.base.replace(queryParameters: const {}, fragment: '').toString());
+      final launched = await launchUrl(Uri.parse(authUrl), webOnlyWindowName: '_self');
+      if (!launched && mounted) {
+        setState(() => error = 'Could not open Google sign-in.');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => error = e.toString());
+      }
+    } finally {
+      if (mounted) setState(() => googleLoading = false);
+    }
+  }
+
+  Future<void> _completeLogin(AuthSession session) async {
+    if (!mounted) return;
+    if (rememberMe) {
+      await saveSession(session);
+    } else {
+      await clearSession();
+    }
+    if (!mounted) return;
+    if (session.role == 'admin') {
+      Navigator.of(context).pushReplacement(MaterialPageRoute(
+        builder: (_) => AdminDashboardPage(apiClient: widget.apiClient, token: session.token),
+      ));
+    } else {
+      Navigator.of(context).pushReplacement(MaterialPageRoute(
+        builder: (_) => ArtistDashboardPage(apiClient: widget.apiClient, token: session.token),
+      ));
+    }
+  }
 }
+

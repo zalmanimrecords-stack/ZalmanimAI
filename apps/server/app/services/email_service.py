@@ -1,14 +1,19 @@
 """
-Email sending via SMTP with per-hour rate limiting via Redis to avoid spam listing.
-Supports STARTTLS (port 587) and implicit SSL (port 465).
+Email sending via Gmail API or SMTP with per-hour rate limiting via Redis.
+Prefers a connected Google account with gmail.send permission; falls back to SMTP.
 """
 
+import base64
 import smtplib
 import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+import httpx
+
 from app.core.config import settings
+from app.db.session import SessionLocal
+from app.models.models import SocialConnection
 from app.services.mail_settings import get_effective_mail_config
 
 # Redis client lazy singleton
@@ -16,6 +21,7 @@ _redis_client = None
 
 REDIS_KEY_PREFIX = "email_rate:"
 KEY_TTL_SECONDS = 7200  # 2 hours so the key expires after the hour window
+_GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send"
 
 
 def _get_redis():
@@ -63,7 +69,7 @@ def check_and_increment_rate_limit() -> bool:
         return True
     r = _get_redis()
     if not r:
-        return True  # No Redis: allow send (or could deny for safety)
+        return True
     key = _rate_limit_key()
     try:
         current = r.get(key)
@@ -79,8 +85,176 @@ def check_and_increment_rate_limit() -> bool:
         return False
 
 
+def _get_active_gmail_connection() -> SocialConnection | None:
+    with SessionLocal() as db:
+        return (
+            db.query(SocialConnection)
+            .filter(
+                SocialConnection.provider == "google_mail",
+                SocialConnection.status == "active",
+            )
+            .order_by(SocialConnection.authorized_at.desc().nullslast(), SocialConnection.id.desc())
+            .first()
+        )
+
+
+def _gmail_connection_supports_send(connection: SocialConnection | None) -> bool:
+    if not connection:
+        return False
+    scopes = {s.strip() for s in (connection.scopes_csv or "").split(",") if s.strip()}
+    return _GMAIL_SEND_SCOPE in scopes and bool((connection.refresh_token or connection.access_token or "").strip())
+
+
+def _refresh_google_access_token(connection: SocialConnection) -> str:
+    refresh_token = (connection.refresh_token or "").strip()
+    if not refresh_token:
+        return (connection.access_token or "").strip()
+
+    response = httpx.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "client_id": settings.google_client_id,
+            "client_secret": settings.google_client_secret,
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+        },
+        timeout=20.0,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    access_token = (payload.get("access_token") or "").strip()
+    if not access_token:
+        raise RuntimeError("Google refresh response did not include access_token")
+
+    with SessionLocal() as db:
+        row = db.get(SocialConnection, connection.id)
+        if row is not None:
+            row.access_token = access_token
+            if payload.get("refresh_token"):
+                row.refresh_token = payload["refresh_token"]
+            db.commit()
+    return access_token
+
+
+def _send_via_gmail_api(
+    connection: SocialConnection,
+    to_email: str,
+    subject: str,
+    body_text: str,
+    body_html: str | None = None,
+) -> tuple[bool, str]:
+    from_addr = (
+        (connection.external_account_id or "").strip()
+        or (connection.account_label or "").strip()
+        or (get_effective_mail_config().smtp_from_email or "").strip()
+    )
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    if from_addr:
+        msg["From"] = from_addr
+    msg["To"] = to_email
+    msg.attach(MIMEText(body_text, "plain", "utf-8"))
+    if body_html:
+        msg.attach(MIMEText(body_html, "html", "utf-8"))
+
+    access_token = _refresh_google_access_token(connection)
+    raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+    response = httpx.post(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json={"raw": raw_message},
+        timeout=30.0,
+    )
+    if response.status_code >= 400:
+        return False, response.text[:500]
+    return True, "Sent via Gmail"
+
+
+
+
+def _smtp_send_with_config(
+    cfg,
+    *,
+    to_email: str,
+    subject: str,
+    body_text: str,
+    body_html: str | None = None,
+) -> tuple[bool, str]:
+    from_addr = (cfg.smtp_from_email or cfg.smtp_user or "").strip()
+    if not (cfg.smtp_host or "").strip():
+        return False, "SMTP host is required"
+    if not from_addr:
+        return False, "Email from address not configured (smtp_from_email or smtp_user)"
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = from_addr
+    msg["To"] = to_email
+    msg.attach(MIMEText(body_text, "plain", "utf-8"))
+    if body_html:
+        msg.attach(MIMEText(body_html, "html", "utf-8"))
+
+    try:
+        if cfg.smtp_use_ssl:
+            with smtplib.SMTP_SSL(cfg.smtp_host, cfg.smtp_port, timeout=30) as smtp:
+                if (cfg.smtp_user or "").strip():
+                    smtp.login(cfg.smtp_user.strip(), cfg.smtp_password or "")
+                smtp.sendmail(from_addr, [to_email], msg.as_string())
+        else:
+            with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port, timeout=30) as smtp:
+                if cfg.smtp_use_tls:
+                    smtp.starttls()
+                if (cfg.smtp_user or "").strip():
+                    smtp.login(cfg.smtp_user.strip(), cfg.smtp_password or "")
+                smtp.sendmail(from_addr, [to_email], msg.as_string())
+        return True, "Sent"
+    except smtplib.SMTPException as e:
+        return False, str(e)
+    except Exception as e:
+        return False, str(e)
+
+
+def test_smtp_connection(cfg) -> tuple[bool, str]:
+    """Open SMTP connection and optionally authenticate without sending an email."""
+    if not (cfg.smtp_host or "").strip():
+        return False, "SMTP host is required"
+    try:
+        if cfg.smtp_use_ssl:
+            with smtplib.SMTP_SSL(cfg.smtp_host, cfg.smtp_port, timeout=30) as smtp:
+                if (cfg.smtp_user or "").strip():
+                    smtp.login(cfg.smtp_user.strip(), cfg.smtp_password or "")
+        else:
+            with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port, timeout=30) as smtp:
+                if cfg.smtp_use_tls:
+                    smtp.starttls()
+                if (cfg.smtp_user or "").strip():
+                    smtp.login(cfg.smtp_user.strip(), cfg.smtp_password or "")
+        return True, "SMTP connection successful"
+    except smtplib.SMTPException as e:
+        return False, str(e)
+    except Exception as e:
+        return False, str(e)
+
+
+def send_test_smtp_email(
+    cfg,
+    *,
+    to_email: str,
+) -> tuple[bool, str]:
+    """Send a simple test email using SMTP only."""
+    return _smtp_send_with_config(
+        cfg,
+        to_email=to_email,
+        subject="LabelOps SMTP test",
+        body_text="This is a test email from LabelOps SMTP settings.",
+    )
+
 def is_email_configured() -> bool:
-    """True if SMTP is configured enough to send."""
+    """True if Gmail API or SMTP is configured enough to send."""
+    connection = _get_active_gmail_connection()
+    if _gmail_connection_supports_send(connection):
+        return True
     cfg = get_effective_mail_config()
     return bool((cfg.smtp_host or "").strip())
 
@@ -92,18 +266,31 @@ def send_email(
     body_html: str | None = None,
 ) -> tuple[bool, str]:
     """
-    Send one email via SMTP with rate limiting.
+    Send one email via Gmail API or SMTP with rate limiting.
     Returns (success, message). Message is error detail on failure.
     """
     cfg = get_effective_mail_config()
     if not is_email_configured():
-        return False, "Email is not configured (SMTP host missing)"
+        return False, "Email is not configured (connect Gmail or set SMTP host)"
 
     if cfg.emails_per_hour and not check_and_increment_rate_limit():
         return False, (
             f"Hourly email limit reached ({cfg.emails_per_hour} per hour). "
             "Try again later to avoid spam listing."
         )
+
+    connection = _get_active_gmail_connection()
+    if _gmail_connection_supports_send(connection):
+        try:
+            return _send_via_gmail_api(
+                connection,
+                to_email=to_email,
+                subject=subject,
+                body_text=body_text,
+                body_html=body_html,
+            )
+        except Exception as e:
+            return False, str(e)
 
     from_addr = (cfg.smtp_from_email or cfg.smtp_user or "").strip()
     if not from_addr:
@@ -119,13 +306,11 @@ def send_email(
 
     try:
         if cfg.smtp_use_ssl:
-            # Implicit SSL (e.g. port 465)
             with smtplib.SMTP_SSL(cfg.smtp_host, cfg.smtp_port, timeout=30) as smtp:
                 if (cfg.smtp_user or "").strip():
                     smtp.login(cfg.smtp_user.strip(), cfg.smtp_password or "")
                 smtp.sendmail(from_addr, [to_email], msg.as_string())
         else:
-            # Plain SMTP + optional STARTTLS (e.g. port 587)
             with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port, timeout=30) as smtp:
                 if cfg.smtp_use_tls:
                     smtp.starttls()
@@ -137,3 +322,5 @@ def send_email(
         return False, str(e)
     except Exception as e:
         return False, str(e)
+
+

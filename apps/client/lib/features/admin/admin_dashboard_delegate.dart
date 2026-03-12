@@ -14,11 +14,15 @@ abstract class AdminDashboardDelegate {
 
   // Artists
   List<dynamic> get artistsList;
+  List<dynamic> get artistsListForReleases;
   TextEditingController get artistSearchController;
   int get artistsSortColumn;
   bool get artistsSortAsc;
+  bool get artistsHasMore;
+  bool get artistsLoadingMore;
   void setArtistsSort(int column, bool asc);
   Future<void> loadArtists();
+  Future<void> loadMoreArtists();
   void showAddArtistDialog();
   void showEditArtistDialog(int id);
   void showArtistDetailsDialog(int id);
@@ -29,15 +33,17 @@ abstract class AdminDashboardDelegate {
   // Releases + catalog
   List<dynamic> get adminReleasesList;
   List<dynamic> get catalogTracksList;
-  List<dynamic> get artistsListForReleases;
   TextEditingController get releasesSearchController;
   int? get catalogSortColumnIndex;
   bool get catalogSortAsc;
-  void setCatalogSort(int? column, bool asc);
   int get releasesSortBy;
   bool get releasesSortAsc;
+  bool get releasesPageHasMore;
+  bool get releasesPageLoadingMore;
+  void setCatalogSort(int? column, bool asc);
   void setReleasesSort(int by, bool asc);
   Future<void> loadReleases();
+  Future<void> loadMoreReleasesPage();
   void importCatalogCsv();
   void syncReleasesFromCatalog();
   void syncOriginalArtistsFromArtists();
@@ -45,26 +51,40 @@ abstract class AdminDashboardDelegate {
   void showSetArtistsDialog(Map<String, dynamic> release);
   void prepareCampaignFromRelease(int artistId, String artistName, Map<String, dynamic> release);
 
-  // Campaigns (connections/hubConnectors are empty until API is added)
+  // Campaigns
   List<dynamic> get campaignsList;
   List<dynamic> get connectionsList;
   List<dynamic> get hubConnectorsList;
   int get campaignsSortBy;
   bool get campaignsSortAsc;
+  bool get campaignsHasMore;
+  bool get campaignsLoadingMore;
   void setCampaignsSort(int by, bool asc);
   Future<void> loadCampaigns();
+  Future<void> loadMoreCampaigns();
   void showCreateCampaignDialog({String? initialName, String? initialTitle, String? initialBody, int? initialArtistId});
   void showEditCampaignDialog(Map<String, dynamic> campaign);
   void showScheduleCampaignDialog(int campaignId);
   void cancelCampaignSchedule(int id);
   void deleteCampaign(int id, String name);
 
+
+  // Audience / email lists
+  List<dynamic> get audiencesList;
+  List<dynamic> get audienceSubscribersList;
+  int? get selectedAudienceId;
+  Future<void> loadAudiences();
+  Future<void> selectAudience(int id);
+  void showCreateAudienceDialog();
+  void showEditAudienceDialog(Map<String, dynamic> audience);
+  void showAddAudienceSubscriberDialog();
+  void showEditAudienceSubscriberDialog(Map<String, dynamic> subscriber);
+  void toggleAudienceSubscriberStatus(Map<String, dynamic> subscriber);
   // Reports
   void showArtistRemindersReport(BuildContext context);
   void showSendEmailToReportArtistsDialog(BuildContext context, List<dynamic> reportList, List<int> selectedIndices);
 
   void showErrorSnackBar(String message);
 
-  /// Full load (all tabs). Used by RefreshIndicator and initial load.
   Future<void> load();
 }

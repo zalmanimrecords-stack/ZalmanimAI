@@ -1,9 +1,12 @@
-param(
+﻿param(
     [switch]$Rebuild,
     [switch]$CleanVolumes,
     [switch]$NoFlutter,
-    [string]$FlutterDevice = "windows",
-    [string]$FlutterTarget = "lib/main.dart"
+    [switch]$NoBrowser,
+    [string]$FlutterDevice = "web-server",
+    [string]$FlutterTarget = "lib/main.dart",
+    [string]$WebHost = "127.0.0.1",
+    [int]$WebPort = 3000
 )
 
 $ErrorActionPreference = "Stop"
@@ -82,7 +85,6 @@ Invoke-Step -Name "Checking API health" -Action {
     }
 }
 
-# Prefer flutter run for the admin client so it starts the same way every time.
 if (-not $NoFlutter) {
     Assert-CommandExists -CommandName "flutter"
 
@@ -96,21 +98,42 @@ if (-not $NoFlutter) {
         }
     }
 
-    # Windows app process name (from pubspec name: labelops_client)
-    $windowsAppProcessName = "labelops_client"
-
-    Invoke-Step -Name "Closing existing Windows app (if running)" -Action {
-        $procs = Get-Process -Name $windowsAppProcessName -ErrorAction SilentlyContinue
-        if ($procs) {
-            $procs | Stop-Process -Force
-            Start-Sleep -Seconds 1
-        }
-    }
-
     Invoke-Step -Name "Launching admin app (flutter run -d $FlutterDevice)" -Action {
         $clientDir = Join-Path $root "apps\client"
         $cmd = "Set-Location -LiteralPath '$clientDir'; flutter run -d $FlutterDevice --target $FlutterTarget"
-        Start-Process -FilePath "powershell.exe" -ArgumentList "-NoExit", "-Command", $cmd
+        if ($FlutterDevice -eq "web-server") {
+            $cmd += " --web-hostname $WebHost --web-port $WebPort"
+        }
+        Start-Process -FilePath "powershell.exe" -ArgumentList "-NoExit", "-Command", $cmd | Out-Null
+    }
+
+    if ($FlutterDevice -eq "web-server" -and -not $NoBrowser) {
+        Invoke-Step -Name "Opening browser for Flutter web app" -Action {
+            $maxAttempts = 30
+            $attempt = 0
+            $webUrl = "http://${WebHost}:${WebPort}"
+            $ready = $false
+
+            while (-not $ready -and $attempt -lt $maxAttempts) {
+                $attempt++
+                try {
+                    $response = Invoke-WebRequest -Uri $webUrl -TimeoutSec 5 -UseBasicParsing
+                    if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500) {
+                        $ready = $true
+                        break
+                    }
+                }
+                catch {
+                    Start-Sleep -Seconds 2
+                }
+            }
+
+            if (-not $ready) {
+                throw "Flutter web server did not become ready on $webUrl."
+            }
+
+            Start-Process $webUrl | Out-Null
+        }
     }
 }
 
@@ -118,6 +141,10 @@ Write-Host "`nSystem restart completed." -ForegroundColor Green
 Write-Host "API: http://localhost:8000" -ForegroundColor Yellow
 Write-Host "MinIO Console: http://localhost:9001" -ForegroundColor Yellow
 if (-not $NoFlutter) {
-    Write-Host "Admin app: Flutter client launched in new window (flutter run -d $FlutterDevice)" -ForegroundColor Yellow
+    if ($FlutterDevice -eq "web-server") {
+        Write-Host "Admin app: $([string]::Format('http://{0}:{1}', $WebHost, $WebPort))" -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "Admin app: Flutter client launched in new window (flutter run -d $FlutterDevice)" -ForegroundColor Yellow
+    }
 }
-

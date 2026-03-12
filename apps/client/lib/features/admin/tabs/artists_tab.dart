@@ -1,16 +1,54 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../core/models/artist.dart';
 import '../admin_dashboard_delegate.dart';
 
 /// Artists tab: list, search, sort, add/edit/remove/merge, view releases.
-class ArtistsTab extends StatelessWidget {
+class ArtistsTab extends StatefulWidget {
   const ArtistsTab({super.key, required this.delegate});
 
   final AdminDashboardDelegate delegate;
 
+  @override
+  State<ArtistsTab> createState() => _ArtistsTabState();
+}
+
+class _ArtistsTabState extends State<ArtistsTab> {
+  final _verticalController = ScrollController();
+  final _horizontalController = ScrollController();
+
+  static const double _rowHeight = 56;
+  static const double _headerHeight = 48;
+  static const double _minTableWidth = 1180;
+
+  AdminDashboardDelegate get delegate => widget.delegate;
+
   static int _compareString(String a, String b) =>
       a.toLowerCase().compareTo(b.toLowerCase());
+
+  @override
+  void initState() {
+    super.initState();
+    _verticalController.addListener(_handleScroll);
+  }
+
+  @override
+  void dispose() {
+    _verticalController.removeListener(_handleScroll);
+    _verticalController.dispose();
+    _horizontalController.dispose();
+    super.dispose();
+  }
+
+  void _handleScroll() {
+    if (!_verticalController.hasClients) return;
+    final position = _verticalController.position;
+    if (position.pixels >= position.maxScrollExtent - 240) {
+      delegate.loadMoreArtists();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -63,14 +101,21 @@ class ArtistsTab extends StatelessWidget {
     const sideMargin = 12.0;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final width = constraints.maxWidth * 0.9;
+        final width = constraints.maxWidth * 0.95;
         final height = constraints.maxHeight * 0.9;
+        final tableWidth = math.max(width - (sideMargin * 2), _minTableWidth);
+        final brandWidth = tableWidth * 0.18;
+        final nameWidth = tableWidth * 0.18;
+        final emailWidth = tableWidth * 0.26;
+        final releaseWidth = tableWidth * 0.23;
+        final actionsWidth = tableWidth * 0.15;
+
         return Center(
           child: SizedBox(
             width: width,
             height: height,
             child: RefreshIndicator(
-              onRefresh: delegate.load,
+              onRefresh: delegate.loadArtists,
               child: Column(
                 children: [
                   Padding(
@@ -84,10 +129,7 @@ class ArtistsTab extends StatelessWidget {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       ),
                     ),
                   ),
@@ -98,10 +140,7 @@ class ArtistsTab extends StatelessWidget {
                         Expanded(
                           child: Text(
                             'Artists',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -113,9 +152,7 @@ class ArtistsTab extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         FilledButton.icon(
-                          onPressed: delegate.artistsList.isEmpty
-                              ? null
-                              : delegate.showMergeArtistsDialog,
+                          onPressed: delegate.artistsList.isEmpty ? null : delegate.showMergeArtistsDialog,
                           icon: const Icon(Icons.merge_type),
                           label: const Text('Merge artists'),
                         ),
@@ -125,232 +162,103 @@ class ArtistsTab extends StatelessWidget {
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: sideMargin),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.vertical,
+                      child: Scrollbar(
+                        controller: _horizontalController,
+                        thumbVisibility: true,
                         child: SingleChildScrollView(
+                          controller: _horizontalController,
                           scrollDirection: Axis.horizontal,
-                          child: Table(
-                            columnWidths: const {
-                              0: FixedColumnWidth(160),
-                              1: FixedColumnWidth(160),
-                              2: FixedColumnWidth(220),
-                              3: FixedColumnWidth(180),
-                              4: FixedColumnWidth(140),
-                            },
-                            defaultColumnWidth: const IntrinsicColumnWidth(),
-                            children: [
-                              TableRow(
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .surfaceContainerHighest,
+                          child: SizedBox(
+                            width: tableWidth,
+                            child: Column(
+                              children: [
+                                Container(
+                                  height: _headerHeight,
+                                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                  child: Row(
+                                    children: [
+                                      _headerCell(context, 'Brand', 0, brandWidth),
+                                      _headerCell(context, 'Full name', 1, nameWidth),
+                                      _headerCell(context, 'Email', 2, emailWidth),
+                                      _headerCell(context, 'Last Release', 3, releaseWidth),
+                                      SizedBox(width: actionsWidth),
+                                    ],
+                                  ),
                                 ),
-                                children: [
-                                  _sortableHeader(context, 'Brand', 0),
-                                  _sortableHeader(context, 'Full name', 1),
-                                  _sortableHeader(context, 'Email', 2),
-                                  _sortableHeader(
-                                    context,
-                                    'Last Release',
-                                    3,
-                                  ),
-                                  const Padding(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                      vertical: 5,
-                                    ),
-                                    child: Text(
-                                      '',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              ...sorted.map<TableRow>((a) {
-                                final artist = Artist.fromJson(
-                                  a as Map<String, dynamic>,
-                                );
-                                return TableRow(
-                                  decoration: artist.isActive
-                                      ? null
-                                      : BoxDecoration(
-                                          color: Theme.of(context)
+                                Expanded(
+                                  child: ListView.builder(
+                                    controller: _verticalController,
+                                    physics: const AlwaysScrollableScrollPhysics(),
+                                    itemCount: sorted.length + 1,
+                                    itemBuilder: (context, index) {
+                                      if (index == sorted.length) {
+                                        return Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 12),
+                                          child: _buildFooter(context),
+                                        );
+                                      }
+                                      final artist = Artist.fromJson(sorted[index] as Map<String, dynamic>);
+                                      final bgColor = artist.isActive
+                                          ? null
+                                          : Theme.of(context)
                                               .colorScheme
                                               .surfaceContainerHighest
-                                              .withValues(alpha: 0.5),
-                                        ),
-                                  children: [
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 9,
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          if (!artist.isActive)
-                                            Padding(
-                                              padding: const EdgeInsets.only(
-                                                right: 6,
+                                              .withValues(alpha: 0.5);
+                                      return Container(
+                                        height: _rowHeight,
+                                        color: bgColor,
+                                        child: Row(
+                                          children: [
+                                            _brandCell(artist, brandWidth),
+                                            _textCell(artist.fullName.isEmpty ? '-' : artist.fullName, nameWidth),
+                                            _textCell(artist.email, emailWidth),
+                                            _textCell(artist.lastReleaseDisplay, releaseWidth),
+                                            SizedBox(
+                                              width: actionsWidth,
+                                              child: Row(
+                                                mainAxisAlignment: MainAxisAlignment.end,
+                                                children: [
+                                                  _actionButton(
+                                                    icon: Icons.info_outline,
+                                                    color: Colors.grey,
+                                                    tooltip: 'Details & logs',
+                                                    onPressed: () => delegate.showArtistDetailsDialog(artist.id),
+                                                  ),
+                                                  _actionButton(
+                                                    icon: Icons.album,
+                                                    color: Colors.blue,
+                                                    tooltip: 'View releases',
+                                                    onPressed: () => delegate.showArtistReleases(
+                                                      artist.id,
+                                                      artist.displayName,
+                                                    ),
+                                                  ),
+                                                  _actionButton(
+                                                    icon: Icons.edit,
+                                                    color: Colors.orange,
+                                                    tooltip: 'Edit',
+                                                    onPressed: () => delegate.showEditArtistDialog(artist.id),
+                                                  ),
+                                                  _actionButton(
+                                                    icon: Icons.delete,
+                                                    color: Colors.red,
+                                                    tooltip: 'Remove',
+                                                    onPressed: () => delegate.removeArtist(
+                                                      artist.id,
+                                                      artist.displayName,
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
-                                              child: Chip(
-                                                label: const Text(
-                                                  'Inactive',
-                                                  style: TextStyle(fontSize: 11),
-                                                ),
-                                                padding: EdgeInsets.zero,
-                                                materialTapTargetSize:
-                                                    MaterialTapTargetSize
-                                                        .shrinkWrap,
-                                              ),
                                             ),
-                                          Expanded(
-                                            child: ClipRect(
-                                              child: SelectableText(
-                                                artist.brand.isEmpty
-                                                    ? '—'
-                                                    : artist.brand,
-                                                maxLines: 1,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 9,
-                                      ),
-                                      child: ClipRect(
-                                        child: SelectableText(
-                                          artist.fullName.isEmpty
-                                              ? '—'
-                                              : artist.fullName,
-                                          maxLines: 1,
+                                          ],
                                         ),
-                                      ),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 9,
-                                      ),
-                                      child: ClipRect(
-                                        child: SelectableText(
-                                          artist.email,
-                                          maxLines: 1,
-                                        ),
-                                      ),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 9,
-                                      ),
-                                      child: ClipRect(
-                                        child: SelectableText(
-                                          artist.lastReleaseDisplay,
-                                          maxLines: 1,
-                                        ),
-                                      ),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 2,
-                                        vertical: 5,
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.end,
-                                        children: [
-                                          IconButton(
-                                            icon: const Icon(
-                                              Icons.info_outline,
-                                              color: Colors.grey,
-                                              size: 22,
-                                            ),
-                                            tooltip: 'Details & logs',
-                                            onPressed: () =>
-                                                delegate.showArtistDetailsDialog(
-                                              artist.id,
-                                            ),
-                                            style: IconButton.styleFrom(
-                                              minimumSize: const Size(36, 36),
-                                              padding: EdgeInsets.zero,
-                                              tapTargetSize:
-                                                  MaterialTapTargetSize
-                                                      .shrinkWrap,
-                                            ),
-                                          ),
-                                          IconButton(
-                                            icon: const Icon(
-                                              Icons.album,
-                                              color: Colors.blue,
-                                              size: 22,
-                                            ),
-                                            tooltip: 'View releases',
-                                            onPressed: () =>
-                                                delegate.showArtistReleases(
-                                              artist.id,
-                                              artist.displayName,
-                                            ),
-                                            style: IconButton.styleFrom(
-                                              minimumSize: const Size(36, 36),
-                                              padding: EdgeInsets.zero,
-                                              tapTargetSize:
-                                                  MaterialTapTargetSize
-                                                      .shrinkWrap,
-                                            ),
-                                          ),
-                                          IconButton(
-                                            icon: const Icon(
-                                              Icons.edit,
-                                              color: Colors.orange,
-                                              size: 22,
-                                            ),
-                                            tooltip: 'Edit',
-                                            onPressed: () =>
-                                                delegate.showEditArtistDialog(
-                                              artist.id,
-                                            ),
-                                            style: IconButton.styleFrom(
-                                              minimumSize: const Size(36, 36),
-                                              padding: EdgeInsets.zero,
-                                              tapTargetSize:
-                                                  MaterialTapTargetSize
-                                                      .shrinkWrap,
-                                            ),
-                                          ),
-                                          IconButton(
-                                            icon: const Icon(
-                                              Icons.delete,
-                                              color: Colors.red,
-                                              size: 22,
-                                            ),
-                                            tooltip: 'Remove',
-                                            onPressed: () =>
-                                                delegate.removeArtist(
-                                              artist.id,
-                                              artist.displayName,
-                                            ),
-                                            style: IconButton.styleFrom(
-                                              minimumSize: const Size(36, 36),
-                                              padding: EdgeInsets.zero,
-                                              tapTargetSize:
-                                                  MaterialTapTargetSize
-                                                      .shrinkWrap,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              }),
-                            ],
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -365,35 +273,112 @@ class ArtistsTab extends StatelessWidget {
     );
   }
 
-  Widget _sortableHeader(
-    BuildContext context,
-    String label,
-    int columnIndex,
-  ) {
+  Widget _buildFooter(BuildContext context) {
+    if (delegate.artistsLoadingMore) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (delegate.artistsHasMore) {
+      return Text(
+        'Scroll down to load more artists',
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+          fontSize: 12,
+        ),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
+  Widget _headerCell(BuildContext context, String label, int columnIndex, double width) {
     final isActive = delegate.artistsSortColumn == columnIndex;
     return InkWell(
       onTap: () => delegate.setArtistsSort(
         columnIndex,
         isActive ? !delegate.artistsSortAsc : true,
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            if (isActive)
-              Icon(
-                delegate.artistsSortAsc
-                    ? Icons.arrow_drop_up
-                    : Icons.arrow_drop_down,
-                size: 20,
+      child: SizedBox(
+        width: width,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+          child: Row(
+            children: [
+              Flexible(
+                child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
               ),
+              if (isActive)
+                Icon(
+                  delegate.artistsSortAsc ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+                  size: 20,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _brandCell(Artist artist, double width) {
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          children: [
+            if (!artist.isActive)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Chip(
+                  label: const Text('Inactive', style: TextStyle(fontSize: 11)),
+                  padding: EdgeInsets.zero,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            Expanded(
+              child: Text(
+                artist.brand.isEmpty ? '-' : artist.brand,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _textCell(String text, double width) {
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            text.isEmpty ? '-' : text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _actionButton({
+    required IconData icon,
+    required Color color,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      width: 40,
+      height: 40,
+      child: IconButton(
+        icon: Icon(icon, color: color, size: 20),
+        tooltip: tooltip,
+        onPressed: onPressed,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+        visualDensity: VisualDensity.compact,
       ),
     );
   }
