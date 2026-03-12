@@ -111,7 +111,7 @@ String _applyReminderTemplate(String template, Map<String, String> values) {
   return output;
 }
 
-bool _looksLikeHtml(String value) => RegExp(r'<[a-zA-Z][\\s\\S]*>').hasMatch(value);
+bool _looksLikeHtml(String value) => RegExp(r'<[a-zA-Z][\s\S]*>').hasMatch(value);
 
 String _renderReminderHtml(String value, Map<String, String> values) {
   final rendered = _applyReminderTemplate(value, values);
@@ -123,7 +123,7 @@ String _renderReminderHtml(String value, Map<String, String> values) {
 
 String _htmlToPlainText(String value) {
   return value
-      .replaceAll(RegExp(r'(?i)<br\\s*/?>'), '\n')
+      .replaceAll(RegExp(r'(?i)<br\s*/?>'), '\n')
       .replaceAll(RegExp(r'(?i)</p>'), '\n\n')
       .replaceAll(RegExp(r'(?i)</div>'), '\n')
       .replaceAll(RegExp(r'(?i)</li>'), '\n')
@@ -397,6 +397,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         break;
       case 2:
         if (!_loadedCampaigns) _loadCampaigns();
+        break;
+      case 3:
+        if (!_loadedAudiences) _loadAudiences();
         break;
     }
   }
@@ -2501,8 +2504,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   title: Text(name),
                   subtitle: Text(
                     'Status: $status'
-                    '${scheduledAt != null ? ' ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Scheduled: $scheduledAt' : ''}'
-                    '${sentAt != null ? ' ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Sent: $sentAt' : ''}',
+                    '${scheduledAt != null ? ' ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Scheduled: $scheduledAt' : ''}'
+                    '${sentAt != null ? ' ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Sent: $sentAt' : ''}',
                   ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -4302,6 +4305,8 @@ class _ArtistLogsTabState extends State<_ArtistLogsTab> {
     );
   }
 }
+
+
 
 
 

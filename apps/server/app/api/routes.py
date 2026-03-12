@@ -30,6 +30,7 @@ from app.models.models import (
     release_artists_table,
     SocialConnection,
     User,
+    UserIdentity,
 )
 from app.schemas.schemas import (
     ArtistActivityLogOut,
@@ -56,6 +57,10 @@ from app.schemas.schemas import (
     TaskOut,
     TokenResponse,
     UserContext,
+    UserCreate,
+    UserIdentityOut,
+    UserOut,
+    UserUpdate,
 )
 from app.services.auth import create_access_token, decode_token, hash_password, permissions_for_role, verify_password
 from app.services.email_service import (
@@ -418,90 +423,92 @@ def _redirect_with_params(base_url: str, **params: str) -> RedirectResponse:
 
 @router.on_event("startup")
 def init_db() -> None:
-    # Ensure all ORM models are loaded so create_all creates every table (including social_connections).
     Base.metadata.create_all(bind=engine)
 
-    # Add artists.extra_json if missing (migration for existing DBs).
-    with engine.connect() as conn:
-        try:
-            from sqlalchemy import inspect as sa_inspect
-            insp = sa_inspect(engine)
-            if "artists" in insp.get_table_names():
-                cols = [c["name"] for c in insp.get_columns("artists")]
-                if "extra_json" not in cols:
-                    conn.execute(text("ALTER TABLE artists ADD COLUMN extra_json TEXT"))
-                    conn.commit()
-                if "is_active" not in cols:
-                    conn.execute(text("ALTER TABLE artists ADD COLUMN is_active BOOLEAN DEFAULT true NOT NULL"))
-                    conn.commit()
-            if "social_connections" in insp.get_table_names():
-                sc_cols = [c["name"] for c in insp.get_columns("social_connections")]
-                if "pkce_code_verifier" not in sc_cols:
-                    conn.execute(text("ALTER TABLE social_connections ADD COLUMN pkce_code_verifier VARCHAR(255)"))
-                    conn.commit()
-                if "one_time_token" not in sc_cols:
-                    conn.execute(text("ALTER TABLE social_connections ADD COLUMN one_time_token VARCHAR(255)"))
-                    conn.commit()
-                if "one_time_expires_at" not in sc_cols:
-                    conn.execute(text("ALTER TABLE social_connections ADD COLUMN one_time_expires_at TIMESTAMP WITH TIME ZONE"))
-                    conn.commit()
-        except Exception as e:
-            logging.getLogger(__name__).warning("DB migration (artists/social_connections): %s", e)
-            pass
-    # Idempotent migration for social_connections (PostgreSQL 9.6+ ADD COLUMN IF NOT EXISTS)
     try:
         with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS extra_json TEXT"))
+            conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true NOT NULL"))
             conn.execute(text("ALTER TABLE social_connections ADD COLUMN IF NOT EXISTS pkce_code_verifier VARCHAR(255)"))
             conn.execute(text("ALTER TABLE social_connections ADD COLUMN IF NOT EXISTS one_time_token VARCHAR(255)"))
             conn.execute(text("ALTER TABLE social_connections ADD COLUMN IF NOT EXISTS one_time_expires_at TIMESTAMP WITH TIME ZONE"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true NOT NULL"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP WITH TIME ZONE"))
+            conn.execute(text("ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL"))
             conn.commit()
     except Exception as e:
-        logging.getLogger(__name__).warning("DB migration (social_connections IF NOT EXISTS): %s", e)
+        logging.getLogger(__name__).warning("DB migration (auth/users): %s", e)
 
-    # Seed first admin/artist users for MVP onboarding.
     with Session(engine) as db:
         admin = db.query(User).filter(User.email == "admin@label.local").first()
-        if not admin:
+        artist = db.query(Artist).filter(Artist.email == "artist@label.local").first()
+        if not artist:
             artist = Artist(name="Demo Artist", email="artist@label.local", notes="Seed artist", is_active=True)
             db.add(artist)
             db.flush()
-
+        if not admin:
             db.add(
                 User(
                     email="admin@label.local",
+                    full_name="System Admin",
                     password_hash=hash_password("admin123"),
                     role="admin",
                     artist_id=None,
+                    is_active=True,
                 )
             )
+        artist_user = db.query(User).filter(User.email == "artist@label.local").first()
+        if not artist_user:
             db.add(
                 User(
                     email="artist@label.local",
+                    full_name="Demo Artist",
                     password_hash=hash_password("artist123"),
                     role="artist",
                     artist_id=artist.id,
+                    is_active=True,
                 )
             )
-            db.commit()
+        db.commit()
+
 
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
 ) -> UserContext:
     try:
         payload = decode_token(credentials.credentials)
     except ValueError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
-    return UserContext(
-        user_id=int(payload["sub"]),
-        role=str(payload["role"]),
-        artist_id=payload.get("artist_id"),
+
+    user = (
+        db.query(User)
+        .options(joinedload(User.artist), joinedload(User.identities))
+        .filter(User.id == int(payload["sub"]))
+        .first()
     )
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is inactive or missing")
+    return UserContext(
+        user_id=user.id,
+        role=user.role,
+        email=user.email,
+        full_name=user.full_name,
+        permissions=permissions_for_role(user.role),
+        artist_id=user.artist_id,
+        is_active=user.is_active,
+    )
+
 
 
 def require_admin(user: UserContext) -> None:
     if user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
+
 
 
 def require_artist(user: UserContext) -> None:
@@ -511,18 +518,39 @@ def require_artist(user: UserContext) -> None:
 
 @router.post("/auth/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
-    user = db.query(User).filter(User.email == payload.email).first()
-    if not user or not verify_password(payload.password, user.password_hash):
+    user = (
+        db.query(User)
+        .options(joinedload(User.artist), joinedload(User.identities))
+        .filter(func.lower(User.email) == payload.email.lower())
+        .first()
+    )
+    if not user or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    token = create_access_token(str(user.id), user.role, user.artist_id)
-    return TokenResponse(access_token=token, role=user.role)
+    _touch_user_login(db, user)
+    return _user_token_response(user)
 
 
-@router.get("/auth/google/start")
-def start_google_login(request: Request, redirect_uri: str) -> dict:
-    state = _build_google_state(purpose="login", app_redirect=redirect_uri)
-    return {"auth_url": _build_google_auth_url(request=request, state=state)}
+@router.get("/auth/me", response_model=UserOut)
+def get_me(
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> UserOut:
+    current_user = (
+        db.query(User)
+        .options(joinedload(User.artist), joinedload(User.identities))
+        .filter(User.id == user.user_id)
+        .first()
+    )
+    if not current_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return _serialize_user(current_user)
+
+
+@router.get("/auth/{provider}/start")
+def start_provider_login(provider: str, request: Request, redirect_uri: str) -> dict:
+    state = _build_oauth_state(provider=provider, purpose="login", app_redirect=redirect_uri)
+    return {"auth_url": _build_provider_auth_url(provider, request=request, state=state)}
 
 
 @router.get("/admin/google-mail/start")
@@ -532,32 +560,33 @@ def start_google_mail_connect(
     user: UserContext = Depends(get_current_user),
 ) -> dict:
     require_admin(user)
-    state = _build_google_state(purpose="connect_gmail", app_redirect=redirect_uri, user_id=user.user_id)
+    state = _build_oauth_state(provider="google", purpose="connect_gmail", app_redirect=redirect_uri, user_id=user.user_id)
     return {"auth_url": _build_google_auth_url(request=request, state=state)}
 
 
-@router.get("/auth/google/callback", name="google_auth_callback")
-def google_auth_callback(
+@router.get("/auth/{provider}/callback", name="oauth_callback")
+def oauth_callback(
+    provider: str,
     request: Request,
     state: str,
     code: str | None = None,
     error: str | None = None,
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    state_payload = _decode_google_state(state)
+    state_payload = _decode_oauth_state(state)
     app_redirect = state_payload.get("app_redirect") or settings.oauth_success_redirect or "/"
     if error:
-        return _redirect_with_params(app_redirect, google_error=error)
+        return _redirect_with_params(app_redirect, social_error=error, provider=provider)
     if not code:
-        return _redirect_with_params(app_redirect, google_error="missing_code")
+        return _redirect_with_params(app_redirect, social_error="missing_code", provider=provider)
 
-    token_payload = _exchange_google_code(request=request, code=code)
+    token_payload = _exchange_provider_code(provider, request=request, code=code)
     access_token = str(token_payload.get("access_token") or "")
     refresh_token = token_payload.get("refresh_token")
     scope_value = str(token_payload.get("scope") or "")
-    scopes = [s for s in scope_value.split(" ") if s]
-    profile = _fetch_google_userinfo(access_token)
-    email = str(profile.get("email") or "").strip()
+    scopes = [s for s in scope_value.replace(",", " ").split(" ") if s]
+    provider_subject, email, display_name = _fetch_provider_profile(provider, access_token)
+
     if state_payload.get("purpose") == "connect_gmail":
         _upsert_google_mail_connection(
             db,
@@ -568,8 +597,15 @@ def google_auth_callback(
         )
         return _redirect_with_params(app_redirect, gmail_connected="1", gmail_email=email)
 
-    user = _find_or_create_google_user(db, email=email)
-    if user.role == "admin":
+    user = _find_or_create_oauth_user(
+        db,
+        provider=provider,
+        provider_subject=provider_subject,
+        email=email,
+        display_name=display_name,
+    )
+    _touch_user_login(db, user)
+    if provider == "google" and user.role == "admin":
         _upsert_google_mail_connection(
             db,
             email=email,
@@ -577,9 +613,89 @@ def google_auth_callback(
             refresh_token=refresh_token,
             scopes=scopes,
         )
-    app_token = create_access_token(str(user.id), user.role, user.artist_id)
-    return _redirect_with_params(app_redirect, token=app_token, role=user.role, google_email=email)
+    app_token = create_access_token(str(user.id))
+    return _redirect_with_params(
+        app_redirect,
+        token=app_token,
+        role=user.role,
+        email=user.email,
+        full_name=user.full_name or "",
+        provider=provider,
+    )
 
+
+@router.get("/admin/users", response_model=list[UserOut])
+def list_users(
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> list[UserOut]:
+    require_admin(user)
+    users = db.query(User).options(joinedload(User.artist), joinedload(User.identities)).order_by(User.created_at.desc(), User.id.desc()).all()
+    return [_serialize_user(item) for item in users]
+
+
+@router.post("/admin/users", response_model=UserOut)
+def create_user(
+    payload: UserCreate,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> UserOut:
+    require_admin(user)
+    email = payload.email.lower()
+    if db.query(User).filter(func.lower(User.email) == email).first():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User email already exists")
+    role = _validate_user_role(payload.role)
+    if payload.artist_id is not None and not db.query(Artist).filter(Artist.id == payload.artist_id).first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    user_row = User(
+        email=email,
+        full_name=(payload.full_name or "").strip() or None,
+        password_hash=hash_password(payload.password) if payload.password else None,
+        role=role,
+        artist_id=payload.artist_id,
+        is_active=payload.is_active,
+    )
+    db.add(user_row)
+    db.commit()
+    db.refresh(user_row)
+    return _serialize_user(user_row)
+
+
+@router.patch("/admin/users/{target_user_id}", response_model=UserOut)
+def update_user(
+    target_user_id: int,
+    payload: UserUpdate,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> UserOut:
+    require_admin(user)
+    target = db.query(User).options(joinedload(User.artist), joinedload(User.identities)).filter(User.id == target_user_id).first()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if payload.email is not None:
+        new_email = payload.email.lower()
+        existing = db.query(User).filter(func.lower(User.email) == new_email, User.id != target_user_id).first()
+        if existing:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User email already exists")
+        target.email = new_email
+    if payload.full_name is not None:
+        target.full_name = payload.full_name.strip() or None
+    if payload.password is not None:
+        target.password_hash = hash_password(payload.password) if payload.password else None
+    if payload.role is not None:
+        target.role = _validate_user_role(payload.role)
+    if payload.artist_id is not None:
+        artist = db.query(Artist).filter(Artist.id == payload.artist_id).first()
+        if not artist:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+        target.artist_id = artist.id
+    if payload.is_active is not None:
+        if target.id == user.user_id and not payload.is_active:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot deactivate your own user")
+        target.is_active = payload.is_active
+    db.commit()
+    db.refresh(target)
+    return _serialize_user(target)
 
 
 @router.get("/artists", response_model=list[ArtistOut])
@@ -1781,6 +1897,9 @@ def cancel_campaign_schedule_route(
     if not campaign:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Campaign not found or not scheduled")
     return CampaignOut.from_campaign(campaign)
+
+
+
 
 
 

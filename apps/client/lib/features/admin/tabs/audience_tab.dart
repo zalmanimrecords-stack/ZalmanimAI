@@ -13,7 +13,13 @@ class AudienceTab extends StatelessWidget {
     final audiences = delegate.audiencesList.cast<Map<String, dynamic>>();
     final subscribers = delegate.audienceSubscribersList.cast<Map<String, dynamic>>();
     final selectedAudienceId = delegate.selectedAudienceId;
-    final selectedAudience = audiences.where((a) => a['id'] == selectedAudienceId).cast<Map<String, dynamic>>().firstOrNull;
+    Map<String, dynamic>? selectedAudience;
+    for (final audience in audiences) {
+      if (audience['id'] == selectedAudienceId) {
+        selectedAudience = audience;
+        break;
+      }
+    }
 
     return RefreshIndicator(
       onRefresh: delegate.loadAudiences,
@@ -159,12 +165,16 @@ class AudienceTab extends StatelessWidget {
                       ...subscribers.map((subscriber) {
                         final status = (subscriber['status'] ?? '').toString();
                         final unsubscribeUrl = (subscriber['unsubscribe_url'] ?? '').toString();
+                        final identity = ((subscriber['full_name'] ?? subscriber['email'] ?? '?').toString()).trim();
+                        final avatarLetter = identity.isEmpty ? '?' : identity[0].toUpperCase();
                         return ListTile(
                           contentPadding: EdgeInsets.zero,
-                          leading: CircleAvatar(
-                            child: Text(((subscriber['full_name'] ?? subscriber['email'] ?? '?').toString()).substring(0, 1).toUpperCase()),
+                          leading: CircleAvatar(child: Text(avatarLetter)),
+                          title: Text(
+                            ((subscriber['full_name'] ?? '').toString()).isEmpty
+                                ? subscriber['email'].toString()
+                                : subscriber['full_name'].toString(),
                           ),
-                          title: Text(((subscriber['full_name'] ?? '').toString()).isEmpty ? subscriber['email'].toString() : subscriber['full_name'].toString()),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
