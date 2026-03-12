@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import 'core/api_client.dart';
 import 'core/app_config.dart';
@@ -12,7 +12,6 @@ void main() {
   runApp(const LabelOpsApp());
 }
 
-/// API base URL for requests: app_config (or dart-define) + "api" if needed.
 String get _apiBaseUrl {
   const env = String.fromEnvironment('API_BASE_URL', defaultValue: '');
   final base = env.isNotEmpty ? env : apiBaseUrl;
@@ -44,12 +43,23 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
     final params = Uri.base.queryParameters;
     final token = params['token'];
     final role = params['role'];
-    final googleError = params['google_error'];
-    if (googleError != null && googleError.isNotEmpty) {
-      _authError = 'Google sign-in failed: $googleError';
+    final socialError = params['social_error'];
+    final provider = params['provider'];
+    final email = params['email'];
+    final fullName = params['full_name'];
+    if (socialError != null && socialError.isNotEmpty) {
+      final providerLabel = (provider == null || provider.isEmpty)
+          ? 'Social'
+          : '${provider[0].toUpperCase()}${provider.substring(1)}';
+      _authError = '$providerLabel sign-in failed: $socialError';
     }
     if (token != null && token.isNotEmpty && role != null && role.isNotEmpty) {
-      final session = AuthSession(token: token, role: role);
+      final session = AuthSession(
+        token: token,
+        role: role,
+        email: email,
+        fullName: fullName,
+      );
       await saveSession(session);
       return session;
     }
@@ -74,7 +84,7 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
           }
           final session = snapshot.data;
           if (session != null) {
-            if (session.role == 'admin') {
+            if (session.role == 'admin' || session.role == 'manager') {
               return AdminDashboardPage(apiClient: _apiClient, token: session.token);
             }
             return ArtistDashboardPage(apiClient: _apiClient, token: session.token);
@@ -85,3 +95,4 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
     );
   }
 }
+

@@ -3,6 +3,7 @@
 *.pyo
 *.pyd
 .env
+deploy/.env.production
 .DS_Store
 
 apps/server/storage/uploads/*

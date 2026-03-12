@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -25,6 +25,7 @@ class _LoginPageState extends State<LoginPage> {
   bool rememberMe = true;
   bool loading = false;
   bool googleLoading = false;
+  bool facebookLoading = false;
   String? error;
 
   @override
@@ -92,7 +93,7 @@ class _LoginPageState extends State<LoginPage> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: loading || googleLoading ? null : _login,
+                      onPressed: loading || googleLoading || facebookLoading ? null : _login,
                       child: loading
                           ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
                           : const Text('Login'),
@@ -102,11 +103,22 @@ class _LoginPageState extends State<LoginPage> {
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
-                      onPressed: loading || googleLoading ? null : _loginWithGoogle,
+                      onPressed: loading || googleLoading || facebookLoading ? null : _loginWithGoogle,
                       icon: googleLoading
                           ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.login),
                       label: const Text('Continue with Google'),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: loading || googleLoading || facebookLoading ? null : _loginWithFacebook,
+                      icon: facebookLoading
+                          ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.facebook),
+                      label: const Text('Continue with Facebook'),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -144,22 +156,51 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _loginWithGoogle() async {
+    await _startSocialLogin(
+      loader: () => googleLoading = true,
+      reset: () => googleLoading = false,
+      providerLabel: 'Google',
+      getAuthUrl: () => widget.apiClient.startGoogleLogin(
+        redirectUri: Uri.base.replace(queryParameters: const {}, fragment: '').toString(),
+      ),
+    );
+  }
+
+  Future<void> _loginWithFacebook() async {
+    await _startSocialLogin(
+      loader: () => facebookLoading = true,
+      reset: () => facebookLoading = false,
+      providerLabel: 'Facebook',
+      getAuthUrl: () => widget.apiClient.startFacebookLogin(
+        redirectUri: Uri.base.replace(queryParameters: const {}, fragment: '').toString(),
+      ),
+    );
+  }
+
+  Future<void> _startSocialLogin({
+    required void Function() loader,
+    required void Function() reset,
+    required String providerLabel,
+    required Future<String> Function() getAuthUrl,
+  }) async {
     setState(() {
-      googleLoading = true;
+      loader();
       error = null;
     });
     try {
-      final authUrl = await widget.apiClient.startGoogleLogin(redirectUri: Uri.base.replace(queryParameters: const {}, fragment: '').toString());
+      final authUrl = await getAuthUrl();
       final launched = await launchUrl(Uri.parse(authUrl), webOnlyWindowName: '_self');
       if (!launched && mounted) {
-        setState(() => error = 'Could not open Google sign-in.');
+        setState(() => error = 'Could not open $providerLabel sign-in.');
       }
     } catch (e) {
       if (mounted) {
         setState(() => error = e.toString());
       }
     } finally {
-      if (mounted) setState(() => googleLoading = false);
+      if (mounted) {
+        setState(reset);
+      }
     }
   }
 
@@ -171,7 +212,7 @@ class _LoginPageState extends State<LoginPage> {
       await clearSession();
     }
     if (!mounted) return;
-    if (session.role == 'admin') {
+    if (session.role == 'admin' || session.role == 'manager') {
       Navigator.of(context).pushReplacement(MaterialPageRoute(
         builder: (_) => AdminDashboardPage(apiClient: widget.apiClient, token: session.token),
       ));

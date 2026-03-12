@@ -396,6 +396,67 @@ class ArtistActivityLogOut(BaseModel):
     created_at: datetime
 
 
+class DemoSubmissionCreate(BaseModel):
+    artist_name: str
+    email: EmailStr
+    contact_name: str | None = None
+    phone: str | None = None
+    genre: str | None = None
+    city: str | None = None
+    message: str | None = None
+    links: list[str] = []
+    fields: dict = {}
+    source: str = "wordpress_demo_form"
+    source_site_url: str | None = None
+
+
+class DemoSubmissionUpdate(BaseModel):
+    artist_name: str | None = None
+    email: EmailStr | None = None
+    contact_name: str | None = None
+    phone: str | None = None
+    genre: str | None = None
+    city: str | None = None
+    message: str | None = None
+    links: list[str] | None = None
+    fields: dict | None = None
+    status: str | None = None
+    admin_notes: str | None = None
+    approval_subject: str | None = None
+    approval_body: str | None = None
+    artist_id: int | None = None
+
+
+class DemoSubmissionApproveRequest(BaseModel):
+    approval_subject: str | None = None
+    approval_body: str | None = None
+    create_artist: bool = True
+    send_email: bool = True
+
+
+class DemoSubmissionOut(BaseModel):
+    id: int
+    artist_name: str
+    email: str
+    contact_name: str | None
+    phone: str | None
+    genre: str | None
+    city: str | None
+    message: str | None
+    links: list[str] = []
+    fields: dict = {}
+    source: str
+    source_site_url: str | None
+    status: str
+    admin_notes: str | None
+    approval_subject: str | None
+    approval_body: str | None
+    approval_email_sent_at: datetime | None
+    artist_id: int | None
+    created_at: datetime
+    updated_at: datetime | None
+
+
 # Campaigns (unified: social + Mailchimp + WordPress)
 class CampaignTargetIn(BaseModel):
     channel_type: str  # social | mailchimp | wordpress
@@ -634,4 +695,43 @@ class SystemSettingsMailUpdate(BaseModel):
 
 
 
+
+
+
+class AgentPlanRequest(BaseModel):
+    text: str
+    max_agents: int = 4
+
+
+class AgentDefinitionOut(BaseModel):
+    key: str
+    title: str
+    role: str
+    description: str
+    capabilities: list[str] = []
+    handoff_triggers: list[str] = []
+
+
+class AgentSupervisorOut(BaseModel):
+    key: str
+    title: str
+    role: str
+    description: str
+
+
+class AgentDelegationOut(BaseModel):
+    work_item: str
+    agent_key: str
+    agent_title: str
+    reason: str
+    confidence: float
+
+
+class AgentPlanOut(BaseModel):
+    supervisor: AgentSupervisorOut
+    summary: str
+    primary_agent_key: str
+    primary_agent_title: str
+    delegations: list[AgentDelegationOut] = []
+    agents: list[AgentDefinitionOut] = []
 

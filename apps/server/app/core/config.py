@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     smtp_from_email: str = ""  # Default "From" address; fallback to smtp_user if empty
     emails_per_hour: int = 30  # Max emails per hour; 0 = no limit (not recommended)
     redis_url: str = "redis://redis:6379/0"  # Used for rate-limit counter
+    demo_submission_token: str = ""  # Optional shared secret for public demo form ingestion
 
 
 settings = Settings()

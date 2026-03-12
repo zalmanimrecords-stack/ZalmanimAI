@@ -1,4 +1,4 @@
-from datetime import date
+﻿from datetime import date
 
 from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Table, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -64,6 +64,33 @@ class ArtistActivityLog(Base):
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     artist: Mapped["Artist"] = relationship(back_populates="activity_logs")
+
+
+class DemoSubmission(Base):
+    __tablename__ = "demo_submissions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    artist_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    contact_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    phone: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    genre: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    links_json: Mapped[str] = mapped_column(Text, default="[]")
+    fields_json: Mapped[str] = mapped_column(Text, default="{}")
+    source: Mapped[str] = mapped_column(String(80), default="wordpress_demo_form", nullable=False)
+    source_site_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="demo", nullable=False, index=True)
+    admin_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approval_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    approval_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approval_email_sent_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    artist_id: Mapped[int | None] = mapped_column(ForeignKey("artists.id"), nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    artist: Mapped["Artist"] = relationship()
 
 
 class User(Base):
@@ -277,5 +304,7 @@ class CampaignDelivery(Base):
 
     campaign: Mapped["Campaign"] = relationship(back_populates="deliveries")
     target: Mapped["CampaignTarget"] = relationship(back_populates="deliveries")
+
+
 
 

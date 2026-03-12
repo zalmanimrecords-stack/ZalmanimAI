@@ -1,0 +1,85 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-labelops}
+      POSTGRES_USER: ${POSTGRES_USER:-label}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env.production}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-label} -d ${POSTGRES_DB:-labelops}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+
+  api:
+    build:
+      context: ./apps/server
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    restart: unless-stopped
+    env_file:
+      - ./deploy/.env.production
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-label}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-labelops}
+      REDIS_URL: redis://redis:6379/0
+      UPLOAD_DIR: /app/storage/uploads
+    volumes:
+      - server_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    expose:
+      - "8000"
+
+  worker:
+    build:
+      context: ./apps/server
+    command: ["python", "worker.py"]
+    restart: unless-stopped
+    env_file:
+      - ./deploy/.env.production
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-label}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-labelops}
+      REDIS_URL: redis://redis:6379/0
+      UPLOAD_DIR: /app/storage/uploads
+    volumes:
+      - server_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  web:
+    build:
+      context: .
+      dockerfile: ./deploy/web/Dockerfile
+      args:
+        API_BASE_URL: ${API_BASE_URL:-https://lmapi.zalmanim.com/}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "80:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:
+  redis_data:
+  server_storage:

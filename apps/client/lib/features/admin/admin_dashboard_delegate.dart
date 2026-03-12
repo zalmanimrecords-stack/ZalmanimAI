@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
 
@@ -29,6 +29,13 @@ abstract class AdminDashboardDelegate {
   void removeArtist(int id, String name);
   void showMergeArtistsDialog();
   void showArtistReleases(int id, String name);
+
+  // Demos
+  List<dynamic> get demoSubmissionsList;
+  Future<void> loadDemoSubmissions();
+  void showDemoDetailsDialog(Map<String, dynamic> submission);
+  void showApproveDemoDialog(Map<String, dynamic> submission);
+  void updateDemoStatus(Map<String, dynamic> submission, String status);
 
   // Releases + catalog
   List<dynamic> get adminReleasesList;
@@ -76,6 +83,7 @@ abstract class AdminDashboardDelegate {
   Future<void> loadAudiences();
   Future<void> selectAudience(int id);
   void showCreateAudienceDialog();
+  void importMailchimpAudienceCsv();
   void showEditAudienceDialog(Map<String, dynamic> audience);
   void showAddAudienceSubscriberDialog();
   void showEditAudienceSubscriberDialog(Map<String, dynamic> subscriber);
@@ -88,3 +96,5 @@ abstract class AdminDashboardDelegate {
 
   Future<void> load();
 }
+
+

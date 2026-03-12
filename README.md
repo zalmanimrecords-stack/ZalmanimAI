@@ -1,4 +1,4 @@
-﻿# LabelOps (MVP Foundation)
+# LabelOps (MVP Foundation)
 
 ## Pushing to GitHub
 
@@ -105,6 +105,8 @@ Social connections use a **browser-only OAuth flow**: the server does not call t
 - **Advanced connectors hub:** `GET /api/admin/connectors/types`, `GET /api/admin/connectors`, `GET /api/admin/connectors/{id}`, `POST /api/admin/connectors`, `PATCH /api/admin/connectors/{id}`, `DELETE /api/admin/connectors/{id}`, `POST /api/admin/connectors/{id}/test` (admin)
 - **Mailchimp lists:** `GET /api/admin/connectors/{id}/mailchimp/lists` (admin)
 - **Campaigns:** `GET /api/admin/campaigns`, `GET /api/admin/campaigns/{id}`, `POST /api/admin/campaigns`, `PATCH /api/admin/campaigns/{id}`, `DELETE /api/admin/campaigns/{id}`, `POST /api/admin/campaigns/{id}/schedule`, `POST /api/admin/campaigns/{id}/cancel` (admin)
+- `GET /api/admin/agents/registry` (admin) - list available specialist agents and their responsibilities
+- `POST /api/admin/agents/plan` (admin) - supervisor decomposes free-text work into specialist delegations
 - `GET /health`
 
 ## Advanced Connectors Hub
@@ -130,6 +132,14 @@ The server sends email **via SMTP** with a **per-hour rate limit** to reduce the
 - `REDIS_URL` - used for the rate-limit counter (default `redis://redis:6379/0`)
 
 Admin endpoints: `GET /api/admin/email/rate-limit` (status) and `POST /api/admin/email/send` (send one email). When the hourly limit is reached, send returns `429 Too Many Requests`.
+
+## Demo Intake Flow
+
+- Public intake endpoint: `POST /api/public/demo-submissions`
+- Admin review endpoints: `GET /api/admin/demo-submissions`, `PATCH /api/admin/demo-submissions/{id}`, `POST /api/admin/demo-submissions/{id}/approve`
+- Admin portal now includes a **Demos** tab for review, status changes, and approval email editing before send.
+- Optional env var: `DEMO_SUBMISSION_TOKEN` - if set, public demo submissions must include header `x-demo-token`.
+- A WordPress plugin lives at [apps/wordpress-plugin/zalmanim-demo-addon/zalmanim-demo-addon.php](/C:/Users/SimonRosenfeld/ZalmanimAI/apps/wordpress-plugin/zalmanim-demo-addon/zalmanim-demo-addon.php). It provides shortcode `[zalmanim_demo_form]` plus a configurable JSON schema so the WP form can mirror your Google Form layout/fields.
 
 ## Unified Campaigns
 
@@ -174,3 +184,4 @@ Useful flags:
 - `-FlutterTarget lib/main.dart` : entry target for Flutter
 - `-WebHost 127.0.0.1` : host for `web-server`
 - `-WebPort 3000` : port for `web-server`
+

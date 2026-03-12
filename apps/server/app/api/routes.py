@@ -25,6 +25,7 @@ from app.models.models import (
     AutomationTask,
     Campaign,
     CatalogTrack,
+    DemoSubmission,
     HubConnector,
     Release,
     release_artists_table,
@@ -33,6 +34,9 @@ from app.models.models import (
     UserIdentity,
 )
 from app.schemas.schemas import (
+    AgentDefinitionOut,
+    AgentPlanOut,
+    AgentPlanRequest,
     ArtistActivityLogOut,
     ArtistCreate,
     ArtistDashboard,
@@ -42,6 +46,10 @@ from app.schemas.schemas import (
     CampaignOut,
     CampaignUpdate,
     CatalogTrackOut,
+    DemoSubmissionApproveRequest,
+    DemoSubmissionCreate,
+    DemoSubmissionOut,
+    DemoSubmissionUpdate,
     EmailRateLimitStatus,
     ScheduleCampaignRequest,
     SendEmailRequest,
@@ -71,6 +79,7 @@ from app.services.email_service import (
     test_smtp_connection,
 )
 from app.services.mail_settings import build_mail_config, get_effective_mail_config_for_api, save_mail_settings
+from app.services.agent_supervisor import build_agent_plan, get_agent_registry
 from app.services.campaign_service import (
     cancel_schedule,
     create_campaign as create_campaign_svc,
@@ -94,6 +103,7 @@ _GOOGLE_AUTH_SCOPES = [
 
 _FACEBOOK_AUTH_SCOPES = ["email", "public_profile"]
 _ALLOWED_USER_ROLES = {"admin", "manager", "artist"}
+_ALLOWED_DEMO_STATUSES = {"demo", "in_review", "approved", "rejected"}
 
 
 def _oauth_callback_url(request: Request, provider: str) -> str:
@@ -421,6 +431,96 @@ def _redirect_with_params(base_url: str, **params: str) -> RedirectResponse:
     url = f"{base_url}{separator}{urlencode(clean_params)}" if clean_params else base_url
     return RedirectResponse(url=url)
 
+
+def _default_demo_approval_subject(artist_name: str) -> str:
+    safe_name = (artist_name or "there").strip()
+    return f"Your demo was approved, {safe_name}"
+
+
+def _default_demo_approval_body(artist_name: str) -> str:
+    safe_name = (artist_name or "there").strip()
+    return (
+        f"Hi {safe_name},\n\n"
+        "Thanks for sending your demo.\n\n"
+        "We reviewed it and would like to move forward with you. "
+        "Please reply to this email so we can continue the next steps.\n\n"
+        "Best regards"
+    )
+
+
+def _normalize_demo_status(value: str | None, *, allow_empty: bool = False) -> str | None:
+    raw = (value or "").strip().lower()
+    if not raw:
+        return None if allow_empty else "demo"
+    if raw not in _ALLOWED_DEMO_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported demo status: {value}",
+        )
+    return raw
+
+
+def _serialize_demo_submission(item: DemoSubmission) -> DemoSubmissionOut:
+    try:
+        links = json.loads(item.links_json or "[]") or []
+    except (json.JSONDecodeError, TypeError):
+        links = []
+    try:
+        fields = json.loads(item.fields_json or "{}") or {}
+    except (json.JSONDecodeError, TypeError):
+        fields = {}
+    return DemoSubmissionOut(
+        id=item.id,
+        artist_name=item.artist_name,
+        email=item.email,
+        contact_name=item.contact_name,
+        phone=item.phone,
+        genre=item.genre,
+        city=item.city,
+        message=item.message,
+        links=[str(link).strip() for link in links if str(link).strip()],
+        fields=fields if isinstance(fields, dict) else {},
+        source=item.source,
+        source_site_url=item.source_site_url,
+        status=item.status,
+        admin_notes=item.admin_notes,
+        approval_subject=item.approval_subject,
+        approval_body=item.approval_body,
+        approval_email_sent_at=item.approval_email_sent_at,
+        artist_id=item.artist_id,
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+    )
+
+
+def _validate_demo_ingest_token(request: Request) -> None:
+    expected = (settings.demo_submission_token or "").strip()
+    if not expected:
+        return
+    provided = (
+        request.headers.get("x-demo-token")
+        or request.headers.get("x-labelops-demo-token")
+        or ""
+    ).strip()
+    if provided != expected:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid demo submission token")
+
+
+def _safe_json_dict(raw: str | None) -> dict:
+    try:
+        data = json.loads(raw or "{}") or {}
+    except (json.JSONDecodeError, TypeError):
+        data = {}
+    return data if isinstance(data, dict) else {}
+
+
+def _safe_json_list(raw: str | None) -> list:
+    try:
+        data = json.loads(raw or "[]") or []
+    except (json.JSONDecodeError, TypeError):
+        data = []
+    return data if isinstance(data, list) else []
+
 @router.on_event("startup")
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
@@ -529,6 +629,36 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
 
     _touch_user_login(db, user)
     return _user_token_response(user)
+
+
+@router.post("/public/demo-submissions", response_model=DemoSubmissionOut)
+def create_demo_submission(
+    payload: DemoSubmissionCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> DemoSubmissionOut:
+    _validate_demo_ingest_token(request)
+    normalized_links = [str(link).strip() for link in payload.links if str(link).strip()]
+    item = DemoSubmission(
+        artist_name=payload.artist_name.strip(),
+        email=str(payload.email).strip().lower(),
+        contact_name=(payload.contact_name or "").strip() or None,
+        phone=(payload.phone or "").strip() or None,
+        genre=(payload.genre or "").strip() or None,
+        city=(payload.city or "").strip() or None,
+        message=(payload.message or "").strip() or None,
+        links_json=json.dumps(normalized_links),
+        fields_json=json.dumps(payload.fields or {}),
+        source=(payload.source or "wordpress_demo_form").strip() or "wordpress_demo_form",
+        source_site_url=(payload.source_site_url or "").strip() or None,
+        status="demo",
+        approval_subject=_default_demo_approval_subject(payload.artist_name),
+        approval_body=_default_demo_approval_body(payload.artist_name),
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return _serialize_demo_submission(item)
 
 
 @router.get("/auth/me", response_model=UserOut)
@@ -727,6 +857,152 @@ def list_artists(
             }
         out.append(ArtistOut.from_artist(a, last_release=last_release))
     return out
+
+
+@router.get("/admin/demo-submissions", response_model=list[DemoSubmissionOut])
+def list_demo_submissions(
+    status_filter: str | None = Query(None, alias="status"),
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> list[DemoSubmissionOut]:
+    require_admin(user)
+    q = db.query(DemoSubmission).order_by(desc(DemoSubmission.created_at), desc(DemoSubmission.id))
+    normalized_status = _normalize_demo_status(status_filter, allow_empty=True)
+    if normalized_status:
+        q = q.filter(DemoSubmission.status == normalized_status)
+    items = q.offset(offset).limit(limit).all()
+    return [_serialize_demo_submission(item) for item in items]
+
+
+@router.get("/admin/demo-submissions/{submission_id}", response_model=DemoSubmissionOut)
+def get_demo_submission(
+    submission_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> DemoSubmissionOut:
+    require_admin(user)
+    item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
+    return _serialize_demo_submission(item)
+
+
+@router.patch("/admin/demo-submissions/{submission_id}", response_model=DemoSubmissionOut)
+def update_demo_submission(
+    submission_id: int,
+    payload: DemoSubmissionUpdate,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> DemoSubmissionOut:
+    require_admin(user)
+    item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
+
+    if payload.artist_name is not None:
+        item.artist_name = payload.artist_name.strip()
+    if payload.email is not None:
+        item.email = str(payload.email).strip().lower()
+    if payload.contact_name is not None:
+        item.contact_name = payload.contact_name.strip() or None
+    if payload.phone is not None:
+        item.phone = payload.phone.strip() or None
+    if payload.genre is not None:
+        item.genre = payload.genre.strip() or None
+    if payload.city is not None:
+        item.city = payload.city.strip() or None
+    if payload.message is not None:
+        item.message = payload.message.strip() or None
+    if payload.links is not None:
+        item.links_json = json.dumps([str(link).strip() for link in payload.links if str(link).strip()])
+    if payload.fields is not None:
+        item.fields_json = json.dumps(payload.fields or {})
+    if payload.status is not None:
+        item.status = _normalize_demo_status(payload.status) or "demo"
+    if payload.admin_notes is not None:
+        item.admin_notes = payload.admin_notes
+    if payload.approval_subject is not None:
+        item.approval_subject = payload.approval_subject.strip() or None
+    if payload.approval_body is not None:
+        item.approval_body = payload.approval_body
+    if payload.artist_id is not None:
+        item.artist_id = payload.artist_id
+
+    db.commit()
+    db.refresh(item)
+    return _serialize_demo_submission(item)
+
+
+@router.post("/admin/demo-submissions/{submission_id}/approve", response_model=DemoSubmissionOut)
+def approve_demo_submission(
+    submission_id: int,
+    payload: DemoSubmissionApproveRequest,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> DemoSubmissionOut:
+    require_admin(user)
+    item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
+
+    if payload.approval_subject is not None:
+        item.approval_subject = payload.approval_subject.strip() or None
+    if payload.approval_body is not None:
+        item.approval_body = payload.approval_body
+    if not item.approval_subject:
+        item.approval_subject = _default_demo_approval_subject(item.artist_name)
+    if not item.approval_body:
+        item.approval_body = _default_demo_approval_body(item.artist_name)
+
+    if payload.create_artist and item.artist_id is None:
+        artist = db.query(Artist).filter(func.lower(Artist.email) == item.email.lower()).first()
+        if artist is None:
+            demo_extra = {
+                "artist_brand": item.artist_name,
+                "full_name": item.contact_name,
+                "comments": item.message,
+                "demo_submission_id": item.id,
+                "demo_status": "approved",
+                "demo_links": _safe_json_list(item.links_json),
+                **_safe_json_dict(item.fields_json),
+            }
+            artist = Artist(
+                name=item.artist_name,
+                email=item.email,
+                notes="Created from approved demo submission.",
+                is_active=True,
+                extra_json=json.dumps(demo_extra),
+            )
+            db.add(artist)
+            db.flush()
+        item.artist_id = artist.id
+
+    if payload.send_email:
+        success, message = send_email_service(
+            to_email=item.email,
+            subject=item.approval_subject,
+            body_text=item.approval_body or "",
+        )
+        if not success:
+            if "limit" in message.lower():
+                raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message)
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+        item.approval_email_sent_at = datetime.now(timezone.utc)
+        if item.artist_id is not None:
+            db.add(
+                ArtistActivityLog(
+                    artist_id=item.artist_id,
+                    activity_type="demo_approval_email",
+                    details=f"Demo submission #{item.id}",
+                )
+            )
+
+    item.status = "approved"
+    db.commit()
+    db.refresh(item)
+    return _serialize_demo_submission(item)
 
 
 @router.get("/artists/{artist_id}", response_model=ArtistOut)
@@ -1900,6 +2176,29 @@ def cancel_campaign_schedule_route(
 
 
 
+
+
+
+
+
+
+
+
+@router.get("/admin/agents/registry", response_model=list[AgentDefinitionOut])
+def get_agent_registry_route(user: UserContext = Depends(get_current_user)) -> list[AgentDefinitionOut]:
+    require_admin(user)
+    plan = build_agent_plan("system overview", max_agents=6)
+    return [AgentDefinitionOut.model_validate(agent) for agent in plan["agents"]]
+
+
+@router.post("/admin/agents/plan", response_model=AgentPlanOut)
+def plan_agent_delegation(
+    payload: AgentPlanRequest,
+    user: UserContext = Depends(get_current_user),
+) -> AgentPlanOut:
+    require_admin(user)
+    plan = build_agent_plan(payload.text, max_agents=payload.max_agents)
+    return AgentPlanOut.model_validate(plan)
 
 
 

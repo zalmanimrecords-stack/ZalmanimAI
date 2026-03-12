@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -263,6 +263,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     final s = _settings!;
     final googleConfigured = s['google_oauth_configured'] as bool? ?? false;
     final gmailConnected = s['gmail_connected'] as bool? ?? false;
+    final facebookConfigured = s['facebook_oauth_configured'] as bool? ?? false;
     final gmailConnectedEmail = s['gmail_connected_email'] as String? ?? '';
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -411,6 +412,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
         const SizedBox(height: 24),
         _sectionTitle('Google Mail'),
         _row('Google OAuth', googleConfigured ? 'Configured on server' : 'Missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET'),
+        _row('Facebook OAuth', facebookConfigured ? 'Configured on server' : 'Missing META_CLIENT_ID / META_CLIENT_SECRET'),
         _row('Gmail connection', gmailConnected ? 'Connected' : 'Not connected'),
         _row('Connected account', gmailConnectedEmail),
         const SizedBox(height: 8),
@@ -463,4 +465,6 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     );
   }
 }
+
+
 
