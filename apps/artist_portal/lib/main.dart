@@ -38,6 +38,7 @@ class ArtistPortalApp extends StatefulWidget {
 class _ArtistPortalAppState extends State<ArtistPortalApp> {
   late final ApiClient _apiClient;
   late Future<AuthSession?> _sessionFuture;
+  AuthSession? _activeSession;
   bool _showResetPassword = false;
   String? _resetToken;
   bool _showLogin = false;
@@ -109,14 +110,17 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
               ),
             );
           }
-          final session = snapshot.data;
+          final session = _activeSession ?? snapshot.data;
           if (session != null && session.role == 'artist') {
             return ArtistDashboardPage(
               apiClient: _apiClient,
               token: session.token,
               onLogout: () async {
                 await clearSession();
-                setState(() => _sessionFuture = loadSession());
+                setState(() {
+                  _activeSession = null;
+                  _sessionFuture = loadSession();
+                });
               },
             );
           }
@@ -158,7 +162,10 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
           if (_showLogin) {
             return LoginPage(
               apiClient: _apiClient,
-              onSessionSaved: () => setState(() => _sessionFuture = loadSession()),
+              onLoggedIn: (session) => setState(() {
+                _activeSession = session;
+                _sessionFuture = loadSession();
+              }),
               onBack: () => setState(() => _showLogin = false),
             );
           }

@@ -567,7 +567,8 @@ def init_db() -> None:
         logging.getLogger(__name__).warning("DB migration (auth/users): %s", e)
 
     with Session(engine) as db:
-        admin = db.query(User).filter(User.email == "admin@label.local").first()
+        admin = db.query(User).filter(User.email == "admin").first()
+        legacy_admin = db.query(User).filter(User.email == "admin@label.local").first()
         artist = db.query(Artist).filter(Artist.email == "artist@label.local").first()
         if not artist:
             artist = Artist(
@@ -582,16 +583,30 @@ def init_db() -> None:
         elif not artist.password_hash:
             artist.password_hash = hash_password("artist123")
         if not admin:
-            db.add(
-                User(
-                    email="admin@label.local",
-                    full_name="System Admin",
-                    password_hash=hash_password("admin123"),
-                    role="admin",
-                    artist_id=None,
-                    is_active=True,
+            if legacy_admin:
+                legacy_admin.email = "admin"
+                legacy_admin.full_name = legacy_admin.full_name or "System Admin"
+                legacy_admin.password_hash = hash_password("Zalmanim102030")
+                legacy_admin.role = "admin"
+                legacy_admin.artist_id = None
+                legacy_admin.is_active = True
+            else:
+                db.add(
+                    User(
+                        email="admin",
+                        full_name="System Admin",
+                        password_hash=hash_password("Zalmanim102030"),
+                        role="admin",
+                        artist_id=None,
+                        is_active=True,
+                    )
                 )
-            )
+        else:
+            admin.full_name = admin.full_name or "System Admin"
+            admin.password_hash = hash_password("Zalmanim102030")
+            admin.role = "admin"
+            admin.artist_id = None
+            admin.is_active = True
         artist_user = db.query(User).filter(User.email == "artist@label.local").first()
         if not artist_user:
             db.add(

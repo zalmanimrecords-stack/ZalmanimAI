@@ -21,9 +21,9 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final emailController = TextEditingController(text: 'admin@label.local');
-  final passwordController = TextEditingController(text: 'admin123');
-  bool rememberMe = true;
+  final emailController = TextEditingController();
+  final passwordController = TextEditingController();
+  bool rememberMe = false;
   bool loading = false;
   bool googleLoading = false;
   bool facebookLoading = false;
@@ -84,7 +84,7 @@ class _LoginPageState extends State<LoginPage> {
                     alignment: Alignment.centerLeft,
                     child: CheckboxListTile(
                       value: rememberMe,
-                      onChanged: (v) => setState(() => rememberMe = v ?? true),
+                      onChanged: (v) => setState(() => rememberMe = v ?? false),
                       title: const Text('Remember me'),
                       contentPadding: EdgeInsets.zero,
                       controlAffinity: ListTileControlAffinity.leading,
@@ -141,7 +141,7 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Text('Seed users: admin@label.local/admin123 or artist@label.local/artist123'),
+                  const Text('Use your system user credentials.'),
                 ],
               ),
             ),
@@ -225,11 +225,7 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _completeLogin(AuthSession session) async {
     if (!mounted) return;
-    if (rememberMe) {
-      await saveSession(session);
-    } else {
-      await clearSession();
-    }
+    await saveSession(session, rememberMe: rememberMe);
     if (!mounted) return;
     if (session.role == 'admin' || session.role == 'manager') {
       Navigator.of(context).pushReplacement(MaterialPageRoute(
@@ -242,4 +238,3 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 }
-

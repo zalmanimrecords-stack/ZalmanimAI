@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/api_client.dart';
 import '../../core/app_config.dart';
+import '../../core/session.dart';
 import '../../core/session_storage.dart';
 import 'forgot_password_page.dart';
 
@@ -10,12 +11,12 @@ class LoginPage extends StatefulWidget {
   const LoginPage({
     super.key,
     required this.apiClient,
-    required this.onSessionSaved,
+    required this.onLoggedIn,
     this.onBack,
   });
 
   final ApiClient apiClient;
-  final VoidCallback onSessionSaved;
+  final ValueChanged<AuthSession> onLoggedIn;
   final VoidCallback? onBack;
 
   @override
@@ -25,6 +26,7 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
+  bool rememberMe = false;
   bool loading = false;
   String? error;
 
@@ -55,8 +57,8 @@ class _LoginPageState extends State<LoginPage> {
         });
         return;
       }
-      await saveSession(session);
-      widget.onSessionSaved();
+      await saveSession(session, rememberMe: rememberMe);
+      widget.onLoggedIn(session);
     } catch (e) {
       setState(() {
         error = e.toString().replaceFirst('Exception: ', '');
@@ -147,6 +149,15 @@ class _LoginPageState extends State<LoginPage> {
                               obscureText: true,
                               textInputAction: TextInputAction.done,
                               onSubmitted: (_) => _login(),
+                            ),
+                            const SizedBox(height: 8),
+                            CheckboxListTile(
+                              value: rememberMe,
+                              onChanged: loading ? null : (value) => setState(() => rememberMe = value ?? false),
+                              contentPadding: EdgeInsets.zero,
+                              controlAffinity: ListTileControlAffinity.leading,
+                              title: const Text('Remember me'),
+                              dense: true,
                             ),
                             if (error != null) ...[
                               const SizedBox(height: 16),

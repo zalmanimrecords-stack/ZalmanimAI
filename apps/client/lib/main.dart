@@ -68,7 +68,7 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
         email: email,
         fullName: fullName,
       );
-      await saveSession(session);
+      await saveSession(session, rememberMe: false);
       return session;
     }
     return loadSession();
@@ -113,4 +113,3 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
     );
   }
 }
-
