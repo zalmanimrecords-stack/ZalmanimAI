@@ -143,6 +143,9 @@ def restore_database(db: Session, data: dict) -> None:
             for row_data in rows:
                 obj = model(**row_data)
                 db.add(obj)
+            # Make parent rows visible to subsequent raw INSERTs into FK tables
+            # such as release_artists before we continue to the next table.
+            db.flush()
         else:
             for row_data in rows:
                 db.execute(
