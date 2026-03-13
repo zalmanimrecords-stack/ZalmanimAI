@@ -3,13 +3,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/api_client.dart';
+import '../../core/session.dart';
+import '../account/user_settings_sheet.dart';
 import '../../widgets/api_connection_indicator.dart';
 
 class ArtistDashboardPage extends StatefulWidget {
-  const ArtistDashboardPage({super.key, required this.apiClient, required this.token});
+  const ArtistDashboardPage({
+    super.key,
+    required this.apiClient,
+    required this.session,
+    required this.onLogout,
+  });
 
   final ApiClient apiClient;
-  final String token;
+  final AuthSession session;
+  final Future<void> Function() onLogout;
+  String get token => session.token;
 
   @override
   State<ArtistDashboardPage> createState() => _ArtistDashboardPageState();
@@ -37,6 +46,43 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  Future<void> _openUserSettings() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: false,
+      builder: (context) => UserSettingsSheet(
+        apiClient: widget.apiClient,
+        session: widget.session,
+        onLogout: widget.onLogout,
+        onRefresh: _load,
+      ),
+    );
+  }
+
+  Future<void> _confirmLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Log out?'),
+        content: const Text('You will return to the login screen on this device.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Log out'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await widget.onLogout();
+    }
   }
 
   @override
@@ -272,6 +318,16 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
         title: const Text('Artist Portal'),
         actions: [
           ApiConnectionIndicator(apiClient: widget.apiClient, onConnectionRestored: _load),
+          IconButton(
+            icon: const Icon(Icons.account_circle_outlined),
+            tooltip: 'User details',
+            onPressed: _openUserSettings,
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Log out',
+            onPressed: _confirmLogout,
+          ),
         ],
       ),
       body: loading

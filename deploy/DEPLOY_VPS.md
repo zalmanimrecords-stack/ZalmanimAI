@@ -3,6 +3,7 @@
 This production bundle targets:
 
 - `lm.zalmanim.com` for the Flutter admin app
+- `artists.zalmanim.com` for the artist portal
 - `lmapi.zalmanim.com` for the FastAPI backend
 
 ## 1. Prepare the repo
@@ -26,6 +27,7 @@ Required values before the first deploy:
 Create `A` records for both subdomains so they point to the VPS:
 
 - `lm.zalmanim.com`
+- `artists.zalmanim.com`
 - `lmapi.zalmanim.com`
 
 ## 3. Deploy
@@ -39,9 +41,9 @@ docker compose --env-file deploy/.env.production -f docker-compose.prod.yml up -
 What this does:
 
 - builds the API image from `apps/server`
-- builds the Flutter web app inside Docker with `API_BASE_URL`
+- builds the admin app and artist portal inside Docker with `API_BASE_URL`
 - starts `postgres`, `redis`, `api`, `worker`, and `web`
-- serves the admin app and reverse-proxies the API through nginx
+- serves the admin app, artist portal, and reverse-proxies the API through nginx
 
 ## 4. Verify
 
@@ -62,6 +64,7 @@ Then test:
 
 - `http://lmapi.zalmanim.com/health`
 - `http://lm.zalmanim.com`
+- `http://artists.zalmanim.com`
 
 ## 5. SSL
 
@@ -69,6 +72,7 @@ The included nginx config is HTTP-only so the stack can come up cleanly on first
 Once SSH is ready, add TLS on the VPS and switch both domains to HTTPS:
 
 - `https://lm.zalmanim.com`
+- `https://artists.zalmanim.com`
 - `https://lmapi.zalmanim.com`
 
 At that point, keep these values in `deploy/.env.production`:

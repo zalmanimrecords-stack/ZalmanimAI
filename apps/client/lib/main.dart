@@ -30,7 +30,8 @@ class LabelOpsApp extends StatefulWidget {
 
 class _LabelOpsAppState extends State<LabelOpsApp> {
   late final ApiClient _apiClient;
-  late final Future<AuthSession?> _sessionFuture;
+  AuthSession? _session;
+  bool _initializing = true;
   String? _authError;
   bool _showResetPassword = false;
   String? _resetToken;
@@ -39,12 +40,21 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
   void initState() {
     super.initState();
     _apiClient = ApiClient(baseUrl: _apiBaseUrl);
-    _sessionFuture = _resolveInitialSession();
     final resetToken = Uri.base.queryParameters['reset_token'];
     if (resetToken != null && resetToken.isNotEmpty) {
       _showResetPassword = true;
       _resetToken = resetToken;
     }
+    _initializeSession();
+  }
+
+  Future<void> _initializeSession() async {
+    final session = await _resolveInitialSession();
+    if (!mounted) return;
+    setState(() {
+      _session = session;
+      _initializing = false;
+    });
   }
 
   Future<AuthSession?> _resolveInitialSession() async {
@@ -74,6 +84,31 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
     return loadSession();
   }
 
+  Future<void> _handleLoginSuccess(
+    AuthSession session, {
+    required bool rememberMe,
+  }) async {
+    await saveSession(session, rememberMe: rememberMe);
+    if (!mounted) return;
+    setState(() {
+      _session = session;
+      _authError = null;
+      _showResetPassword = false;
+      _resetToken = null;
+    });
+  }
+
+  Future<void> _handleLogout() async {
+    await clearSession();
+    if (!mounted) return;
+    setState(() {
+      _session = null;
+      _authError = null;
+      _showResetPassword = false;
+      _resetToken = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -82,34 +117,45 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1B7A5E)),
         useMaterial3: true,
       ),
-      home: FutureBuilder<AuthSession?>(
-        future: _sessionFuture,
-        builder: (context, snapshot) {
-          if (_showResetPassword && _resetToken != null) {
-            return ResetPasswordPage(
-              apiClient: _apiClient,
-              resetToken: _resetToken!,
-              onSuccess: () => setState(() {
-                _showResetPassword = false;
-                _resetToken = null;
-              }),
-            );
-          }
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-          }
-          final session = snapshot.data;
-          if (session != null) {
-            if (session.role == 'admin' || session.role == 'manager') {
-              return AdminDashboardPage(apiClient: _apiClient, token: session.token);
-            }
-            return ArtistDashboardPage(apiClient: _apiClient, token: session.token);
-          }
-          return LoginPage(apiClient: _apiClient, initialError: _authError);
-        },
-      ),
+      home: _buildHome(),
+    );
+  }
+
+  Widget _buildHome() {
+    if (_showResetPassword && _resetToken != null) {
+      return ResetPasswordPage(
+        apiClient: _apiClient,
+        resetToken: _resetToken!,
+        onSuccess: () => setState(() {
+          _showResetPassword = false;
+          _resetToken = null;
+        }),
+      );
+    }
+    if (_initializing) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    final session = _session;
+    if (session != null) {
+      if (session.role == 'admin' || session.role == 'manager') {
+        return AdminDashboardPage(
+          apiClient: _apiClient,
+          session: session,
+          onLogout: _handleLogout,
+        );
+      }
+      return ArtistDashboardPage(
+        apiClient: _apiClient,
+        session: session,
+        onLogout: _handleLogout,
+      );
+    }
+    return LoginPage(
+      apiClient: _apiClient,
+      initialError: _authError,
+      onLoginSuccess: _handleLoginSuccess,
     );
   }
 }

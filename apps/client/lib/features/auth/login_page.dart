@@ -4,16 +4,20 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api_client.dart';
 import '../../core/session.dart';
-import '../../core/session_storage.dart';
 import '../../widgets/api_connection_indicator.dart';
-import '../admin/admin_dashboard_page.dart';
-import '../artist/artist_dashboard_page.dart';
 import 'forgot_password_page.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key, required this.apiClient, this.initialError});
+  const LoginPage({
+    super.key,
+    required this.apiClient,
+    required this.onLoginSuccess,
+    this.initialError,
+  });
 
   final ApiClient apiClient;
+  final Future<void> Function(AuthSession session, {required bool rememberMe})
+      onLoginSuccess;
   final String? initialError;
 
   @override
@@ -234,17 +238,7 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _completeLogin(AuthSession session) async {
     if (!mounted) return;
-    await saveSession(session, rememberMe: rememberMe);
-    if (!mounted) return;
-    if (session.role == 'admin' || session.role == 'manager') {
-      Navigator.of(context).pushReplacement(MaterialPageRoute(
-        builder: (_) => AdminDashboardPage(apiClient: widget.apiClient, token: session.token),
-      ));
-    } else {
-      Navigator.of(context).pushReplacement(MaterialPageRoute(
-        builder: (_) => ArtistDashboardPage(apiClient: widget.apiClient, token: session.token),
-      ));
-    }
+    await widget.onLoginSuccess(session, rememberMe: rememberMe);
   }
 }
 

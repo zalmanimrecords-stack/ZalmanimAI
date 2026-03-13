@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/api_client.dart';
+import '../../core/session.dart';
 import '../../core/session_storage.dart';
+import '../account/user_settings_sheet.dart';
 import '../../widgets/api_connection_indicator.dart';
 import 'admin_dashboard_delegate.dart';
 import 'system_settings_page.dart';
@@ -220,10 +222,17 @@ void _wrapControllerSelection(
 }
 
 class AdminDashboardPage extends StatefulWidget {
-  const AdminDashboardPage({super.key, required this.apiClient, required this.token});
+  const AdminDashboardPage({
+    super.key,
+    required this.apiClient,
+    required this.session,
+    required this.onLogout,
+  });
 
   final ApiClient apiClient;
-  final String token;
+  final AuthSession session;
+  final Future<void> Function() onLogout;
+  String get token => session.token;
 
   @override
   State<AdminDashboardPage> createState() => _AdminDashboardPageState();
@@ -282,7 +291,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   ApiClient get apiClient => widget.apiClient;
 
   @override
-  String get token => widget.token;
+  String get token => widget.session.token;
 
   @override
   bool get isLoading => loading;
@@ -448,6 +457,43 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       case 6:
         if (!_loadedUsers) _loadUsers();
         break;
+    }
+  }
+
+  Future<void> _openUserSettings() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: false,
+      builder: (context) => UserSettingsSheet(
+        apiClient: widget.apiClient,
+        session: widget.session,
+        onLogout: widget.onLogout,
+        onRefresh: load,
+      ),
+    );
+  }
+
+  Future<void> _confirmLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Log out?'),
+        content: const Text('You will return to the login screen on this device.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Log out'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await widget.onLogout();
     }
   }
 
@@ -1061,7 +1107,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           ApiConnectionIndicator(
             apiClient: widget.apiClient,
             onConnectionRestored: load,
-          ),          IconButton(
+          ),
+          IconButton(
             icon: const Icon(Icons.settings),
             tooltip: 'System settings',
             onPressed: () {
@@ -1074,6 +1121,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 ),
               );
             },
+          ),
+          IconButton(
+            icon: const Icon(Icons.account_circle_outlined),
+            tooltip: 'User details',
+            onPressed: _openUserSettings,
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Log out',
+            onPressed: _confirmLogout,
           ),
         ],
         bottom: TabBar(
@@ -5454,10 +5511,6 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
     );
   }
 }
-
-
-
-
 
 
 
