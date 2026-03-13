@@ -125,6 +125,17 @@ class ApiClient {
     return jsonDecode(response.body) as List<dynamic>;
   }
 
+  Future<Map<String, dynamic>> fetchLoginStats(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/admin/dashboard/login-stats'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Login stats failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> createUser({
     required String token,
     required Map<String, dynamic> body,

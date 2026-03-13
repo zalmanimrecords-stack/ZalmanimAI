@@ -66,7 +66,9 @@ from app.schemas.schemas import (
     ForgotPasswordRequest,
     ArtistChangePasswordRequest,
     ArtistLoginRequest,
+    LoginActivityOut,
     ArtistSetPasswordRequest,
+    LoginStatsOut,
     LoginRequest,
     ReleaseOut,
     ResetPasswordRequest,
@@ -328,6 +330,13 @@ def _touch_user_login(db: Session, user: User) -> None:
     db.refresh(user)
 
 
+def _touch_artist_login(db: Session, artist: Artist) -> None:
+    now = datetime.now(timezone.utc)
+    artist.last_login_at = now
+    db.commit()
+    db.refresh(artist)
+
+
 
 def _validate_user_role(role: str) -> str:
     role_value = (role or "").strip().lower()
@@ -553,6 +562,7 @@ def init_db() -> None:
             conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS extra_json TEXT"))
             conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true NOT NULL"))
             conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP WITH TIME ZONE"))
             conn.execute(text("ALTER TABLE social_connections ADD COLUMN IF NOT EXISTS pkce_code_verifier VARCHAR(255)"))
             conn.execute(text("ALTER TABLE social_connections ADD COLUMN IF NOT EXISTS one_time_token VARCHAR(255)"))
             conn.execute(text("ALTER TABLE social_connections ADD COLUMN IF NOT EXISTS one_time_expires_at TIMESTAMP WITH TIME ZONE"))
@@ -722,6 +732,7 @@ def artist_login(payload: ArtistLoginRequest, db: Session = Depends(get_db)) -> 
         )
     if not verify_password(payload.password, artist.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    _touch_artist_login(db, artist)
     return _artist_token_response(artist)
 
 
@@ -929,6 +940,89 @@ def list_users(
     require_admin(user)
     users = db.query(User).options(joinedload(User.artist), joinedload(User.identities)).order_by(User.created_at.desc(), User.id.desc()).all()
     return [_serialize_user(item) for item in users]
+
+
+@router.get("/admin/dashboard/login-stats", response_model=LoginStatsOut)
+def get_login_stats(
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> LoginStatsOut:
+    require_admin(user)
+    threshold = datetime.now(timezone.utc) - timedelta(days=30)
+
+    users_logged_in_last_30_days = (
+        db.query(User)
+        .filter(User.last_login_at.isnot(None), User.last_login_at >= threshold)
+        .count()
+    )
+
+    artist_keys: set[str] = set()
+    portal_artists = db.query(Artist).filter(
+        Artist.last_login_at.isnot(None),
+        Artist.last_login_at >= threshold,
+    )
+    for artist in portal_artists:
+        artist_keys.add(f"artist:{artist.id}")
+
+    artist_users = db.query(User).filter(
+        User.role == "artist",
+        User.last_login_at.isnot(None),
+        User.last_login_at >= threshold,
+    )
+    for artist_user in artist_users:
+        if artist_user.artist_id is not None:
+            artist_keys.add(f"artist:{artist_user.artist_id}")
+        else:
+            artist_keys.add(f"user-email:{artist_user.email.lower()}")
+
+    recent_logins: list[LoginActivityOut] = []
+    for recent_user in (
+        db.query(User)
+        .filter(User.last_login_at.isnot(None))
+        .order_by(User.last_login_at.desc())
+        .limit(10)
+        .all()
+    ):
+        if recent_user.last_login_at is None:
+            continue
+        recent_logins.append(
+            LoginActivityOut(
+                source="user",
+                name=(recent_user.full_name or recent_user.email).strip(),
+                email=recent_user.email,
+                role=recent_user.role,
+                is_active=recent_user.is_active,
+                last_login_at=recent_user.last_login_at,
+            )
+        )
+
+    for recent_artist in (
+        db.query(Artist)
+        .filter(Artist.last_login_at.isnot(None))
+        .order_by(Artist.last_login_at.desc())
+        .limit(10)
+        .all()
+    ):
+        if recent_artist.last_login_at is None:
+            continue
+        recent_logins.append(
+            LoginActivityOut(
+                source="artist_portal",
+                name=(recent_artist.name or recent_artist.email).strip(),
+                email=recent_artist.email,
+                role="artist",
+                is_active=recent_artist.is_active,
+                last_login_at=recent_artist.last_login_at,
+            )
+        )
+
+    recent_logins.sort(key=lambda item: item.last_login_at, reverse=True)
+
+    return LoginStatsOut(
+        users_logged_in_last_30_days=users_logged_in_last_30_days,
+        artists_logged_in_last_30_days=len(artist_keys),
+        recent_logins=recent_logins[:10],
+    )
 
 
 @router.post("/admin/users", response_model=UserOut)
@@ -2688,8 +2782,10 @@ def upload_restore(
     try:
         restore_database(db, data)
     except ValueError as e:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     except SQLAlchemyError as e:
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Restore failed: {e}",

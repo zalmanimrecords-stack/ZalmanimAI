@@ -126,13 +126,11 @@ def restore_database(db: Session, data: dict) -> None:
         raise ValueError("Unsupported backup version")
     tables = data.get("tables") or {}
 
-    # Reverse order for delete (children first).
-    delete_order = list(reversed(EXPORT_TABLE_ORDER))
-
-    for table_name in delete_order:
-        if table_name not in tables:
-            continue
-        db.execute(text(f'TRUNCATE TABLE "{table_name}" RESTART IDENTITY'))
+    # Replace means clearing the full known backup surface, even if some tables
+    # are empty or omitted in the uploaded file. Truncate all at once so
+    # PostgreSQL can resolve FK dependencies in a single statement.
+    truncate_tables = ", ".join(f'"{table_name}"' for table_name in reversed(EXPORT_TABLE_ORDER))
+    db.execute(text(f"TRUNCATE TABLE {truncate_tables} RESTART IDENTITY CASCADE"))
     db.commit()
 
     # Insert in FK order. For release_artists we use raw INSERT.

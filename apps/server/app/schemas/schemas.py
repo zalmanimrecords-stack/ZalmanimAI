@@ -217,6 +217,7 @@ class ArtistOut(BaseModel):
     extra: dict = {}  # CSV-style fields (artist_brand, full_name, website, ...)
     last_release: dict | None = None  # {"title": str, "created_at": str} for list display
     last_reminder_sent_at: datetime | None = None  # When last reminder email was sent (reports)
+    last_login_at: datetime | None = None
 
     class Config:
         from_attributes = True
@@ -245,7 +246,23 @@ class ArtistOut(BaseModel):
             extra=extra,
             last_release=last_release,
             last_reminder_sent_at=last_reminder_sent_at,
+            last_login_at=getattr(artist, "last_login_at", None),
         )
+
+
+class LoginActivityOut(BaseModel):
+    source: str  # user | artist_portal
+    name: str
+    email: str
+    role: str
+    is_active: bool
+    last_login_at: datetime
+
+
+class LoginStatsOut(BaseModel):
+    users_logged_in_last_30_days: int
+    artists_logged_in_last_30_days: int
+    recent_logins: list[LoginActivityOut] = []
 
 
 class ReleaseOut(BaseModel):

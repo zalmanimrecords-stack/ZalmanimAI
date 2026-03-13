@@ -125,7 +125,12 @@ class _LoginPageState extends State<LoginPage> {
                       onPressed: loading || googleLoading || facebookLoading ? null : _loginWithGoogle,
                       icon: googleLoading
                           ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.login),
+                          : const _SocialBrandIcon(
+                              label: 'G',
+                              backgroundColor: Colors.white,
+                              foregroundColor: Color(0xFF4285F4),
+                              borderColor: Color(0xFFDADCE0),
+                            ),
                       label: const Text('Continue with Google'),
                     ),
                   ),
@@ -136,7 +141,11 @@ class _LoginPageState extends State<LoginPage> {
                       onPressed: loading || googleLoading || facebookLoading ? null : _loginWithFacebook,
                       icon: facebookLoading
                           ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.facebook),
+                          : const _SocialBrandIcon(
+                              label: 'f',
+                              backgroundColor: Color(0xFF1877F2),
+                              foregroundColor: Colors.white,
+                            ),
                       label: const Text('Continue with Facebook'),
                     ),
                   ),
@@ -236,5 +245,42 @@ class _LoginPageState extends State<LoginPage> {
         builder: (_) => ArtistDashboardPage(apiClient: widget.apiClient, token: session.token),
       ));
     }
+  }
+}
+
+class _SocialBrandIcon extends StatelessWidget {
+  const _SocialBrandIcon({
+    required this.label,
+    required this.backgroundColor,
+    required this.foregroundColor,
+    this.borderColor,
+  });
+
+  final String label;
+  final Color backgroundColor;
+  final Color foregroundColor;
+  final Color? borderColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 20,
+      height: 20,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        shape: BoxShape.circle,
+        border: borderColor == null ? null : Border.all(color: borderColor!),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: foregroundColor,
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          height: 1,
+        ),
+      ),
+    );
   }
 }

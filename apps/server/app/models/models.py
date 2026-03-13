@@ -46,6 +46,7 @@ class Artist(Base):
     extra_json: Mapped[str | None] = mapped_column(Text, nullable=True, default="{}")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_login_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     releases: Mapped[list["Release"]] = relationship(
         "Release",
@@ -337,7 +338,6 @@ class CampaignDelivery(Base):
 
     campaign: Mapped["Campaign"] = relationship(back_populates="deliveries")
     target: Mapped["CampaignTarget"] = relationship(back_populates="deliveries")
-
 
 
 
