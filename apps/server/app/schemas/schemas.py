@@ -9,6 +9,23 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class ArtistLoginRequest(BaseModel):
+    """Artist portal login: email + password from artists table (not users)."""
+    email: str
+    password: str
+
+
+class ArtistSetPasswordRequest(BaseModel):
+    """Admin sets an artist's portal password."""
+    password: str
+
+
+class ArtistChangePasswordRequest(BaseModel):
+    """Artist changes own password (current + new)."""
+    current_password: str
+    new_password: str
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -16,6 +33,15 @@ class TokenResponse(BaseModel):
     email: str
     full_name: str | None = None
     permissions: list[str] = []
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
 
 
 class UserContext(BaseModel):
@@ -125,6 +151,48 @@ class ArtistUpdate(BaseModel):
     apple_music: str | None = None
     address: str | None = None
     source_row: str | None = None
+
+
+class ArtistSelfUpdate(BaseModel):
+    """Fields an artist can update for their own profile (no email, no is_active)."""
+    name: str | None = None
+    notes: str | None = None
+    artist_brand: str | None = None
+    artist_brands: list[str] | None = None
+    full_name: str | None = None
+    website: str | None = None
+    soundcloud: str | None = None
+    facebook: str | None = None
+    twitter_1: str | None = None
+    twitter_2: str | None = None
+    youtube: str | None = None
+    tiktok: str | None = None
+    instagram: str | None = None
+    spotify: str | None = None
+    other_1: str | None = None
+    other_2: str | None = None
+    other_3: str | None = None
+    comments: str | None = None
+    apple_music: str | None = None
+    address: str | None = None
+    source_row: str | None = None
+
+
+class ArtistMediaOut(BaseModel):
+    id: int
+    artist_id: int
+    filename: str
+    content_type: str | None
+    size_bytes: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ArtistDemoSubmitRequest(BaseModel):
+    """Artist portal: submit a demo (message; file is uploaded via multipart)."""
+    message: str | None = None
 
 
 def _artist_extra_from_model(m: BaseModel) -> dict:

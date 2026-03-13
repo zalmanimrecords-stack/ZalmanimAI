@@ -1,4 +1,4 @@
-﻿param(
+param(
     [switch]$Rebuild,
     [switch]$CleanVolumes,
     [switch]$NoFlutter,
@@ -62,26 +62,35 @@ Invoke-Step -Name "Starting backend stack" -Action {
 }
 
 Invoke-Step -Name "Checking API health" -Action {
-    $maxAttempts = 20
+    $maxAttempts = 45
     $attempt = 0
     $healthy = $false
+    $lastError = $null
 
     while (-not $healthy -and $attempt -lt $maxAttempts) {
         $attempt++
         try {
-            $response = Invoke-RestMethod -Uri "http://localhost:8000/health" -TimeoutSec 5
+            $response = Invoke-RestMethod -Uri "http://127.0.0.1:8000/health" -TimeoutSec 5
             if ($response -and $response.status -eq "ok") {
                 $healthy = $true
                 break
             }
         }
         catch {
+            $lastError = $_
+            if ($attempt -eq 1 -or $attempt % 5 -eq 0) {
+                Write-Host "  Waiting for API... attempt $attempt/$maxAttempts" -ForegroundColor Gray
+            }
             Start-Sleep -Seconds 2
         }
     }
 
     if (-not $healthy) {
-        throw "API health check failed after $maxAttempts attempts. Ensure Docker is running and ports 8000/5432 are free."
+        $msg = "API health check failed after $maxAttempts attempts. Ensure Docker is running and ports 8000/5432 are free."
+        if ($lastError) {
+            $msg += " Last error: $($lastError.Exception.Message)"
+        }
+        throw $msg
     }
 }
 

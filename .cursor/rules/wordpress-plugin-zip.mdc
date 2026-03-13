@@ -1,0 +1,13 @@
+---
+description: Keep WordPress plugin distributable as ZIP
+globs: apps/wordpress-plugin/**/*
+---
+
+# WordPress plugin – always ship as ZIP
+
+- The Zalmanim Demo Addon lives in `apps/wordpress-plugin/zalmanim-demo-addon/` (source).
+- **After any change** to files in `zalmanim-demo-addon/`, regenerate the distributable ZIP:
+  - Path: `apps/wordpress-plugin/zalmanim-demo-addon.zip`
+  - Content: the **folder** `zalmanim-demo-addon` (so the ZIP has one root folder, as WordPress expects).
+- PowerShell from repo root:
+  `Compress-Archive -Path "apps/wordpress-plugin/zalmanim-demo-addon" -DestinationPath "apps/wordpress-plugin/zalmanim-demo-addon.zip" -Force`

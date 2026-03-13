@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
 
@@ -25,6 +25,7 @@ abstract class AdminDashboardDelegate {
   Future<void> loadMoreArtists();
   void showAddArtistDialog();
   void showEditArtistDialog(int id);
+  void showSetArtistPasswordDialog(int artistId, String artistName);
   void showArtistDetailsDialog(int id);
   void removeArtist(int id, String name);
   void showMergeArtistsDialog();
@@ -91,6 +92,13 @@ abstract class AdminDashboardDelegate {
   // Reports
   void showArtistRemindersReport(BuildContext context);
   void showSendEmailToReportArtistsDialog(BuildContext context, List<dynamic> reportList, List<int> selectedIndices);
+
+  // Admin users (admin-only)
+  List<dynamic> get usersList;
+  Future<void> loadUsers();
+  void showAddUserDialog();
+  void showEditUserDialog(Map<String, dynamic> user);
+  void updateUserActive(Map<String, dynamic> user, bool isActive);
 
   void showErrorSnackBar(String message);
 

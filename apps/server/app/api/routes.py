@@ -1,8 +1,10 @@
 import csv
+import hashlib
 import io
 import json
 import logging
 import os
+import secrets
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlencode
@@ -10,7 +12,7 @@ from urllib.parse import urlencode
 import httpx
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import desc, func, or_, text, update
 from sqlalchemy.exc import SQLAlchemyError
@@ -22,11 +24,13 @@ from app.models import models as models_module  # noqa: F401 - register all tabl
 from app.models.models import (
     Artist,
     ArtistActivityLog,
+    ArtistMedia,
     AutomationTask,
     Campaign,
     CatalogTrack,
     DemoSubmission,
     HubConnector,
+    PasswordResetToken,
     Release,
     release_artists_table,
     SocialConnection,
@@ -40,7 +44,9 @@ from app.schemas.schemas import (
     ArtistActivityLogOut,
     ArtistCreate,
     ArtistDashboard,
+    ArtistMediaOut,
     ArtistOut,
+    ArtistSelfUpdate,
     ArtistUpdate,
     CampaignCreate,
     CampaignOut,
@@ -57,8 +63,13 @@ from app.schemas.schemas import (
     SystemSettingsMailTestRequest,
     SystemSettingsMailTestResponse,
     _artist_extra_from_model,
+    ForgotPasswordRequest,
+    ArtistChangePasswordRequest,
+    ArtistLoginRequest,
+    ArtistSetPasswordRequest,
     LoginRequest,
     ReleaseOut,
+    ResetPasswordRequest,
     ReleaseUpdateArtists,
     SystemSettingsMailUpdate,
     SystemSettingsOut,
@@ -80,6 +91,7 @@ from app.services.email_service import (
 )
 from app.services.mail_settings import build_mail_config, get_effective_mail_config_for_api, save_mail_settings
 from app.services.agent_supervisor import build_agent_plan, get_agent_registry
+from app.services.backup_service import export_database, restore_database
 from app.services.campaign_service import (
     cancel_schedule,
     create_campaign as create_campaign_svc,
@@ -294,6 +306,17 @@ def _user_token_response(user: User) -> TokenResponse:
         email=user.email,
         full_name=user.full_name,
         permissions=permissions_for_role(user.role),
+    )
+
+
+def _artist_token_response(artist: Artist) -> TokenResponse:
+    """Token for artist portal login (artists table credentials). JWT sub is 'artist:{id}'."""
+    return TokenResponse(
+        access_token=create_access_token(f"artist:{artist.id}"),
+        role="artist",
+        email=artist.email,
+        full_name=artist.name,
+        permissions=permissions_for_role("artist"),
     )
 
 
@@ -529,6 +552,7 @@ def init_db() -> None:
         with engine.connect() as conn:
             conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS extra_json TEXT"))
             conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true NOT NULL"))
+            conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)"))
             conn.execute(text("ALTER TABLE social_connections ADD COLUMN IF NOT EXISTS pkce_code_verifier VARCHAR(255)"))
             conn.execute(text("ALTER TABLE social_connections ADD COLUMN IF NOT EXISTS one_time_token VARCHAR(255)"))
             conn.execute(text("ALTER TABLE social_connections ADD COLUMN IF NOT EXISTS one_time_expires_at TIMESTAMP WITH TIME ZONE"))
@@ -546,9 +570,17 @@ def init_db() -> None:
         admin = db.query(User).filter(User.email == "admin@label.local").first()
         artist = db.query(Artist).filter(Artist.email == "artist@label.local").first()
         if not artist:
-            artist = Artist(name="Demo Artist", email="artist@label.local", notes="Seed artist", is_active=True)
+            artist = Artist(
+                name="Demo Artist",
+                email="artist@label.local",
+                notes="Seed artist",
+                is_active=True,
+                password_hash=hash_password("artist123"),
+            )
             db.add(artist)
             db.flush()
+        elif not artist.password_hash:
+            artist.password_hash = hash_password("artist123")
         if not admin:
             db.add(
                 User(
@@ -585,6 +617,27 @@ def get_current_user(
     except ValueError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
+    sub = payload.get("sub")
+    if isinstance(sub, str) and sub.startswith("artist:"):
+        # Artist portal token (login via artists table, not users table)
+        try:
+            artist_id = int(sub[7:])
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+        artist = db.query(Artist).filter(Artist.id == artist_id).first()
+        if not artist or not artist.is_active:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Artist is inactive or missing")
+        return UserContext(
+            user_id=0,
+            role="artist",
+            email=artist.email,
+            full_name=artist.name,
+            permissions=permissions_for_role("artist"),
+            artist_id=artist.id,
+            is_active=artist.is_active,
+        )
+
+    # Admin/manager token (users table)
     user = (
         db.query(User)
         .options(joinedload(User.artist), joinedload(User.identities))
@@ -618,6 +671,7 @@ def require_artist(user: UserContext) -> None:
 
 @router.post("/auth/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
+    """Admin/manager login (users table). For artist portal use POST /public/artist-login."""
     user = (
         db.query(User)
         .options(joinedload(User.artist), joinedload(User.identities))
@@ -629,6 +683,104 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
 
     _touch_user_login(db, user)
     return _user_token_response(user)
+
+
+@router.post("/public/artist-login", response_model=TokenResponse)
+def artist_login(payload: ArtistLoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
+    """
+    Artist portal login (artists.zalmanim.com). Uses artists table email + password_hash only.
+    No users table row is required. Admin must set the artist's password first (admin UI or API).
+    """
+    artist = (
+        db.query(Artist)
+        .filter(func.lower(Artist.email) == payload.email.lower().strip())
+        .first()
+    )
+    if not artist:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    if not artist.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account is inactive")
+    if not artist.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Password not set. Contact the label to get portal access.",
+        )
+    if not verify_password(payload.password, artist.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    return _artist_token_response(artist)
+
+
+def _password_reset_token_hash(token: str) -> str:
+    salt = (settings.jwt_secret or "reset").encode()
+    return hashlib.sha256(salt + token.encode()).hexdigest()
+
+
+_PASSWORD_RESET_EXPIRY_MINUTES = 60
+
+
+@router.post("/auth/forgot-password")
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Send password reset email if the user exists and has a password. Always returns 200 with same message."""
+    email = (payload.email or "").strip().lower()
+    if not email:
+        return {"message": "If an account exists with this email, you will receive a reset link shortly."}
+    user = (
+        db.query(User)
+        .filter(func.lower(User.email) == email, User.is_active == True, User.password_hash.isnot(None))
+        .first()
+    )
+    if not user:
+        return {"message": "If an account exists with this email, you will receive a reset link shortly."}
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = _password_reset_token_hash(raw_token)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=_PASSWORD_RESET_EXPIRY_MINUTES)
+    db.add(PasswordResetToken(user_id=user.id, token_hash=token_hash, expires_at=expires_at))
+    db.commit()
+    base_url = (settings.password_reset_base_url or "").strip() or str(request.base_url).rstrip("/")
+    reset_link = f"{base_url.rstrip('/')}?reset_token={raw_token}"
+    subject = "Password reset"
+    body_text = f"Use this link to reset your password (valid for {_PASSWORD_RESET_EXPIRY_MINUTES} minutes):\n\n{reset_link}\n\nIf you did not request this, ignore this email."
+    body_html = (
+        f"<p>Use this link to reset your password (valid for {_PASSWORD_RESET_EXPIRY_MINUTES} minutes):</p>"
+        f'<p><a href="{reset_link}">{reset_link}</a></p>'
+        "<p>If you did not request this, ignore this email.</p>"
+    )
+    ok, _ = send_email_service(to_email=user.email, subject=subject, body_text=body_text, body_html=body_html)
+    if not ok:
+        logging.getLogger(__name__).warning("Failed to send password reset email to %s", user.email)
+    return {"message": "If an account exists with this email, you will receive a reset link shortly."}
+
+
+@router.post("/auth/reset-password")
+def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)) -> dict:
+    """Set new password using a valid reset token. Invalidates the token."""
+    token = (payload.token or "").strip()
+    new_password = payload.new_password or ""
+    if not token or not new_password:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Token and new password are required")
+    if len(new_password) < 6:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 6 characters")
+    token_hash = _password_reset_token_hash(token)
+    now = datetime.now(timezone.utc)
+    row = (
+        db.query(PasswordResetToken)
+        .filter(PasswordResetToken.token_hash == token_hash, PasswordResetToken.expires_at > now)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link. Request a new one.")
+    user = db.query(User).filter(User.id == row.user_id).first()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link. Request a new one.")
+    user.password_hash = hash_password(new_password)
+    db.delete(row)
+    db.query(PasswordResetToken).filter(PasswordResetToken.user_id == user.id).delete()
+    db.commit()
+    return {"message": "Password has been reset. You can sign in with your new password."}
 
 
 @router.post("/public/demo-submissions", response_model=DemoSubmissionOut)
@@ -1070,6 +1222,25 @@ def update_artist(
     return ArtistOut.from_artist(artist)
 
 
+@router.patch("/admin/artists/{artist_id}/set-password")
+def admin_set_artist_password(
+    artist_id: int,
+    payload: ArtistSetPasswordRequest,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    """Set or reset an artist's portal password (artists table). Artist can then log in at artist portal."""
+    require_admin(user)
+    artist = db.query(Artist).filter(Artist.id == artist_id).first()
+    if not artist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    if not payload.password or len(payload.password) < 6:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 6 characters")
+    artist.password_hash = hash_password(payload.password)
+    db.commit()
+    return {"ok": True, "message": "Password set. Artist can sign in at the artist portal."}
+
+
 @router.get("/artists/{artist_id}/releases", response_model=list[ReleaseOut])
 def list_artist_releases(
     artist_id: int,
@@ -1217,6 +1388,269 @@ def upload_release(
     db.commit()
     db.refresh(release)
     return ReleaseOut.from_release(release)
+
+
+@router.get("/artist/me", response_model=ArtistOut)
+def artist_get_me(
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> ArtistOut:
+    """Get current artist profile (artist role only)."""
+    require_artist(user)
+    artist = db.query(Artist).filter(Artist.id == user.artist_id).first()
+    if not artist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    return ArtistOut.from_artist(artist)
+
+
+@router.patch("/artist/me", response_model=ArtistOut)
+def artist_patch_me(
+    payload: ArtistSelfUpdate,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> ArtistOut:
+    """Update current artist profile (artist role only; name, notes, extra fields)."""
+    require_artist(user)
+    artist = db.query(Artist).filter(Artist.id == user.artist_id).first()
+    if not artist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    if payload.name is not None:
+        artist.name = payload.name
+    if payload.notes is not None:
+        artist.notes = payload.notes
+    extra = _artist_extra_from_model(payload)
+    if extra:
+        try:
+            current = json.loads(artist.extra_json or "{}")
+            current.update(extra)
+            artist.extra_json = json.dumps(current)
+        except (json.JSONDecodeError, TypeError):
+            artist.extra_json = json.dumps(extra)
+    db.commit()
+    db.refresh(artist)
+    return ArtistOut.from_artist(artist)
+
+
+@router.patch("/artist/me/password")
+def artist_change_password(
+    payload: ArtistChangePasswordRequest,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    """Change current artist's portal password (must know current password)."""
+    require_artist(user)
+    artist = db.query(Artist).filter(Artist.id == user.artist_id).first()
+    if not artist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    if not artist.password_hash:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password not set. Contact the label.")
+    if not verify_password(payload.current_password, artist.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Current password is incorrect")
+    if not payload.new_password or len(payload.new_password) < 6:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be at least 6 characters")
+    artist.password_hash = hash_password(payload.new_password)
+    db.commit()
+    return {"ok": True, "message": "Password updated."}
+
+
+@router.get("/artist/me/demos", response_model=list[DemoSubmissionOut])
+def artist_list_my_demos(
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> list[DemoSubmissionOut]:
+    """List demo submissions for the current artist."""
+    require_artist(user)
+    items = (
+        db.query(DemoSubmission)
+        .filter(DemoSubmission.artist_id == user.artist_id)
+        .order_by(desc(DemoSubmission.created_at))
+        .all()
+    )
+    return [_serialize_demo_submission(item) for item in items]
+
+
+@router.post("/artist/me/demos", response_model=DemoSubmissionOut)
+def artist_submit_demo(
+    message: str = Form(""),
+    file: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> DemoSubmissionOut:
+    """Submit a demo from the artist portal (message + optional file)."""
+    require_artist(user)
+    artist = db.query(Artist).filter(Artist.id == user.artist_id).first()
+    if not artist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    email = user.email or artist.email
+
+    demo_file_path: str | None = None
+    if file and file.filename:
+        demo_uploads_dir = os.path.join(settings.upload_dir, "demo_uploads")
+        os.makedirs(demo_uploads_dir, exist_ok=True)
+        ext = os.path.splitext(file.filename)[1]
+        stored_name = f"{uuid.uuid4().hex}{ext}"
+        path = os.path.join(demo_uploads_dir, stored_name)
+        with open(path, "wb") as out:
+            out.write(file.file.read())
+        demo_file_path = path
+
+    fields = {}
+    if demo_file_path:
+        fields["demo_file_path"] = demo_file_path
+    item = DemoSubmission(
+        artist_name=artist.name,
+        email=email,
+        message=message.strip() or None,
+        links_json="[]",
+        fields_json=json.dumps(fields),
+        source="artist_portal",
+        source_site_url=None,
+        status="demo",
+        artist_id=artist.id,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return _serialize_demo_submission(item)
+
+
+@router.get("/artist/me/demos/{demo_id}/download", response_model=None)
+def artist_download_demo_file(
+    demo_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> FileResponse | Response:
+    """Download the attached file for a demo submission (only own demos)."""
+    require_artist(user)
+    item = (
+        db.query(DemoSubmission)
+        .filter(DemoSubmission.id == demo_id, DemoSubmission.artist_id == user.artist_id)
+        .first()
+    )
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo not found")
+    try:
+        fields = json.loads(item.fields_json or "{}")
+        path = fields.get("demo_file_path")
+    except (json.JSONDecodeError, TypeError):
+        path = None
+    if not path or not os.path.isfile(path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No file attached")
+    return FileResponse(path, filename=os.path.basename(path))
+
+
+def _artist_media_dir() -> str:
+    return os.path.join(settings.upload_dir, "artist_media")
+
+
+@router.get("/artist/me/media", response_model=list[ArtistMediaOut])
+def artist_list_my_media(
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> list[ArtistMediaOut]:
+    """List current artist's media folder files."""
+    require_artist(user)
+    items = (
+        db.query(ArtistMedia)
+        .filter(ArtistMedia.artist_id == user.artist_id)
+        .order_by(desc(ArtistMedia.created_at))
+        .all()
+    )
+    return [
+        ArtistMediaOut(
+            id=m.id,
+            artist_id=m.artist_id,
+            filename=m.filename,
+            content_type=m.content_type,
+            size_bytes=m.size_bytes,
+            created_at=m.created_at,
+        )
+        for m in items
+    ]
+
+
+@router.post("/artist/me/media", response_model=ArtistMediaOut)
+def artist_upload_media(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> ArtistMediaOut:
+    """Upload a file to the artist's media folder."""
+    require_artist(user)
+    if not file.filename or not file.filename.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Filename required")
+    artist_media_root = _artist_media_dir()
+    per_artist_dir = os.path.join(artist_media_root, str(user.artist_id))
+    os.makedirs(per_artist_dir, exist_ok=True)
+    safe_name = os.path.basename(file.filename)
+    stored_name = f"{uuid.uuid4().hex}_{safe_name}"
+    path = os.path.join(per_artist_dir, stored_name)
+    content = file.file.read()
+    size = len(content)
+    content_type = file.content_type
+    with open(path, "wb") as out:
+        out.write(content)
+    media = ArtistMedia(
+        artist_id=user.artist_id,
+        filename=safe_name,
+        stored_path=path,
+        content_type=content_type,
+        size_bytes=size,
+    )
+    db.add(media)
+    db.commit()
+    db.refresh(media)
+    return ArtistMediaOut(
+        id=media.id,
+        artist_id=media.artist_id,
+        filename=media.filename,
+        content_type=media.content_type,
+        size_bytes=media.size_bytes,
+        created_at=media.created_at,
+    )
+
+
+@router.get("/artist/me/media/{media_id}", response_model=None)
+def artist_download_media(
+    media_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> FileResponse:
+    """Download a file from the artist's media folder."""
+    require_artist(user)
+    media = (
+        db.query(ArtistMedia)
+        .filter(ArtistMedia.id == media_id, ArtistMedia.artist_id == user.artist_id)
+        .first()
+    )
+    if not media or not os.path.isfile(media.stored_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    return FileResponse(media.stored_path, filename=media.filename, media_type=media.content_type)
+
+
+@router.delete("/artist/me/media/{media_id}")
+def artist_delete_media(
+    media_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    """Delete a file from the artist's media folder."""
+    require_artist(user)
+    media = (
+        db.query(ArtistMedia)
+        .filter(ArtistMedia.id == media_id, ArtistMedia.artist_id == user.artist_id)
+        .first()
+    )
+    if not media:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    if os.path.isfile(media.stored_path):
+        try:
+            os.remove(media.stored_path)
+        except OSError:
+            pass
+    db.delete(media)
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/admin/releases", response_model=list[ReleaseOut])
@@ -2199,6 +2633,53 @@ def plan_agent_delegation(
     require_admin(user)
     plan = build_agent_plan(payload.text, max_agents=payload.max_agents)
     return AgentPlanOut.model_validate(plan)
+
+
+# --- Backup / Restore (admin only) ---
+
+
+@router.get("/admin/backup")
+def download_backup(
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+):
+    """Export all DB data as a JSON backup file. Use on another system to restore via POST /admin/restore."""
+    require_admin(user)
+    data = export_database(db)
+    payload = json.dumps(data, ensure_ascii=False, indent=2)
+    filename = f"labelops-backup-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.json"
+    return Response(
+        content=payload,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/admin/restore", response_model=dict)
+def upload_restore(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    """Replace all DB data with the uploaded backup file (from GET /admin/backup). Use with caution."""
+    require_admin(user)
+    if not file.filename or not file.filename.lower().endswith(".json"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Upload a JSON backup file")
+    try:
+        body = file.file.read()
+        data = json.loads(body.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid JSON: {e}") from e
+    try:
+        restore_database(db, data)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except SQLAlchemyError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Restore failed: {e}",
+        ) from e
+    return {"message": "Restore completed successfully."}
 
 
 

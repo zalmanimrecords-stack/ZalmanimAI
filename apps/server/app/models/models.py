@@ -1,4 +1,4 @@
-﻿from datetime import date
+from datetime import date
 
 from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Table, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -31,13 +31,17 @@ release_artists_table = Table(
 
 
 class Artist(Base):
-    """Artist fields align with reports/artists_from_release_management_raw.csv."""
+    """Artist fields align with reports/artists_from_release_management_raw.csv.
+    Artists can log in at the artist portal (artists.zalmanim.com) using email + password_hash
+    stored here; no users table row is required."""
     __tablename__ = "artists"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)  # display: artist_brand or full_name
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     notes: Mapped[str] = mapped_column(Text, default="")
+    # Portal login: bcrypt hash. Null = password not set (artist cannot use portal until admin sets one).
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Extra CSV-style fields (artist_brand, full_name, website, soundcloud, facebook, etc.) as JSON
     extra_json: Mapped[str | None] = mapped_column(Text, nullable=True, default="{}")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -51,6 +55,7 @@ class Artist(Base):
     tasks: Mapped[list["AutomationTask"]] = relationship(back_populates="artist")
     social_connections: Mapped[list["SocialConnection"]] = relationship(back_populates="artist")
     activity_logs: Mapped[list["ArtistActivityLog"]] = relationship(back_populates="artist")
+    media_files: Mapped[list["ArtistMedia"]] = relationship(back_populates="artist", cascade="all, delete-orphan")
 
 
 class ArtistActivityLog(Base):
@@ -93,6 +98,21 @@ class DemoSubmission(Base):
     artist: Mapped["Artist"] = relationship()
 
 
+class ArtistMedia(Base):
+    """Per-artist media folder: files uploaded by the artist for their own use."""
+    __tablename__ = "artist_media"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), nullable=False, index=True)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    stored_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    content_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    artist: Mapped["Artist"] = relationship(back_populates="media_files")
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -124,6 +144,19 @@ class UserIdentity(Base):
     last_login_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="identities")
+
+
+class PasswordResetToken(Base):
+    """One-time token for password reset; stored as hash, expires after 1 hour."""
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    expires_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    user: Mapped["User"] = relationship()
 
 
 class Release(Base):

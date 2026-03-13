@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -8,6 +8,7 @@ import '../../core/session_storage.dart';
 import '../../widgets/api_connection_indicator.dart';
 import '../admin/admin_dashboard_page.dart';
 import '../artist/artist_dashboard_page.dart';
+import 'forgot_password_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, required this.apiClient, this.initialError});
@@ -60,7 +61,25 @@ class _LoginPageState extends State<LoginPage> {
                     decoration: const InputDecoration(labelText: 'Password'),
                     obscureText: true,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: loading || googleLoading || facebookLoading
+                          ? null
+                          : () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => ForgotPasswordPage(
+                                    apiClient: widget.apiClient,
+                                    initialEmail: emailController.text.trim().isNotEmpty ? emailController.text.trim() : null,
+                                    onBack: () => Navigator.of(context).pop(),
+                                  ),
+                                ),
+                              ),
+                      child: const Text('Forgot password?'),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
                   Align(
                     alignment: Alignment.centerLeft,
                     child: CheckboxListTile(

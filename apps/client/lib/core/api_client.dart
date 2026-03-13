@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
@@ -68,6 +68,37 @@ class ApiClient {
   Future<String> startFacebookLogin({required String redirectUri}) {
     return startSocialLogin(provider: 'facebook', redirectUri: redirectUri);
   }
+
+  /// Request a password reset email. Always returns without error; email is sent if account exists.
+  Future<void> requestPasswordReset({required String email}) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/forgot-password'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'email': email.trim().toLowerCase()}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(response.body.isNotEmpty ? response.body : 'Request failed');
+    }
+  }
+
+  /// Set new password using the token from the reset email.
+  Future<void> resetPassword({required String token, required String newPassword}) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/reset-password'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'token': token, 'new_password': newPassword}),
+    );
+    if (response.statusCode != 200) {
+      final body = response.body;
+      String detail = body;
+      try {
+        final map = jsonDecode(body) as Map<String, dynamic>;
+        if (map['detail'] is String) detail = map['detail'] as String;
+      } catch (_) {}
+      throw Exception(detail);
+    }
+  }
+
   Future<String> startGoogleMailConnect({
     required String token,
     required String redirectUri,
@@ -315,6 +346,26 @@ class ApiClient {
     }
   }
 
+  /// Set artist's portal password (artists table). Artist can then log in at artists.zalmanim.com.
+  Future<void> setArtistPassword({
+    required String token,
+    required int artistId,
+    required String password,
+  }) async {
+    if (password.length < 6) {
+      throw Exception('Password must be at least 6 characters');
+    }
+    final response = await http.patch(
+      Uri.parse('$baseUrl/admin/artists/$artistId/set-password'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode({'password': password}),
+    );
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(response.body);
+      throw Exception('Set password failed (${response.statusCode}): ${detail.isNotEmpty ? detail : response.reasonPhrase}');
+    }
+  }
+
   Future<Map<String, dynamic>> fetchArtistDashboard(String token) async {
     final response = await http.get(
       Uri.parse('$baseUrl/artist/me/dashboard'),
@@ -340,6 +391,139 @@ class ApiClient {
     final response = await request.send();
     if (response.statusCode != 200) {
       throw Exception('Upload failed (${response.statusCode})');
+    }
+  }
+
+  /// Get current artist profile (artist role only).
+  Future<Map<String, dynamic>> fetchArtistProfile(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/artist/me'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Profile failed (${response.statusCode})');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  /// Update current artist profile (name, notes, extra fields).
+  Future<Map<String, dynamic>> updateArtistProfile(
+    String token, {
+    String? name,
+    String? notes,
+    Map<String, dynamic>? extra,
+    List<String>? artistBrands,
+  }) async {
+    final body = <String, dynamic>{};
+    if (name != null) body['name'] = name;
+    if (notes != null) body['notes'] = notes;
+    if (extra != null) body.addAll(extra);
+    if (artistBrands != null) body['artist_brands'] = artistBrands;
+    final response = await http.patch(
+      Uri.parse('$baseUrl/artist/me'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Update profile failed (${response.statusCode})');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  /// List demo submissions for the current artist.
+  Future<List<dynamic>> fetchArtistDemos(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/artist/me/demos'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Demos failed (${response.statusCode})');
+    }
+    return jsonDecode(response.body) as List<dynamic>;
+  }
+
+  /// Submit a demo (message + optional file).
+  Future<Map<String, dynamic>> submitArtistDemo(
+    String token, {
+    String message = '',
+    List<int>? fileBytes,
+    String filename = 'demo.mp3',
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/artist/me/demos'),
+    );
+    request.headers.addAll(_authHeaders(token));
+    request.fields['message'] = message;
+    if (fileBytes != null && fileBytes.isNotEmpty) {
+      request.files.add(
+        http.MultipartFile.fromBytes('file', fileBytes, filename: filename),
+      );
+    }
+    final response = await request.send();
+    final body = await response.stream.bytesToString();
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(body);
+      throw Exception('Submit demo failed (${response.statusCode}): $detail');
+    }
+    return jsonDecode(body) as Map<String, dynamic>;
+  }
+
+  /// List current artist's media folder.
+  Future<List<dynamic>> fetchArtistMedia(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/artist/me/media'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Media list failed (${response.statusCode})');
+    }
+    return jsonDecode(response.body) as List<dynamic>;
+  }
+
+  /// Upload a file to the artist's media folder.
+  Future<Map<String, dynamic>> uploadArtistMedia(
+    String token, {
+    required List<int> fileBytes,
+    required String filename,
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/artist/me/media'),
+    );
+    request.headers.addAll(_authHeaders(token));
+    request.files.add(
+      http.MultipartFile.fromBytes('file', fileBytes, filename: filename),
+    );
+    final response = await request.send();
+    final body = await response.stream.bytesToString();
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(body);
+      throw Exception('Upload media failed (${response.statusCode}): $detail');
+    }
+    return jsonDecode(body) as Map<String, dynamic>;
+  }
+
+  /// Download a file from the artist's media folder. Returns response bytes.
+  Future<List<int>> downloadArtistMedia(String token, int mediaId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/artist/me/media/$mediaId'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Download failed (${response.statusCode})');
+    }
+    return response.bodyBytes;
+  }
+
+  /// Delete a file from the artist's media folder.
+  Future<void> deleteArtistMedia(String token, int mediaId) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/artist/me/media/$mediaId'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Delete media failed (${response.statusCode})');
     }
   }
 
@@ -928,6 +1112,56 @@ class ApiClient {
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
+
+  /// Download full DB backup as JSON. Returns (bytes, suggested filename).
+  Future<({List<int> bytes, String filename})> downloadBackup(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/admin/backup'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Backup failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    String filename = 'labelops-backup.json';
+    final disposition = response.headers['content-disposition'];
+    if (disposition != null) {
+      const prefix = 'filename="';
+      final i = disposition.indexOf(prefix);
+      if (i != -1) {
+        final end = disposition.indexOf('"', i + prefix.length);
+        if (end != -1) {
+          filename = disposition.substring(i + prefix.length, end);
+        }
+      }
+    }
+    return (bytes: response.bodyBytes, filename: filename);
+  }
+
+  /// Restore DB from a backup JSON file (replaces all data).
+  Future<Map<String, dynamic>> restoreBackup({
+    required String token,
+    required List<int> fileBytes,
+    required String filename,
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/admin/restore'),
+    );
+    request.headers.addAll(_authHeaders(token));
+    request.files.add(http.MultipartFile.fromBytes('file', fileBytes, filename: filename));
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+    if (response.statusCode != 200) {
+      final body = response.body;
+      throw Exception(
+        'Restore failed (${response.statusCode}): ${body.isNotEmpty ? body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   Map<String, String> _authHeaders(String token) {
     return {'Authorization': 'Bearer $token'};
   }

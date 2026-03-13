@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,6 +14,7 @@ import 'tabs/campaigns_tab.dart';
 import 'tabs/demos_tab.dart';
 import 'tabs/releases_tab.dart';
 import 'tabs/reports_tab.dart';
+import 'tabs/users_tab.dart';
 
 // Default subject/body for artist reminder emails (used by Reports > Artist reminders).
 const String _defaultReminderSubject = 'Checking in - do you have new music for us?';
@@ -246,6 +247,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   List<dynamic> audiences = const [];
   List<dynamic> audienceSubscribers = const [];
   int? _selectedAudienceId;
+  List<dynamic> users = const [];
   final _releasesSearchController = TextEditingController();
   String _releasesSearchQuery = '';
   String? error;
@@ -256,6 +258,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   bool _loadedReleases = false;
   bool _loadedCampaigns = false;
   bool _loadedAudiences = false;
+  bool _loadedUsers = false;
   bool _artistsHasMore = true;
   bool _artistsLoadingMore = false;
   bool _catalogHasMore = true;
@@ -401,7 +404,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
     _tabController.addListener(_onTabChanged);
     _artistSearchController.addListener(_onArtistSearchChanged);
     _releasesSearchController.addListener(_onReleasesSearchChanged);
@@ -441,6 +444,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         break;
       case 4:
         if (!_loadedAudiences) _loadAudiences();
+        break;
+      case 6:
+        if (!_loadedUsers) _loadUsers();
         break;
     }
   }
@@ -566,6 +572,28 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     } catch (e) {
       _setError(e);
       if (mounted) setState(() => _loadedDemos = true);
+    }
+  }
+
+  Future<void> _loadUsers({bool withOverlay = true}) async {
+    final showOverlay = withOverlay && users.isEmpty;
+    if (mounted) {
+      setState(() {
+        if (showOverlay) loading = true;
+      });
+    }
+    try {
+      final list = await widget.apiClient.fetchUsers(widget.token);
+      if (!mounted) return;
+      setState(() {
+        users = list;
+        if (showOverlay) loading = false;
+        error = null;
+        _loadedUsers = true;
+      });
+    } catch (e) {
+      _setError(e);
+      if (mounted) setState(() => _loadedUsers = true);
     }
   }
 
@@ -763,6 +791,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   @override
   void showEditArtistDialog(int id) => _showEditArtistDialog(id);
+  void showSetArtistPasswordDialog(int artistId, String artistName) => _showSetArtistPasswordDialog(artistId, artistName);
 
   @override
   void removeArtist(int id, String name) => _removeArtist(id, name);
@@ -867,6 +896,22 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   void showSendEmailToReportArtistsDialog(BuildContext context,
           List<dynamic> reportList, List<int> selectedIndices) =>
       _showSendEmailToReportArtistsDialog(context, reportList, selectedIndices);
+
+  @override
+  List<dynamic> get usersList => users;
+
+  @override
+  Future<void> loadUsers() => _loadUsers();
+
+  @override
+  void showAddUserDialog() => _showAddUserDialog();
+
+  @override
+  void showEditUserDialog(Map<String, dynamic> user) => _showEditUserDialog(user);
+
+  @override
+  void updateUserActive(Map<String, dynamic> user, bool isActive) =>
+      _updateUserActive(user, isActive);
 
   @override
   void showErrorSnackBar(String message) => _showErrorSnackBar(message);
@@ -1040,6 +1085,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
             Tab(text: 'Campaigns'),
             Tab(text: 'Audience'),
             Tab(text: 'Reports'),
+            Tab(text: 'Users'),
           ],
         ),
       ),
@@ -1054,6 +1100,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               CampaignsTab(delegate: this),
               AudienceTab(delegate: this),
               ReportsTab(delegate: this),
+              UsersTab(delegate: this),
             ],
           ),
             if (loading)
@@ -1699,6 +1746,84 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Artist updated')));
       _load();
+    } catch (e) {
+      _showErrorSnackBar(e.toString());
+    }
+  }
+
+  Future<void> _showSetArtistPasswordDialog(int artistId, String artistName) async {
+    final passwordController = TextEditingController();
+    final confirmController = TextEditingController();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Set artist portal password'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Artist: $artistName', style: const TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              const Text(
+                'Sets the password for artists.zalmanim.com. Artist signs in with their artist email and this password.',
+                style: TextStyle(fontSize: 12),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: passwordController,
+                decoration: const InputDecoration(
+                  labelText: 'New password',
+                  border: OutlineInputBorder(),
+                  hintText: 'Min 6 characters',
+                ),
+                obscureText: true,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmController,
+                decoration: const InputDecoration(
+                  labelText: 'Confirm password',
+                  border: OutlineInputBorder(),
+                ),
+                obscureText: true,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              final p = passwordController.text;
+              final c = confirmController.text;
+              if (p.length < 6) {
+                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Password must be at least 6 characters')));
+                return;
+              }
+              if (p != c) {
+                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Passwords do not match')));
+                return;
+              }
+              Navigator.pop(ctx, true);
+            },
+            child: const Text('Set password'),
+          ),
+        ],
+      ),
+    );
+    final password = passwordController.text;
+    passwordController.dispose();
+    confirmController.dispose();
+    if (result != true) return;
+    try {
+      await widget.apiClient.setArtistPassword(
+        token: widget.token,
+        artistId: artistId,
+        password: password,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Portal password set. Artist can sign in at artists.zalmanim.com.')));
     } catch (e) {
       _showErrorSnackBar(e.toString());
     }
@@ -3592,7 +3717,324 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
   }
 
+  static const List<String> _userRoles = ['admin', 'manager', 'artist'];
 
+  Future<void> _showAddUserDialog() async {
+    final emailController = TextEditingController();
+    final fullNameController = TextEditingController();
+    final passwordController = TextEditingController();
+    String role = 'manager';
+    int? artistId;
+    bool isActive = true;
+    String? dialogError;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Add user'),
+            content: SingleChildScrollView(
+              child: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (dialogError != null) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SelectableText(
+                              dialogError!,
+                              style: const TextStyle(color: Colors.red),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.copy),
+                            tooltip: 'Copy error',
+                            onPressed: () => Clipboard.setData(ClipboardData(text: dialogError!)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    TextField(
+                      controller: emailController,
+                      decoration: const InputDecoration(labelText: 'Email *'),
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: fullNameController,
+                      decoration: const InputDecoration(labelText: 'Full name'),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: passwordController,
+                      decoration: const InputDecoration(labelText: 'Password *'),
+                      obscureText: true,
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      value: role,
+                      decoration: const InputDecoration(labelText: 'Role'),
+                      items: _userRoles
+                          .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                          .toList(),
+                      onChanged: (value) => setDialogState(() => role = value ?? role),
+                    ),
+                    if (role == 'artist') ...[
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<int?>(
+                        value: artistId,
+                        decoration: const InputDecoration(labelText: 'Artist (optional)'),
+                        items: [
+                          const DropdownMenuItem<int?>(value: null, child: Text('— None —')),
+                          ...artists.map((a) {
+                            final map = a as Map<String, dynamic>;
+                            return DropdownMenuItem<int?>(
+                              value: map['id'] as int,
+                              child: Text((map['name'] ?? map['email'] ?? '${map['id']}').toString()),
+                            );
+                          }),
+                        ],
+                        onChanged: (value) => setDialogState(() => artistId = value),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    CheckboxListTile(
+                      value: isActive,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Active'),
+                      onChanged: (value) => setDialogState(() => isActive = value ?? true),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+              FilledButton(
+                onPressed: () async {
+                  final email = emailController.text.trim();
+                  final password = passwordController.text.trim();
+                  if (email.isEmpty) {
+                    setDialogState(() => dialogError = 'Email is required.');
+                    return;
+                  }
+                  if (password.isEmpty) {
+                    setDialogState(() => dialogError = 'Password is required for new users.');
+                    return;
+                  }
+                  try {
+                    await widget.apiClient.createUser(
+                      token: widget.token,
+                      body: {
+                        'email': email,
+                        'full_name': fullNameController.text.trim().isEmpty ? null : fullNameController.text.trim(),
+                        'password': password,
+                        'role': role,
+                        if (artistId != null) 'artist_id': artistId,
+                        'is_active': isActive,
+                      },
+                    );
+                    if (!ctx.mounted) return;
+                    Navigator.of(ctx).pop(true);
+                  } catch (e) {
+                    setDialogState(() => dialogError = e.toString());
+                  }
+                },
+                child: const Text('Create'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    emailController.dispose();
+    fullNameController.dispose();
+    passwordController.dispose();
+    if (saved == true) {
+      await _loadUsers(withOverlay: false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: SelectableText('User created.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _showEditUserDialog(Map<String, dynamic> user) async {
+    final id = user['id'] as int?;
+    if (id == null) return;
+    final emailController = TextEditingController(text: (user['email'] ?? '').toString());
+    final fullNameController = TextEditingController(text: (user['full_name'] ?? '').toString());
+    final passwordController = TextEditingController();
+    String role = (user['role'] ?? 'manager').toString();
+    if (!_userRoles.contains(role)) role = 'manager';
+    int? artistId = user['artist_id'] as int?;
+    bool isActive = user['is_active'] as bool? ?? true;
+    String? dialogError;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Edit user'),
+            content: SingleChildScrollView(
+              child: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (dialogError != null) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SelectableText(
+                              dialogError!,
+                              style: const TextStyle(color: Colors.red),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.copy),
+                            tooltip: 'Copy error',
+                            onPressed: () => Clipboard.setData(ClipboardData(text: dialogError!)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    TextField(
+                      controller: emailController,
+                      decoration: const InputDecoration(labelText: 'Email *'),
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: fullNameController,
+                      decoration: const InputDecoration(labelText: 'Full name'),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: passwordController,
+                      decoration: const InputDecoration(
+                        labelText: 'New password',
+                        hintText: 'Leave blank to keep current',
+                      ),
+                      obscureText: true,
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      value: role,
+                      decoration: const InputDecoration(labelText: 'Role'),
+                      items: _userRoles
+                          .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                          .toList(),
+                      onChanged: (value) => setDialogState(() => role = value ?? role),
+                    ),
+                    if (role == 'artist') ...[
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<int?>(
+                        value: artistId,
+                        decoration: const InputDecoration(labelText: 'Artist (optional)'),
+                        items: [
+                          const DropdownMenuItem<int?>(value: null, child: Text('— None —')),
+                          ...artists.map((a) {
+                            final map = a as Map<String, dynamic>;
+                            return DropdownMenuItem<int?>(
+                              value: map['id'] as int,
+                              child: Text((map['name'] ?? map['email'] ?? '${map['id']}').toString()),
+                            );
+                          }),
+                        ],
+                        onChanged: (value) => setDialogState(() => artistId = value),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    CheckboxListTile(
+                      value: isActive,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Active'),
+                      onChanged: (value) => setDialogState(() => isActive = value ?? true),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+              FilledButton(
+                onPressed: () async {
+                  final email = emailController.text.trim();
+                  if (email.isEmpty) {
+                    setDialogState(() => dialogError = 'Email is required.');
+                    return;
+                  }
+                  final body = <String, dynamic>{
+                    'email': email,
+                    'full_name': fullNameController.text.trim().isEmpty ? null : fullNameController.text.trim(),
+                    'role': role,
+                    'is_active': isActive,
+                  };
+                  final pwd = passwordController.text.trim();
+                  if (pwd.isNotEmpty) body['password'] = pwd;
+                  body['artist_id'] = role == 'artist' ? artistId : null;
+                  try {
+                    await widget.apiClient.updateUser(token: widget.token, id: id, body: body);
+                    if (!ctx.mounted) return;
+                    Navigator.of(ctx).pop(true);
+                  } catch (e) {
+                    setDialogState(() => dialogError = e.toString());
+                  }
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    emailController.dispose();
+    fullNameController.dispose();
+    passwordController.dispose();
+    if (saved == true) {
+      await _loadUsers(withOverlay: false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: SelectableText('User updated.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateUserActive(Map<String, dynamic> user, bool isActive) async {
+    final id = user['id'] as int?;
+    if (id == null) return;
+    try {
+      setState(() => loading = true);
+      await widget.apiClient.updateUser(
+        token: widget.token,
+        id: id,
+        body: {'is_active': isActive},
+      );
+      await _loadUsers(withOverlay: false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: SelectableText(isActive ? 'User activated.' : 'User deactivated.'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _showErrorSnackBar(e.toString());
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
 
   Future<void> _importMailchimpAudienceCsv() async {
     final result = await FilePicker.platform.pickFiles(
@@ -4860,7 +5302,7 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: role,
+                    initialValue: role,
                     decoration: const InputDecoration(labelText: 'Role', border: OutlineInputBorder()),
                     items: const [
                       DropdownMenuItem(value: 'admin', child: Text('Admin')),
@@ -4871,7 +5313,7 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<int?>(
-                    value: artistId,
+                    initialValue: artistId,
                     decoration: const InputDecoration(labelText: 'Linked artist', border: OutlineInputBorder()),
                     items: [
                       const DropdownMenuItem<int?>(value: null, child: Text('No linked artist')),

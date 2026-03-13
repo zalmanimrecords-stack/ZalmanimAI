@@ -138,7 +138,8 @@ Admin endpoints: `GET /api/admin/email/rate-limit` (status) and `POST /api/admin
 - Public intake endpoint: `POST /api/public/demo-submissions`
 - Admin review endpoints: `GET /api/admin/demo-submissions`, `PATCH /api/admin/demo-submissions/{id}`, `POST /api/admin/demo-submissions/{id}/approve`
 - Admin portal now includes a **Demos** tab for review, status changes, and approval email editing before send.
-- Optional env var: `DEMO_SUBMISSION_TOKEN` - if set, public demo submissions must include header `x-demo-token`.
+- Default shared token: `TOKEN` via `DEMO_SUBMISSION_TOKEN`
+- Production default endpoint for the WordPress form: `https://lmapi.zalmanim.com/api/public/demo-submissions`
 - A WordPress plugin lives at [apps/wordpress-plugin/zalmanim-demo-addon/zalmanim-demo-addon.php](/C:/Users/SimonRosenfeld/ZalmanimAI/apps/wordpress-plugin/zalmanim-demo-addon/zalmanim-demo-addon.php). It provides shortcode `[zalmanim_demo_form]` plus a configurable JSON schema so the WP form can mirror your Google Form layout/fields.
 
 ## Unified Campaigns

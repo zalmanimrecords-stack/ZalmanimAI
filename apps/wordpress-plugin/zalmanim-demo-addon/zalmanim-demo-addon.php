@@ -18,6 +18,8 @@ final class Zalmanim_Demo_Addon {
         add_action('admin_menu', [$this, 'register_admin_page']);
         add_action('admin_init', [$this, 'register_settings']);
         add_shortcode(self::SHORTCODE, [$this, 'render_shortcode']);
+        add_action('wp_ajax_zalmanim_demo_submit', [$this, 'ajax_submit']);
+        add_action('wp_ajax_nopriv_zalmanim_demo_submit', [$this, 'ajax_submit']);
     }
 
     public function register_admin_page(): void {
@@ -56,8 +58,8 @@ final class Zalmanim_Demo_Addon {
 
     private function default_options(): array {
         return [
-            'api_endpoint' => 'http://localhost:8000/api/public/demo-submissions',
-            'api_token' => '',
+            'api_endpoint' => 'https://lmapi.zalmanim.com/api/public/demo-submissions',
+            'api_token' => 'TOKEN',
             'success_message' => 'Thanks, your demo was sent successfully.',
             'submit_label' => 'Send Demo',
             'form_schema_json' => wp_json_encode($this->default_schema(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
@@ -111,17 +113,37 @@ final class Zalmanim_Demo_Addon {
         ?>
         <div class="wrap">
             <h1>Zalmanim Demo Addon</h1>
-            <p>Use shortcode <code>[<?php echo esc_html(self::SHORTCODE); ?>]</code> on any page.</p>
+
+            <div class="card" style="max-width: 720px; padding: 1em 1.5em; margin-bottom: 1.5em;">
+                <h2 style="margin-top: 0;">How to use this plugin</h2>
+                <ol style="margin-left: 1.2em;">
+                    <li>Open the page where you want the form to appear.</li>
+                    <li>Add a <strong>Shortcode</strong> block and paste <code>[<?php echo esc_html(self::SHORTCODE); ?>]</code>.</li>
+                    <li>Save the page. The form will be rendered inside the page itself.</li>
+                    <li>When a visitor submits the form, WordPress sends the data to the LM system endpoint configured below.</li>
+                    <li>The submission is stored in the LM system as a demo submission with status <code>demo</code>.</li>
+                </ol>
+                <p style="margin-bottom: 0;">This plugin is for our internal production flow only. The defaults below are already set to production and the shared token is prefilled as <code>TOKEN</code>.</p>
+            </div>
+
+            <h2>Server and authentication</h2>
+            <p>Choose which server receives the form data and which token is sent in the request header. For our system, keep the production endpoint and token unless explicitly changing infrastructure.</p>
             <form method="post" action="options.php">
                 <?php settings_fields('zalmanim_demo_addon_group'); ?>
                 <table class="form-table" role="presentation">
                     <tr>
                         <th scope="row"><label for="zalmanim-demo-api-endpoint">API endpoint</label></th>
-                        <td><input id="zalmanim-demo-api-endpoint" class="regular-text" type="url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[api_endpoint]" value="<?php echo esc_attr($options['api_endpoint']); ?>"></td>
+                        <td>
+                            <input id="zalmanim-demo-api-endpoint" class="regular-text" type="url" name="<?php echo esc_attr(self::OPTION_KEY); ?>[api_endpoint]" value="<?php echo esc_attr($options['api_endpoint']); ?>">
+                            <p class="description">Production LM endpoint. By default this is <code>https://lmapi.zalmanim.com/api/public/demo-submissions</code>. Every form submission is sent to this address via POST.</p>
+                        </td>
                     </tr>
                     <tr>
-                        <th scope="row"><label for="zalmanim-demo-api-token">Shared token</label></th>
-                        <td><input id="zalmanim-demo-api-token" class="regular-text" type="text" name="<?php echo esc_attr(self::OPTION_KEY); ?>[api_token]" value="<?php echo esc_attr($options['api_token']); ?>"></td>
+                        <th scope="row"><label for="zalmanim-demo-api-token">Shared token (TOKEN)</label></th>
+                        <td>
+                            <input id="zalmanim-demo-api-token" class="regular-text" type="text" name="<?php echo esc_attr(self::OPTION_KEY); ?>[api_token]" value="<?php echo esc_attr($options['api_token']); ?>">
+                            <p class="description">This value is sent in the <code>x-demo-token</code> header with every submission. The LM server is also configured with the same default value: <code>TOKEN</code>.</p>
+                        </td>
                     </tr>
                     <tr>
                         <th scope="row"><label for="zalmanim-demo-success">Success message</label></th>
@@ -135,7 +157,7 @@ final class Zalmanim_Demo_Addon {
                         <th scope="row"><label for="zalmanim-demo-schema">Form schema JSON</label></th>
                         <td>
                             <textarea id="zalmanim-demo-schema" class="large-text code" rows="18" name="<?php echo esc_attr(self::OPTION_KEY); ?>[form_schema_json]"><?php echo esc_textarea($options['form_schema_json']); ?></textarea>
-                            <p class="description">Each field supports: name, label, type, required, role, options. Roles help map the form into the demo system.</p>
+                            <p class="description">Each field supports: name, label, type, required, role, options. Roles map the form values into the LM system. Use roles like <code>artist_name</code>, <code>email</code>, <code>contact_name</code>, <code>phone</code>, <code>genre</code>, <code>city</code>, <code>message</code>, and <code>link</code>.</p>
                         </td>
                     </tr>
                 </table>
@@ -149,6 +171,8 @@ final class Zalmanim_Demo_Addon {
         $options = $this->get_options();
         $schema = $this->parse_schema((string) $options['form_schema_json']);
         $feedback = $this->handle_submission($schema, $options);
+        $ajax_url = admin_url('admin-ajax.php');
+        $ajax_nonce = wp_create_nonce('zalmanim_demo_ajax');
         ob_start();
         ?>
         <div class="zalmanim-demo-addon">
@@ -157,9 +181,10 @@ final class Zalmanim_Demo_Addon {
                     <?php echo esc_html($feedback['message']); ?>
                 </div>
             <?php endif; ?>
-            <form method="post" class="zalmanim-demo-form">
+            <form method="post" class="zalmanim-demo-form" data-ajax-url="<?php echo esc_url($ajax_url); ?>" data-ajax-nonce="<?php echo esc_attr($ajax_nonce); ?>">
                 <?php wp_nonce_field('zalmanim_demo_submit', 'zalmanim_demo_nonce'); ?>
                 <input type="hidden" name="zalmanim_demo_submit" value="1">
+                <input type="hidden" name="action" value="zalmanim_demo_submit">
                 <?php foreach ($schema as $field) : ?>
                     <?php $this->render_field($field); ?>
                 <?php endforeach; ?>
@@ -177,8 +202,74 @@ final class Zalmanim_Demo_Addon {
             .zalmanim-demo-feedback.is-success { background:#e8f7ee; color:#155724; }
             .zalmanim-demo-feedback.is-error { background:#fdecec; color:#8a1f1f; }
         </style>
+        <script>
+            (function() {
+                var root = document.currentScript ? document.currentScript.parentNode : null;
+                var form = root ? root.querySelector('.zalmanim-demo-form') : document.querySelector('.zalmanim-demo-form');
+                if (!form) return;
+                form.addEventListener('submit', function(event) {
+                    event.preventDefault();
+                    var button = form.querySelector('button[type="submit"]');
+                    var formData = new FormData(form);
+                    formData.append('security', form.getAttribute('data-ajax-nonce'));
+                    if (button) {
+                        button.disabled = true;
+                    }
+                    fetch(form.getAttribute('data-ajax-url'), {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'same-origin'
+                    })
+                    .then(function(response) { return response.json(); })
+                    .then(function(payload) {
+                        var box = form.parentNode.querySelector('.zalmanim-demo-feedback');
+                        if (!box) {
+                            box = document.createElement('div');
+                            box.className = 'zalmanim-demo-feedback';
+                            form.parentNode.insertBefore(box, form);
+                        }
+                        var data = payload && payload.data ? payload.data : {};
+                        box.textContent = data.message || 'Submission failed.';
+                        box.className = 'zalmanim-demo-feedback ' + (payload.success ? 'is-success' : 'is-error');
+                        if (payload.success) {
+                            form.reset();
+                        }
+                    })
+                    .catch(function() {
+                        var box = form.parentNode.querySelector('.zalmanim-demo-feedback');
+                        if (!box) {
+                            box = document.createElement('div');
+                            box.className = 'zalmanim-demo-feedback is-error';
+                            form.parentNode.insertBefore(box, form);
+                        }
+                        box.textContent = 'Could not send the form right now.';
+                        box.className = 'zalmanim-demo-feedback is-error';
+                    })
+                    .finally(function() {
+                        if (button) {
+                            button.disabled = false;
+                        }
+                    });
+                });
+            })();
+        </script>
         <?php
         return (string) ob_get_clean();
+    }
+
+    public function ajax_submit(): void {
+        check_ajax_referer('zalmanim_demo_ajax', 'security');
+        $options = $this->get_options();
+        $schema = $this->parse_schema((string) $options['form_schema_json']);
+        $payload = $this->build_payload($schema);
+        if (empty($payload['artist_name']) || empty($payload['email'])) {
+            wp_send_json_error(['message' => 'Artist name and email are required.'], 400);
+        }
+        $result = $this->send_payload_to_lm($payload, $options);
+        if (!empty($result['success'])) {
+            wp_send_json_success(['message' => $result['message']]);
+        }
+        wp_send_json_error(['message' => $result['message']], 400);
     }
 
     private function render_field(array $field): void {
@@ -219,6 +310,10 @@ final class Zalmanim_Demo_Addon {
         if (empty($payload['artist_name']) || empty($payload['email'])) {
             return ['success' => false, 'message' => 'Artist name and email are required.'];
         }
+        return $this->send_payload_to_lm($payload, $options);
+    }
+
+    private function send_payload_to_lm(array $payload, array $options): array {
         $args = [
             'headers' => array_filter([
                 'Content-Type' => 'application/json',

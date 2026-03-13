@@ -240,6 +240,15 @@ class _ArtistsTabState extends State<ArtistsTab> {
                                                     onPressed: () => delegate.showEditArtistDialog(artist.id),
                                                   ),
                                                   _actionButton(
+                                                    icon: Icons.lock,
+                                                    color: Colors.teal,
+                                                    tooltip: 'Set portal password',
+                                                    onPressed: () => delegate.showSetArtistPasswordDialog(
+                                                      artist.id,
+                                                      artist.displayName,
+                                                    ),
+                                                  ),
+                                                  _actionButton(
                                                     icon: Icons.delete,
                                                     color: Colors.red,
                                                     tooltip: 'Remove',

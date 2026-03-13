@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 import 'core/api_client.dart';
 import 'core/app_config.dart';
@@ -7,6 +7,7 @@ import 'core/session_storage.dart';
 import 'features/admin/admin_dashboard_page.dart';
 import 'features/artist/artist_dashboard_page.dart';
 import 'features/auth/login_page.dart';
+import 'features/auth/reset_password_page.dart';
 
 void main() {
   runApp(const LabelOpsApp());
@@ -31,12 +32,19 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
   late final ApiClient _apiClient;
   late final Future<AuthSession?> _sessionFuture;
   String? _authError;
+  bool _showResetPassword = false;
+  String? _resetToken;
 
   @override
   void initState() {
     super.initState();
     _apiClient = ApiClient(baseUrl: _apiBaseUrl);
     _sessionFuture = _resolveInitialSession();
+    final resetToken = Uri.base.queryParameters['reset_token'];
+    if (resetToken != null && resetToken.isNotEmpty) {
+      _showResetPassword = true;
+      _resetToken = resetToken;
+    }
   }
 
   Future<AuthSession?> _resolveInitialSession() async {
@@ -77,6 +85,16 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
       home: FutureBuilder<AuthSession?>(
         future: _sessionFuture,
         builder: (context, snapshot) {
+          if (_showResetPassword && _resetToken != null) {
+            return ResetPasswordPage(
+              apiClient: _apiClient,
+              resetToken: _resetToken!,
+              onSuccess: () => setState(() {
+                _showResetPassword = false;
+                _resetToken = null;
+              }),
+            );
+          }
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(
               body: Center(child: CircularProgressIndicator()),
