@@ -17,10 +17,9 @@ import 'tabs/audience_tab.dart';
 import 'tabs/campaign_requests_tab.dart';
 import 'tabs/campaigns_tab.dart';
 import 'tabs/demos_tab.dart';
-import 'tabs/pending_releases_tab.dart';
-import 'tabs/releases_tab.dart';
+import 'tabs/releases_section_tab.dart';
 import 'tabs/reports_tab.dart';
-import 'tabs/users_tab.dart';
+import 'tabs/settings_tab.dart';
 
 // Default subject/body for artist reminder emails (used by Reports > Artist reminders).
 const String _defaultReminderSubject = 'Checking in - do you have new music for us?';
@@ -421,7 +420,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 9, vsync: this);
+    _tabController = TabController(length: 8, vsync: this);
     _tabController.addListener(_onTabChanged);
     _artistSearchController.addListener(_onArtistSearchChanged);
     _releasesSearchController.addListener(_onReleasesSearchChanged);
@@ -455,6 +454,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         break;
       case 2:
         if (!_loadedReleases) _loadReleases();
+        if (!_loadedPendingReleases) _loadPendingReleases();
         break;
       case 3:
         if (!_loadedCampaigns) _loadCampaigns();
@@ -464,9 +464,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         break;
       case 5:
         if (!_loadedAudiences) _loadAudiences();
-        break;
-      case 8:
-        if (!_loadedPendingReleases) _loadPendingReleases();
         break;
       case 7:
         if (!_loadedUsers) _loadUsers();
@@ -1058,6 +1055,52 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       _showSendEmailToReportArtistsDialog(context, reportList, selectedIndices);
 
   @override
+  void showArtistReminderMailSettingsDialog(BuildContext context) =>
+      _showArtistReminderMailSettingsDialog(context);
+
+  Future<void> _showArtistReminderMailSettingsDialog(BuildContext context) async {
+    final savedSubject = await getArtistReminderEmailSubject();
+    final savedBody = await getArtistReminderEmailBody();
+    final subjectController = TextEditingController(text: savedSubject ?? _defaultReminderSubject);
+    final bodyController = TextEditingController(text: savedBody ?? _defaultReminderBody);
+    if (!mounted) return;
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Mail settings - reminder emails'),
+        content: SingleChildScrollView(
+          child: SizedBox(
+            width: 680,
+            child: _ReminderTemplateEditor(
+              subjectController: subjectController,
+              bodyController: bodyController,
+              previewValues: _sampleReminderTemplateValues,
+              helperText: 'Default subject and body for artist reminder emails. The body editor supports HTML snippets and dynamic fields from the artist profile.',
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (saved == true) {
+      await setArtistReminderEmailTemplate(
+        subject: subjectController.text.trim(),
+        body: bodyController.text,
+      );
+      subjectController.dispose();
+      bodyController.dispose();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mail settings saved.')));
+    } else {
+      subjectController.dispose();
+      bodyController.dispose();
+    }
+  }
+
+  @override
   List<dynamic> get usersList => users;
 
   @override
@@ -1261,8 +1304,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
             Tab(icon: ZalmanimIcons.jellyfishIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Campaign requests'),
             Tab(icon: ZalmanimIcons.squidIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Audience'),
             Tab(icon: ZalmanimIcons.alienIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Reports'),
-            Tab(icon: ZalmanimIcons.jellyfishIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Users'),
-            Tab(icon: ZalmanimIcons.squidIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Pending for release'),
+            Tab(icon: Icon(ZalmanimIcons.settings, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Settings'),
           ],
         ),
       ),
@@ -1273,13 +1315,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
             children: [
               ArtistsTab(delegate: this),
               DemosTab(delegate: this),
-              ReleasesTab(delegate: this),
+              ReleasesSectionTab(delegate: this),
               CampaignsTab(delegate: this),
               CampaignRequestsTab(delegate: this),
               AudienceTab(delegate: this),
               ReportsTab(delegate: this),
-              UsersTab(delegate: this),
-              PendingReleasesTab(delegate: this),
+              SettingsTab(delegate: this),
             ],
           ),
             if (loading)

@@ -21,6 +21,8 @@ class MailSettings(Base):
     emails_per_hour: Mapped[int | None] = mapped_column(Integer, nullable=True)
     demo_rejection_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     demo_rejection_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    demo_approval_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    demo_approval_body: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
 # Many-to-many: a release can have multiple artists (e.g. when sync failed and admin assigns, or collab)
@@ -398,4 +400,15 @@ class CampaignDelivery(Base):
     campaign: Mapped["Campaign"] = relationship(back_populates="deliveries")
     target: Mapped["CampaignTarget"] = relationship(back_populates="deliveries")
 
+
+class SystemLog(Base):
+    """System and mail logs for admin Settings > Logs. level: info, warning, error. category: mail, system, etc."""
+    __tablename__ = "system_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    level: Mapped[str] = mapped_column(String(20), nullable=False, index=True)  # info, warning, error
+    category: Mapped[str] = mapped_column(String(80), nullable=False, index=True)  # mail, system, auth, etc.
+    message: Mapped[str] = mapped_column(String(500), nullable=False)
+    details: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

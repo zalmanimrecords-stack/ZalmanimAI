@@ -40,6 +40,7 @@ from app.models.models import (
     Release,
     release_artists_table,
     SocialConnection,
+    SystemLog,
     User,
     UserIdentity,
 )
@@ -90,6 +91,7 @@ from app.schemas.schemas import (
     ResetPasswordRequest,
     ReleaseUpdateArtists,
     SystemSettingsMailUpdate,
+    SystemLogOut,
     SystemSettingsOut,
     TaskOut,
     TokenResponse,
@@ -569,6 +571,22 @@ def _default_demo_rejection_body(artist_name: str) -> str:
     )
 
 
+def _get_demo_approval_subject_and_body(artist_name: str) -> tuple[str, str]:
+    """Resolve default demo approval subject and body from settings or built-in defaults. Placeholder: {artist_name}."""
+    mail = get_effective_mail_config_for_api()
+    subject = (mail.get("demo_approval_subject") or "").strip()
+    body = (mail.get("demo_approval_body") or "").strip()
+    if not subject:
+        subject = _default_demo_approval_subject(artist_name)
+    else:
+        subject = subject.replace("{artist_name}", (artist_name or "there").strip())
+    if not body:
+        body = _default_demo_approval_body(artist_name)
+    else:
+        body = body.replace("{artist_name}", (artist_name or "there").strip())
+    return subject, body
+
+
 def _get_demo_rejection_subject_and_body(item: DemoSubmission) -> tuple[str, str]:
     """Resolve rejection email subject and body from settings or defaults; replace placeholders."""
     mail = get_effective_mail_config_for_api()
@@ -803,6 +821,8 @@ def init_db() -> None:
             conn.execute(text("ALTER TABLE demo_submissions ADD COLUMN IF NOT EXISTS rejection_email_sent_at TIMESTAMP WITH TIME ZONE"))
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_rejection_subject VARCHAR(255)"))
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_rejection_body TEXT"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_approval_subject VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_approval_body TEXT"))
             conn.commit()
     except Exception as e:
         logging.getLogger(__name__).warning("DB migration (auth/users): %s", e)
@@ -1089,6 +1109,7 @@ def create_demo_submission(
             detail="Email consent is required before sending a demo.",
         )
     normalized_links = [str(link).strip() for link in payload.links if str(link).strip()]
+    default_approval_subj, default_approval_body = _get_demo_approval_subject_and_body(payload.artist_name)
     item = DemoSubmission(
         artist_name=payload.artist_name.strip(),
         email=str(payload.email).strip().lower(),
@@ -1104,8 +1125,8 @@ def create_demo_submission(
         source=source,
         source_site_url=(payload.source_site_url or "").strip() or None,
         status="demo",
-        approval_subject=_default_demo_approval_subject(payload.artist_name),
-        approval_body=_default_demo_approval_body(payload.artist_name),
+        approval_subject=default_approval_subj,
+        approval_body=default_approval_body,
     )
     db.add(item)
     db.flush()
@@ -1565,10 +1586,12 @@ def approve_demo_submission(
         item.approval_subject = payload.approval_subject.strip() or None
     if payload.approval_body is not None:
         item.approval_body = payload.approval_body
-    if not item.approval_subject:
-        item.approval_subject = _default_demo_approval_subject(item.artist_name)
-    if not item.approval_body:
-        item.approval_body = _default_demo_approval_body(item.artist_name)
+    if not item.approval_subject or not item.approval_body:
+        default_subj, default_body = _get_demo_approval_subject_and_body(item.artist_name)
+        if not item.approval_subject:
+            item.approval_subject = default_subj
+        if not item.approval_body:
+            item.approval_body = default_body
 
     if payload.create_artist and item.artist_id is None:
         artist = db.query(Artist).filter(func.lower(Artist.email) == item.email.lower()).first()
@@ -2716,6 +2739,24 @@ def run_inactivity_check(
     return {"created_tasks": created}
 
 
+# System logs (Settings > Logs)
+@router.get("/admin/logs", response_model=list[SystemLogOut])
+def list_system_logs(
+    limit: int = Query(200, ge=1, le=500),
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> list[SystemLogOut]:
+    """List recent system and mail logs for admin Settings > Logs."""
+    require_admin(user)
+    rows = (
+        db.query(SystemLog)
+        .order_by(desc(SystemLog.id))
+        .limit(limit)
+        .all()
+    )
+    return [SystemLogOut.model_validate(r) for r in rows]
+
+
 # System settings (mail editable via UI; OAuth read-only from env)
 @router.get("/admin/settings", response_model=SystemSettingsOut)
 def get_system_settings(
@@ -2738,6 +2779,8 @@ def get_system_settings(
         email_configured=is_email_configured(),
         demo_rejection_subject=mail.get("demo_rejection_subject", "") or "",
         demo_rejection_body=mail.get("demo_rejection_body", "") or "",
+        demo_approval_subject=mail.get("demo_approval_subject", "") or "",
+        demo_approval_body=mail.get("demo_approval_body", "") or "",
         oauth_redirect_base=settings.oauth_redirect_base or "",
         google_oauth_configured=bool(settings.google_client_id and settings.google_client_secret),
         gmail_connected=gmail_connected,
@@ -2767,6 +2810,8 @@ def update_system_settings_mail(
         emails_per_hour=payload.emails_per_hour,
         demo_rejection_subject=payload.demo_rejection_subject,
         demo_rejection_body=payload.demo_rejection_body,
+        demo_approval_subject=payload.demo_approval_subject,
+        demo_approval_body=payload.demo_approval_body,
     )
     mail = get_effective_mail_config_for_api()
     gmail_connected, gmail_email = _gmail_connection_status(db)
@@ -2781,6 +2826,8 @@ def update_system_settings_mail(
         email_configured=is_email_configured(),
         demo_rejection_subject=mail.get("demo_rejection_subject", "") or "",
         demo_rejection_body=mail.get("demo_rejection_body", "") or "",
+        demo_approval_subject=mail.get("demo_approval_subject", "") or "",
+        demo_approval_body=mail.get("demo_approval_body", "") or "",
         oauth_redirect_base=settings.oauth_redirect_base or "",
         google_oauth_configured=bool(settings.google_client_id and settings.google_client_secret),
         gmail_connected=gmail_connected,

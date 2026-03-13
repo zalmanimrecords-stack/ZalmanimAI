@@ -870,6 +870,20 @@ class ApiClient {
     return jsonDecode(response.body) as List<dynamic>;
   }
 
+  /// Fetch system and mail logs for Settings > Logs. [limit] default 200, max 500.
+  Future<List<dynamic>> fetchSystemLogs(String token, {int limit = 200}) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/admin/logs').replace(queryParameters: {'limit': limit.toString()}),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Logs failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as List<dynamic>;
+  }
+
   /// Update mail server settings and demo rejection email template. Returns updated system settings.
   Future<Map<String, dynamic>> updateSystemSettingsMail({
     required String token,
@@ -883,6 +897,8 @@ class ApiClient {
     int? emailsPerHour,
     String? demoRejectionSubject,
     String? demoRejectionBody,
+    String? demoApprovalSubject,
+    String? demoApprovalBody,
   }) async {
     final body = <String, dynamic>{};
     if (smtpHost != null) body['smtp_host'] = smtpHost;
@@ -895,6 +911,8 @@ class ApiClient {
     if (emailsPerHour != null) body['emails_per_hour'] = emailsPerHour;
     if (demoRejectionSubject != null) body['demo_rejection_subject'] = demoRejectionSubject;
     if (demoRejectionBody != null) body['demo_rejection_body'] = demoRejectionBody;
+    if (demoApprovalSubject != null) body['demo_approval_subject'] = demoApprovalSubject;
+    if (demoApprovalBody != null) body['demo_approval_body'] = demoApprovalBody;
 
     final response = await http.patch(
       Uri.parse('$baseUrl/admin/settings/mail'),

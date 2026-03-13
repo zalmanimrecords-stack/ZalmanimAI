@@ -1,4 +1,4 @@
-﻿import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'session.dart';
 
@@ -76,5 +76,12 @@ Future<void> setArtistReminderEmailTemplate({String? subject, String? body}) asy
   final prefs = await SharedPreferences.getInstance();
   if (subject != null) await prefs.setString(_keyArtistReminderSubject, subject);
   if (body != null) await prefs.setString(_keyArtistReminderBody, body);
+}
+
+/// Clears all app cache (session, cookie consent, reminder templates, etc.).
+/// After this, call [reloadApp] on web to reload the page from the server.
+Future<void> clearAllAppCache() async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.clear();
 }
 

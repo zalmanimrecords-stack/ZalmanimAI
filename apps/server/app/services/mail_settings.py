@@ -52,6 +52,8 @@ def get_effective_mail_config_for_api():
         "emails_per_hour": c.emails_per_hour,
         "demo_rejection_subject": (getattr(row, "demo_rejection_subject", None) if row else None) or "",
         "demo_rejection_body": (getattr(row, "demo_rejection_body", None) if row else None) or "",
+        "demo_approval_subject": (getattr(row, "demo_approval_subject", None) if row else None) or "",
+        "demo_approval_body": (getattr(row, "demo_approval_body", None) if row else None) or "",
     }
 
 
@@ -66,6 +68,8 @@ def save_mail_settings(
     emails_per_hour: int | None = None,
     demo_rejection_subject: str | None = None,
     demo_rejection_body: str | None = None,
+    demo_approval_subject: str | None = None,
+    demo_approval_body: str | None = None,
 ) -> None:
     """Upsert the single mail settings row (id=1). None means do not change; empty string clears override."""
     with SessionLocal() as db:
@@ -93,6 +97,10 @@ def save_mail_settings(
             row.demo_rejection_subject = demo_rejection_subject.strip() or None
         if demo_rejection_body is not None:
             row.demo_rejection_body = demo_rejection_body.strip() or None
+        if demo_approval_subject is not None:
+            row.demo_approval_subject = demo_approval_subject.strip() or None
+        if demo_approval_body is not None:
+            row.demo_approval_body = demo_approval_body.strip() or None
         db.commit()
 
 def build_mail_config(

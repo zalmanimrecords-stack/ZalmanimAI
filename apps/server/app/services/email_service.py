@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.models import SocialConnection
 from app.services.mail_settings import get_effective_mail_config
+from app.services.system_log import append_system_log
 
 # Redis client lazy singleton
 _redis_client = None
@@ -208,10 +209,13 @@ def _smtp_send_with_config(
                 if (cfg.smtp_user or "").strip():
                     smtp.login(cfg.smtp_user.strip(), cfg.smtp_password or "")
                 smtp.sendmail(from_addr, [to_email], msg.as_string())
+        append_system_log("info", "mail", f"Email sent to {to_email}", details=subject[:200] if subject else None)
         return True, "Sent"
     except smtplib.SMTPException as e:
+        append_system_log("error", "mail", f"SMTP error sending to {to_email}: {e}", details=subject[:200] if subject else None)
         return False, str(e)
     except Exception as e:
+        append_system_log("error", "mail", f"Send failed to {to_email}: {e}", details=subject[:200] if subject else None)
         return False, str(e)
 
 
@@ -271,9 +275,11 @@ def send_email(
     """
     cfg = get_effective_mail_config()
     if not is_email_configured():
+        append_system_log("warning", "mail", "Send skipped: email not configured", details=to_email)
         return False, "Email is not configured (connect Gmail or set SMTP host)"
 
     if cfg.emails_per_hour and not check_and_increment_rate_limit():
+        append_system_log("warning", "mail", f"Hourly email limit reached ({cfg.emails_per_hour})", details=to_email)
         return False, (
             f"Hourly email limit reached ({cfg.emails_per_hour} per hour). "
             "Try again later to avoid spam listing."
@@ -282,14 +288,20 @@ def send_email(
     connection = _get_active_gmail_connection()
     if _gmail_connection_supports_send(connection):
         try:
-            return _send_via_gmail_api(
+            ok, msg = _send_via_gmail_api(
                 connection,
                 to_email=to_email,
                 subject=subject,
                 body_text=body_text,
                 body_html=body_html,
             )
+            if ok:
+                append_system_log("info", "mail", f"Email sent to {to_email} (Gmail)", details=subject[:200] if subject else None)
+            else:
+                append_system_log("error", "mail", f"Gmail send failed to {to_email}: {msg}", details=subject[:200] if subject else None)
+            return ok, msg
         except Exception as e:
+            append_system_log("error", "mail", f"Gmail send failed to {to_email}: {e}", details=subject[:200] if subject else None)
             return False, str(e)
 
     from_addr = (cfg.smtp_from_email or cfg.smtp_user or "").strip()
@@ -317,10 +329,13 @@ def send_email(
                 if (cfg.smtp_user or "").strip():
                     smtp.login(cfg.smtp_user.strip(), cfg.smtp_password or "")
                 smtp.sendmail(from_addr, [to_email], msg.as_string())
+        append_system_log("info", "mail", f"Email sent to {to_email}", details=subject[:200] if subject else None)
         return True, "Sent"
     except smtplib.SMTPException as e:
+        append_system_log("error", "mail", f"SMTP error sending to {to_email}: {e}", details=subject[:200] if subject else None)
         return False, str(e)
     except Exception as e:
+        append_system_log("error", "mail", f"Send failed to {to_email}: {e}", details=subject[:200] if subject else None)
         return False, str(e)
 
 

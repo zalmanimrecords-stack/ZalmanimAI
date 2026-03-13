@@ -512,6 +512,18 @@ class ArtistActivityLogOut(BaseModel):
     created_at: datetime
 
 
+class SystemLogOut(BaseModel):
+    id: int
+    level: str
+    category: str
+    message: str
+    details: str | None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class DemoSubmissionCreate(BaseModel):
     artist_name: str
     email: EmailStr
@@ -840,6 +852,8 @@ class SystemSettingsOut(BaseModel):
     # Demo rejection email template (editable in settings)
     demo_rejection_subject: str = ""
     demo_rejection_body: str = ""
+    demo_approval_subject: str = ""
+    demo_approval_body: str = ""
     # OAuth / redirects
     oauth_redirect_base: str = ""
     oauth_success_redirect: str = ""
@@ -879,6 +893,8 @@ class SystemSettingsMailUpdate(BaseModel):
     emails_per_hour: int | None = None
     demo_rejection_subject: str | None = None
     demo_rejection_body: str | None = None
+    demo_approval_subject: str | None = None
+    demo_approval_body: str | None = None
 
 
 

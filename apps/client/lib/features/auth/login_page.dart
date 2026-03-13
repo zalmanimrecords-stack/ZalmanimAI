@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api_client.dart';
 import '../../core/session.dart';
@@ -32,8 +31,6 @@ class _LoginPageState extends State<LoginPage> {
   final passwordController = TextEditingController();
   bool rememberMe = false;
   bool loading = false;
-  bool googleLoading = false;
-  bool facebookLoading = false;
   String? error;
 
   @override
@@ -93,7 +90,7 @@ class _LoginPageState extends State<LoginPage> {
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
-                      onPressed: loading || googleLoading || facebookLoading
+                      onPressed: loading
                           ? null
                           : () => Navigator.of(context).push(
                                 MaterialPageRoute(
@@ -140,41 +137,10 @@ class _LoginPageState extends State<LoginPage> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: loading || googleLoading || facebookLoading ? null : _login,
+                      onPressed: loading ? null : _login,
                       child: loading
                           ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
                           : const Text('Login'),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: loading || googleLoading || facebookLoading ? null : _loginWithGoogle,
-                      icon: googleLoading
-                          ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const _SocialBrandIcon(
-                              label: 'G',
-                              backgroundColor: Colors.white,
-                              foregroundColor: Color(0xFF4285F4),
-                              borderColor: Color(0xFFDADCE0),
-                            ),
-                      label: const Text('Continue with Google'),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: loading || googleLoading || facebookLoading ? null : _loginWithFacebook,
-                      icon: facebookLoading
-                          ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const _SocialBrandIcon(
-                              label: 'f',
-                              backgroundColor: Color(0xFF1877F2),
-                              foregroundColor: Colors.white,
-                            ),
-                      label: const Text('Continue with Facebook'),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -234,94 +200,8 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  Future<void> _loginWithGoogle() async {
-    await _startSocialLogin(
-      loader: () => googleLoading = true,
-      reset: () => googleLoading = false,
-      providerLabel: 'Google',
-      getAuthUrl: () => widget.apiClient.startGoogleLogin(
-        redirectUri: Uri.base.replace(queryParameters: const {}, fragment: '').toString(),
-      ),
-    );
-  }
-
-  Future<void> _loginWithFacebook() async {
-    await _startSocialLogin(
-      loader: () => facebookLoading = true,
-      reset: () => facebookLoading = false,
-      providerLabel: 'Facebook',
-      getAuthUrl: () => widget.apiClient.startFacebookLogin(
-        redirectUri: Uri.base.replace(queryParameters: const {}, fragment: '').toString(),
-      ),
-    );
-  }
-
-  Future<void> _startSocialLogin({
-    required void Function() loader,
-    required void Function() reset,
-    required String providerLabel,
-    required Future<String> Function() getAuthUrl,
-  }) async {
-    setState(() {
-      loader();
-      error = null;
-    });
-    try {
-      final authUrl = await getAuthUrl();
-      final launched = await launchUrl(Uri.parse(authUrl), webOnlyWindowName: '_self');
-      if (!launched && mounted) {
-        setState(() => error = 'Could not open $providerLabel sign-in.');
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => error = e.toString());
-      }
-    } finally {
-      if (mounted) {
-        setState(reset);
-      }
-    }
-  }
-
   Future<void> _completeLogin(AuthSession session) async {
     if (!mounted) return;
     await widget.onLoginSuccess(session, rememberMe: rememberMe);
-  }
-}
-
-class _SocialBrandIcon extends StatelessWidget {
-  const _SocialBrandIcon({
-    required this.label,
-    required this.backgroundColor,
-    required this.foregroundColor,
-    this.borderColor,
-  });
-
-  final String label;
-  final Color backgroundColor;
-  final Color foregroundColor;
-  final Color? borderColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 20,
-      height: 20,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        shape: BoxShape.circle,
-        border: borderColor == null ? null : Border.all(color: borderColor!),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: foregroundColor,
-          fontSize: 13,
-          fontWeight: FontWeight.w700,
-          height: 1,
-        ),
-      ),
-    );
   }
 }
