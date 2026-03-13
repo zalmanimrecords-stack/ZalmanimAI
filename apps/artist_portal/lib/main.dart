@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 
 import 'core/api_client.dart';
 import 'core/app_config.dart';
+import 'core/consent_storage.dart';
 import 'core/zalmanim_icons.dart';
 import 'core/session_storage.dart';
 import 'core/session.dart';
 import 'features/auth/login_page.dart';
 import 'features/auth/reset_password_page.dart';
 import 'features/dashboard/artist_dashboard_page.dart';
+import 'features/legal/cookie_consent_page.dart';
 import 'features/public/landing_page.dart';
 import 'features/public/linktree_page.dart';
 
@@ -39,8 +41,9 @@ class ArtistPortalApp extends StatefulWidget {
 
 class _ArtistPortalAppState extends State<ArtistPortalApp> {
   late final ApiClient _apiClient;
-  late Future<AuthSession?> _sessionFuture;
+  late Future<(AuthSession?, bool)> _initFuture;
   AuthSession? _activeSession;
+  bool? _cookieConsentGiven;
   bool _showResetPassword = false;
   String? _resetToken;
   bool _showLogin = false;
@@ -49,7 +52,11 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
   void initState() {
     super.initState();
     _apiClient = ApiClient(baseUrl: _apiBaseUrl);
-    _sessionFuture = loadSession();
+    _initFuture = Future(() async {
+      final session = await loadSession();
+      final consent = await getCookieConsent();
+      return (session, consent);
+    });
     final resetToken = Uri.base.queryParameters['reset_token'];
     if (resetToken != null && resetToken.isNotEmpty) {
       _showResetPassword = true;
@@ -100,8 +107,8 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
           elevation: 0,
         ),
       ),
-      home: FutureBuilder<AuthSession?>(
-        future: _sessionFuture,
+      home: FutureBuilder<(AuthSession?, bool)>(
+        future: _initFuture,
         builder: (context, snapshot) {
           if (_showResetPassword && _resetToken != null) {
             return ResetPasswordPage(
@@ -131,7 +138,14 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
               ),
             );
           }
-          final session = _activeSession ?? snapshot.data;
+          final data = snapshot.data;
+          final consent = _cookieConsentGiven ?? data?.$2 ?? false;
+          if (data != null && !consent) {
+            return CookieConsentPage(
+              onAccept: () => setState(() => _cookieConsentGiven = true),
+            );
+          }
+          final session = _activeSession ?? data?.$1;
           if (session != null && session.role == 'artist') {
             return ArtistDashboardPage(
               apiClient: _apiClient,
@@ -140,7 +154,11 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
                 await clearSession();
                 setState(() {
                   _activeSession = null;
-                  _sessionFuture = loadSession();
+                  _initFuture = Future(() async {
+                    final s = await loadSession();
+                    final c = await getCookieConsent();
+                    return (s, c);
+                  });
                 });
               },
             );
@@ -170,7 +188,13 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
                       OutlinedButton(
                         onPressed: () async {
                           await clearSession();
-                          setState(() => _sessionFuture = loadSession());
+                          setState(() {
+                          _initFuture = Future(() async {
+                            final s = await loadSession();
+                            final c = await getCookieConsent();
+                            return (s, c);
+                          });
+                        });
                         },
                         child: const Text('Sign out'),
                       ),
@@ -185,7 +209,11 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
               apiClient: _apiClient,
               onLoggedIn: (session) => setState(() {
                 _activeSession = session;
-                _sessionFuture = loadSession();
+                _initFuture = Future(() async {
+                  final s = await loadSession();
+                  final c = await getCookieConsent();
+                  return (s, c);
+                });
               }),
               onBack: () => setState(() => _showLogin = false),
             );

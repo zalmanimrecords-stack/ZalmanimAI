@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
+import '../legal/privacy_policy_page.dart';
+import '../legal/terms_of_use_page.dart';
 
 class LandingPage extends StatefulWidget {
   const LandingPage({
@@ -160,6 +162,22 @@ class _LandingPageState extends State<LandingPage> {
                       fit: BoxFit.contain,
                     ),
                     const Spacer(),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const TermsOfUsePage(),
+                        ),
+                      ),
+                      child: const Text('Terms of Use'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const PrivacyPolicyPage(),
+                        ),
+                      ),
+                      child: const Text('Privacy Policy'),
+                    ),
                     TextButton(
                       onPressed: widget.onSignIn,
                       child: const Text('Sign In'),

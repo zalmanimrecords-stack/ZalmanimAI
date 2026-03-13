@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 
 import 'core/api_client.dart';
 import 'core/app_config.dart';
+import 'core/consent_storage.dart';
 import 'core/session.dart';
 import 'core/session_storage.dart';
 import 'features/admin/admin_dashboard_page.dart';
 import 'features/artist/artist_dashboard_page.dart';
 import 'features/auth/login_page.dart';
 import 'features/auth/reset_password_page.dart';
+import 'features/legal/cookie_consent_page.dart';
 
 void main() {
   runApp(const LabelOpsApp());
@@ -32,6 +34,7 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
   late final ApiClient _apiClient;
   AuthSession? _session;
   bool _initializing = true;
+  bool _cookieConsentGiven = false;
   String? _authError;
   bool _showResetPassword = false;
   String? _resetToken;
@@ -50,9 +53,11 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
 
   Future<void> _initializeSession() async {
     final session = await _resolveInitialSession();
+    final consent = await getCookieConsent();
     if (!mounted) return;
     setState(() {
       _session = session;
+      _cookieConsentGiven = consent;
       _initializing = false;
     });
   }
@@ -135,6 +140,12 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
     if (_initializing) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (!_cookieConsentGiven) {
+      return CookieConsentPage(
+        appName: 'LabelOps',
+        onAccept: () => setState(() => _cookieConsentGiven = true),
       );
     }
     final session = _session;

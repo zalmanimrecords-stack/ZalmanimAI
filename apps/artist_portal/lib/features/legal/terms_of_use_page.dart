@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// Terms of Use page. Content can be customized per deployment.
-class TermsOfUsePage extends StatelessWidget {
-  const TermsOfUsePage({
-    super.key,
-    this.appName = 'LabelOps',
-  });
+import '../../core/app_config.dart';
 
-  final String appName;
+/// Terms of Use page. Content uses [AppConfig.labelName].
+class TermsOfUsePage extends StatelessWidget {
+  const TermsOfUsePage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final appName = AppConfig.labelName;
+    final fullText = _buildFullText(appName);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Terms of Use'),
@@ -20,7 +19,7 @@ class TermsOfUsePage extends StatelessWidget {
             icon: const Icon(Icons.copy),
             tooltip: 'Copy full text',
             onPressed: () {
-              Clipboard.setData(ClipboardData(text: _fullText));
+              Clipboard.setData(ClipboardData(text: fullText));
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Terms of Use copied to clipboard')),
@@ -34,7 +33,7 @@ class TermsOfUsePage extends StatelessWidget {
         padding: const EdgeInsets.all(24),
         children: [
           SelectableText(
-            _fullText,
+            fullText,
             style: Theme.of(context).textTheme.bodyMedium,
           ),
         ],
@@ -42,7 +41,7 @@ class TermsOfUsePage extends StatelessWidget {
     );
   }
 
-  String get _fullText => '''
+  String _buildFullText(String appName) => '''
 $appName – Terms of Use
 
 Last updated: March 2025
@@ -51,7 +50,7 @@ Last updated: March 2025
 By accessing or using $appName ("Service"), you agree to be bound by these Terms of Use. If you do not agree, do not use the Service.
 
 2. Description of Service
-$appName provides a label management and artist portal platform. We reserve the right to modify, suspend or discontinue the Service at any time.
+$appName provides an artist portal and label services. We reserve the right to modify, suspend or discontinue the Service at any time.
 
 3. Account and Security
 You are responsible for keeping your credentials secure and for all activity under your account. You must notify us promptly of any unauthorized use.

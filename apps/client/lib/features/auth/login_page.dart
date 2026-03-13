@@ -6,6 +6,8 @@ import '../../core/api_client.dart';
 import '../../core/session.dart';
 import '../../core/zalmanim_icons.dart';
 import '../../widgets/api_connection_indicator.dart';
+import '../legal/privacy_policy_page.dart';
+import '../legal/terms_of_use_page.dart';
 import 'forgot_password_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -177,6 +179,29 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   const SizedBox(height: 12),
                   const Text('Use your system user credentials.'),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const TermsOfUsePage(appName: 'LabelOps'),
+                          ),
+                        ),
+                        child: const Text('Terms of Use'),
+                      ),
+                      Text(' · ', style: Theme.of(context).textTheme.bodySmall),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const PrivacyPolicyPage(appName: 'LabelOps'),
+                          ),
+                        ),
+                        child: const Text('Privacy Policy'),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
