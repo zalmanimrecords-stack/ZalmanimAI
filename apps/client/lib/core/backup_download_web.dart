@@ -1,4 +1,6 @@
 // Web implementation: trigger browser download via blob URL.
+// Uses dart:html for blob/download; only imported on web (conditional import).
+// ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
 
 import 'dart:html' as html;
 

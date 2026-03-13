@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api_client.dart';
 import '../../core/session.dart';
+import '../../core/zalmanim_icons.dart';
 import '../../widgets/api_connection_indicator.dart';
 import 'forgot_password_page.dart';
 
@@ -43,7 +44,11 @@ class _LoginPageState extends State<LoginPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('LabelOps'),
+        title: Image.asset(
+          'assets/images/zalmanim_logo.png',
+          height: 32,
+          fit: BoxFit.contain,
+        ),
         actions: [ApiConnectionIndicator(apiClient: widget.apiClient)],
       ),
       body: Center(
@@ -53,10 +58,27 @@ class _LoginPageState extends State<LoginPage> {
             margin: const EdgeInsets.all(20),
             child: Padding(
               padding: const EdgeInsets.all(20),
-              child: Column(
+                  child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('LabelOps Login', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                  Image.asset(
+                    'assets/images/zalmanim_logo.png',
+                    height: 64,
+                    fit: BoxFit.contain,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ZalmanimIcons.alienIcon(size: 28, color: Theme.of(context).colorScheme.primary),
+                      const SizedBox(width: 12),
+                      ZalmanimIcons.jellyfishIcon(size: 28, color: Theme.of(context).colorScheme.primary),
+                      const SizedBox(width: 12),
+                      ZalmanimIcons.squidIcon(size: 28, color: Theme.of(context).colorScheme.primary),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Login', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 16),
                   TextField(controller: emailController, decoration: const InputDecoration(labelText: 'Email')),
                   const SizedBox(height: 12),
@@ -107,7 +129,7 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.copy, size: 20),
+                          icon: const Icon(ZalmanimIcons.copy, size: 20),
                           tooltip: 'Copy error',
                           onPressed: () => Clipboard.setData(ClipboardData(text: error!)),
                         ),

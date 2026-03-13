@@ -131,6 +131,7 @@ class ArtistCreate(BaseModel):
     apple_music: str | None = None
     address: str | None = None
     source_row: str | None = None
+    linktree: str | None = None  # Linktree or single-link page URL
 
 
 class ArtistUpdate(BaseModel):
@@ -157,6 +158,7 @@ class ArtistUpdate(BaseModel):
     apple_music: str | None = None
     address: str | None = None
     source_row: str | None = None
+    linktree: str | None = None
 
 
 class ArtistSelfUpdate(BaseModel):
@@ -182,6 +184,7 @@ class ArtistSelfUpdate(BaseModel):
     apple_music: str | None = None
     address: str | None = None
     source_row: str | None = None
+    linktree: str | None = None
 
 
 class ArtistMediaOut(BaseModel):
@@ -196,6 +199,25 @@ class ArtistMediaOut(BaseModel):
         from_attributes = True
 
 
+class ArtistMediaListResponse(BaseModel):
+    """List of artist media with quota (50MB per artist)."""
+    items: list[ArtistMediaOut]
+    used_bytes: int
+    quota_bytes: int = 52_428_800  # 50 MiB
+
+
+class LinktreeLink(BaseModel):
+    label: str
+    url: str
+
+
+class LinktreeOut(BaseModel):
+    """Public linktree page data for an artist."""
+    artist_id: int
+    name: str
+    links: list[LinktreeLink]
+
+
 class ArtistDemoSubmitRequest(BaseModel):
     """Artist portal: submit a demo (message; file is uploaded via multipart)."""
     message: str | None = None
@@ -206,6 +228,7 @@ def _artist_extra_from_model(m: BaseModel) -> dict:
         "artist_brand", "full_name", "website", "soundcloud", "facebook",
         "twitter_1", "twitter_2", "youtube", "tiktok", "instagram", "spotify",
         "other_1", "other_2", "other_3", "comments", "apple_music", "address", "source_row",
+        "linktree",
     )
     out = {k: getattr(m, k) for k in keys if getattr(m, k) is not None}
     brands = getattr(m, "artist_brands", None)
@@ -224,6 +247,7 @@ class ArtistOut(BaseModel):
     last_release: dict | None = None  # {"title": str, "created_at": str} for list display
     last_reminder_sent_at: datetime | None = None  # When last reminder email was sent (reports)
     last_login_at: datetime | None = None
+    last_profile_updated_at: datetime | None = None  # When artist last updated their portal profile
 
     class Config:
         from_attributes = True
@@ -253,6 +277,7 @@ class ArtistOut(BaseModel):
             last_release=last_release,
             last_reminder_sent_at=last_reminder_sent_at,
             last_login_at=getattr(artist, "last_login_at", None),
+            last_profile_updated_at=getattr(artist, "last_profile_updated_at", None),
         )
 
 
@@ -550,6 +575,35 @@ class DemoSubmissionOut(BaseModel):
     artist_id: int | None
     created_at: datetime
     updated_at: datetime | None
+
+
+# Artist campaign requests (artist asks label for a release campaign)
+class CampaignRequestCreate(BaseModel):
+    """Artist portal: request a campaign for a release."""
+    release_id: int | None = None
+    message: str | None = None
+
+
+class CampaignRequestUpdate(BaseModel):
+    """Admin: update status/notes of a campaign request."""
+    status: str | None = None  # approved | rejected
+    admin_notes: str | None = None
+
+
+class CampaignRequestOut(BaseModel):
+    id: int
+    artist_id: int
+    artist_name: str = ""
+    release_id: int | None
+    release_title: str | None = None
+    message: str | None
+    status: str
+    admin_notes: str | None
+    created_at: datetime
+    updated_at: datetime | None
+
+    class Config:
+        from_attributes = True
 
 
 # Campaigns (unified: social + Mailchimp + WordPress)

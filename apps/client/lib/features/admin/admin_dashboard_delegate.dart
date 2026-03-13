@@ -27,6 +27,7 @@ abstract class AdminDashboardDelegate {
   void showEditArtistDialog(int id);
   void showSetArtistPasswordDialog(int artistId, String artistName);
   void sendArtistPortalInvite(int artistId, String artistName, String artistEmail);
+  void sendArtistUpdateProfileInvite(int artistId, String artistName, String artistEmail);
   void showArtistDetailsDialog(int id);
   void removeArtist(int id, String name);
   void showMergeArtistsDialog();
@@ -77,6 +78,10 @@ abstract class AdminDashboardDelegate {
   void cancelCampaignSchedule(int id);
   void deleteCampaign(int id, String name);
 
+  // Campaign requests (from artists)
+  List<dynamic> get campaignRequestsList;
+  Future<void> loadCampaignRequests({String? statusFilter});
+  void updateCampaignRequestStatus(int requestId, String status, {String? adminNotes});
 
   // Audience / email lists
   List<dynamic> get audiencesList;

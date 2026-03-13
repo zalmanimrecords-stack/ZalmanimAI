@@ -28,6 +28,7 @@ from app.models.models import (
     ArtistMedia,
     AutomationTask,
     Campaign,
+    CampaignRequest,
     CatalogTrack,
     DemoSubmission,
     HubConnector,
@@ -47,10 +48,16 @@ from app.schemas.schemas import (
     ArtistActivityLogOut,
     ArtistCreate,
     ArtistDashboard,
+    ArtistMediaListResponse,
     ArtistMediaOut,
     ArtistOut,
     ArtistSelfUpdate,
     ArtistUpdate,
+    CampaignRequestCreate,
+    CampaignRequestOut,
+    CampaignRequestUpdate,
+    LinktreeLink,
+    LinktreeOut,
     CampaignCreate,
     CampaignOut,
     CampaignUpdate,
@@ -736,6 +743,7 @@ def init_db() -> None:
             conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true NOT NULL"))
             conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)"))
             conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP WITH TIME ZONE"))
+            conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS last_profile_updated_at TIMESTAMP WITH TIME ZONE"))
             conn.execute(text("ALTER TABLE social_connections ADD COLUMN IF NOT EXISTS pkce_code_verifier VARCHAR(255)"))
             conn.execute(text("ALTER TABLE social_connections ADD COLUMN IF NOT EXISTS one_time_token VARCHAR(255)"))
             conn.execute(text("ALTER TABLE social_connections ADD COLUMN IF NOT EXISTS one_time_expires_at TIMESTAMP WITH TIME ZONE"))
@@ -1066,6 +1074,51 @@ def create_demo_submission(
         if not ok:
             logging.getLogger(__name__).warning("Failed to send demo receipt email to %s: %s", item.email, message)
     return _serialize_demo_submission(item)
+
+
+# Label for each extra link key (for public linktree page)
+_LINKTREE_LABELS = {
+    "website": "Website",
+    "soundcloud": "SoundCloud",
+    "facebook": "Facebook",
+    "instagram": "Instagram",
+    "twitter_1": "Twitter / X",
+    "twitter_2": "Twitter / X 2",
+    "youtube": "YouTube",
+    "tiktok": "TikTok",
+    "spotify": "Spotify",
+    "apple_music": "Apple Music",
+    "linktree": "Linktree",
+    "other_1": "Other",
+    "other_2": "Other",
+    "other_3": "Other",
+}
+
+
+@router.get("/public/linktree/{artist_id}", response_model=LinktreeOut)
+def public_linktree(
+    artist_id: int,
+    db: Session = Depends(get_db),
+) -> LinktreeOut:
+    """Public linktree-style page data for an artist (no auth). Returns name and list of links from profile."""
+    artist = db.query(Artist).filter(Artist.id == artist_id, Artist.is_active == True).first()
+    if not artist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    extra = {}
+    if getattr(artist, "extra_json", None):
+        try:
+            extra = json.loads(artist.extra_json) or {}
+        except (json.JSONDecodeError, TypeError):
+            pass
+    name = (artist.name or "").strip() or (extra.get("full_name") or extra.get("artist_brand") or "").strip() or "Artist"
+    links = []
+    for key, label in _LINKTREE_LABELS.items():
+        val = (extra.get(key) or "").strip()
+        if val and (val.startswith("http://") or val.startswith("https://")):
+            links.append(LinktreeLink(label=label, url=val))
+        elif val:
+            links.append(LinktreeLink(label=label, url=val if "://" in val else f"https://{val}"))
+    return LinktreeOut(artist_id=artist.id, name=name, links=links)
 
 
 @router.get("/auth/me", response_model=UserOut)
@@ -1662,6 +1715,96 @@ def admin_send_artist_portal_invite(
     )
 
 
+@router.post("/admin/artists/{artist_id}/send-update-profile-invite", response_model=ArtistPortalInviteResponse)
+def admin_send_artist_update_profile_invite(
+    artist_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> ArtistPortalInviteResponse:
+    """Email artist inviting them to update their portal page and see their releases (no password change unless not set)."""
+    require_admin(user)
+    artist = db.query(Artist).filter(Artist.id == artist_id).first()
+    if not artist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    if not artist.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Artist is inactive")
+    username = (artist.email or "").strip().lower()
+    if not username:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Artist email is required")
+
+    extra = _artist_extra_from_model(artist)
+    display_name = (
+        str(extra.get("full_name") or "").strip()
+        or str(extra.get("artist_brand") or "").strip()
+        or (artist.name or "").strip()
+        or username
+    )
+    portal_url = _artist_portal_url()
+    if not artist.password_hash:
+        temporary_password = _generate_temporary_password()
+        artist.password_hash = hash_password(temporary_password)
+        body_text = (
+            f"Hi {display_name},\n\n"
+            "We'd love you to update your artist page and see your releases on the label.\n\n"
+            f"Portal: {portal_url}\n"
+            f"Username: {username}\n"
+            f"Temporary password: {temporary_password}\n\n"
+            "Please sign in, change your password, and update your profile and check your releases.\n\n"
+            "If you have any questions, reply to this email.\n"
+        )
+        body_html = (
+            f"<p>Hi {html.escape(display_name)},</p>"
+            "<p>We'd love you to update your artist page and see your releases on the label.</p>"
+            f"<p><strong>Portal:</strong> <a href=\"{html.escape(portal_url)}\">{html.escape(portal_url)}</a><br>"
+            f"<strong>Username:</strong> {html.escape(username)}<br>"
+            f"<strong>Temporary password:</strong> {html.escape(temporary_password)}</p>"
+            "<p>Please sign in, change your password, and update your profile and check your releases.</p>"
+            "<p>If you have any questions, reply to this email.</p>"
+        )
+    else:
+        body_text = (
+            f"Hi {display_name},\n\n"
+            "We'd love you to update your artist page and see your releases on the label.\n\n"
+            f"Log in at: {portal_url}\n"
+            f"Username: {username}\n\n"
+            "Use your existing password. Update your profile and check your releases when you're in.\n\n"
+            "If you have any questions, reply to this email.\n"
+        )
+        body_html = (
+            f"<p>Hi {html.escape(display_name)},</p>"
+            "<p>We'd love you to update your artist page and see your releases on the label.</p>"
+            f"<p><strong>Log in at:</strong> <a href=\"{html.escape(portal_url)}\">{html.escape(portal_url)}</a><br>"
+            f"<strong>Username:</strong> {html.escape(username)}</p>"
+            "<p>Use your existing password. Update your profile and check your releases when you're in.</p>"
+            "<p>If you have any questions, reply to this email.</p>"
+        )
+    subject = "Update your artist page and see your releases"
+    success, message = send_email_service(
+        to_email=username,
+        subject=subject,
+        body_text=body_text,
+        body_html=body_html,
+    )
+    if not success:
+        db.rollback()
+        if "limit" in message.lower():
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+    db.add(
+        ArtistActivityLog(
+            artist_id=artist.id,
+            activity_type="update_profile_invite_email",
+            details=f"Update profile invite sent to {username}",
+        )
+    )
+    db.commit()
+    return ArtistPortalInviteResponse(
+        message="Update profile invitation sent.",
+        portal_url=portal_url,
+        username=username,
+    )
+
+
 @router.get("/artists/{artist_id}/releases", response_model=list[ReleaseOut])
 def list_artist_releases(
     artist_id: int,
@@ -1847,6 +1990,14 @@ def artist_patch_me(
             artist.extra_json = json.dumps(current)
         except (json.JSONDecodeError, TypeError):
             artist.extra_json = json.dumps(extra)
+    artist.last_profile_updated_at = datetime.now(timezone.utc)
+    db.add(
+        ArtistActivityLog(
+            artist_id=artist.id,
+            activity_type="profile_updated",
+            details="Artist updated their portal profile",
+        )
+    )
     db.commit()
     db.refresh(artist)
     return ArtistOut.from_artist(artist)
@@ -1962,16 +2113,26 @@ def artist_download_demo_file(
     return FileResponse(path, filename=os.path.basename(path))
 
 
+ARTIST_MEDIA_QUOTA_BYTES = 50 * 1024 * 1024  # 50 MiB per artist
+
+
 def _artist_media_dir() -> str:
     return os.path.join(settings.upload_dir, "artist_media")
 
 
-@router.get("/artist/me/media", response_model=list[ArtistMediaOut])
+def _artist_media_used_bytes(db: Session, artist_id: int) -> int:
+    r = db.query(func.coalesce(func.sum(ArtistMedia.size_bytes), 0)).filter(
+        ArtistMedia.artist_id == artist_id
+    ).scalar()
+    return int(r) if r is not None else 0
+
+
+@router.get("/artist/me/media", response_model=ArtistMediaListResponse)
 def artist_list_my_media(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
-) -> list[ArtistMediaOut]:
-    """List current artist's media folder files."""
+) -> ArtistMediaListResponse:
+    """List current artist's media folder files and quota."""
     require_artist(user)
     items = (
         db.query(ArtistMedia)
@@ -1979,17 +2140,22 @@ def artist_list_my_media(
         .order_by(desc(ArtistMedia.created_at))
         .all()
     )
-    return [
-        ArtistMediaOut(
-            id=m.id,
-            artist_id=m.artist_id,
-            filename=m.filename,
-            content_type=m.content_type,
-            size_bytes=m.size_bytes,
-            created_at=m.created_at,
-        )
-        for m in items
-    ]
+    used = _artist_media_used_bytes(db, user.artist_id)
+    return ArtistMediaListResponse(
+        items=[
+            ArtistMediaOut(
+                id=m.id,
+                artist_id=m.artist_id,
+                filename=m.filename,
+                content_type=m.content_type,
+                size_bytes=m.size_bytes,
+                created_at=m.created_at,
+            )
+            for m in items
+        ],
+        used_bytes=used,
+        quota_bytes=ARTIST_MEDIA_QUOTA_BYTES,
+    )
 
 
 @router.post("/artist/me/media", response_model=ArtistMediaOut)
@@ -1998,18 +2164,24 @@ def artist_upload_media(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> ArtistMediaOut:
-    """Upload a file to the artist's media folder."""
+    """Upload a file to the artist's media folder (50MB quota per artist)."""
     require_artist(user)
     if not file.filename or not file.filename.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Filename required")
+    content = file.file.read()
+    size = len(content)
+    used = _artist_media_used_bytes(db, user.artist_id)
+    if used + size > ARTIST_MEDIA_QUOTA_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Media quota exceeded. Used {used // (1024*1024)}MB of 50MB. Free { (ARTIST_MEDIA_QUOTA_BYTES - used) // (1024*1024) }MB.",
+        )
     artist_media_root = _artist_media_dir()
     per_artist_dir = os.path.join(artist_media_root, str(user.artist_id))
     os.makedirs(per_artist_dir, exist_ok=True)
     safe_name = os.path.basename(file.filename)
     stored_name = f"{uuid.uuid4().hex}_{safe_name}"
     path = os.path.join(per_artist_dir, stored_name)
-    content = file.file.read()
-    size = len(content)
     content_type = file.content_type
     with open(path, "wb") as out:
         out.write(content)
@@ -2074,6 +2246,115 @@ def artist_delete_media(
     db.delete(media)
     db.commit()
     return {"ok": True}
+
+
+@router.post("/artist/me/campaign-requests", response_model=CampaignRequestOut)
+def artist_create_campaign_request(
+    payload: CampaignRequestCreate,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> CampaignRequestOut:
+    """Artist requests a campaign for a release from the label."""
+    require_artist(user)
+    artist = db.query(Artist).filter(Artist.id == user.artist_id).first()
+    if not artist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    release_title = None
+    if payload.release_id:
+        release = db.query(Release).filter(
+            Release.id == payload.release_id,
+            or_(Release.artist_id == user.artist_id, Release.artists.any(Artist.id == user.artist_id)),
+        ).first()
+        if not release:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Release not found")
+        release_title = release.title
+    req = CampaignRequest(
+        artist_id=user.artist_id,
+        release_id=payload.release_id,
+        message=payload.message.strip() or None,
+        status="pending",
+    )
+    db.add(req)
+    db.commit()
+    db.refresh(req)
+    return _campaign_request_out(req, artist.name, release_title)
+
+
+@router.get("/artist/me/campaign-requests", response_model=list[CampaignRequestOut])
+def artist_list_my_campaign_requests(
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> list[CampaignRequestOut]:
+    """List current artist's campaign requests."""
+    require_artist(user)
+    artist = db.query(Artist).filter(Artist.id == user.artist_id).first()
+    if not artist:
+        return []
+    items = (
+        db.query(CampaignRequest)
+        .filter(CampaignRequest.artist_id == user.artist_id)
+        .order_by(desc(CampaignRequest.created_at))
+        .all()
+    )
+    return [_campaign_request_out(r, artist.name, r.release.title if r.release else None) for r in items]
+
+
+def _campaign_request_out(r: CampaignRequest, artist_name: str, release_title: str | None) -> CampaignRequestOut:
+    return CampaignRequestOut(
+        id=r.id,
+        artist_id=r.artist_id,
+        artist_name=artist_name,
+        release_id=r.release_id,
+        release_title=release_title,
+        message=r.message,
+        status=r.status,
+        admin_notes=r.admin_notes,
+        created_at=r.created_at,
+        updated_at=r.updated_at,
+    )
+
+
+@router.get("/admin/campaign-requests", response_model=list[CampaignRequestOut])
+def admin_list_campaign_requests(
+    status_filter: str | None = Query(None, description="pending | approved | rejected"),
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> list[CampaignRequestOut]:
+    """List all artist campaign requests for the label."""
+    require_admin(user)
+    q = db.query(CampaignRequest).order_by(desc(CampaignRequest.created_at))
+    if status_filter:
+        q = q.filter(CampaignRequest.status == status_filter)
+    items = q.all()
+    out = []
+    for r in items:
+        artist = db.query(Artist).filter(Artist.id == r.artist_id).first()
+        release_title = r.release.title if r.release else None
+        out.append(_campaign_request_out(r, artist.name if artist else "", release_title))
+    return out
+
+
+@router.patch("/admin/campaign-requests/{request_id}", response_model=CampaignRequestOut)
+def admin_update_campaign_request(
+    request_id: int,
+    payload: CampaignRequestUpdate,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> CampaignRequestOut:
+    """Update campaign request status (approve/reject) and notes."""
+    require_admin(user)
+    req = db.query(CampaignRequest).filter(CampaignRequest.id == request_id).first()
+    if not req:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign request not found")
+    if payload.status is not None:
+        req.status = payload.status
+    if payload.admin_notes is not None:
+        req.admin_notes = payload.admin_notes
+    db.commit()
+    db.refresh(req)
+    artist = db.query(Artist).filter(Artist.id == req.artist_id).first()
+    release_title = req.release.title if req.release else None
+    return _campaign_request_out(req, artist.name if artist else "", release_title)
 
 
 @router.get("/admin/releases", response_model=list[ReleaseOut])

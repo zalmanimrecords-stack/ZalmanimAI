@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
-import '../../core/app_config.dart';
 
 class LandingPage extends StatefulWidget {
   const LandingPage({
@@ -155,12 +154,10 @@ class _LandingPageState extends State<LandingPage> {
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
                 child: Row(
                   children: [
-                    Text(
-                      AppConfig.labelName,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF2D221A),
-                      ),
+                    Image.asset(
+                      'assets/images/zalmanim_logo.png',
+                      height: 40,
+                      fit: BoxFit.contain,
                     ),
                     const Spacer(),
                     TextButton(

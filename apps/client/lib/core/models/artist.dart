@@ -8,6 +8,7 @@ class Artist {
     required this.isActive,
     this.extra = const {},
     this.lastRelease,
+    this.lastProfileUpdatedAt,
   });
 
   final int id;
@@ -17,6 +18,7 @@ class Artist {
   final bool isActive;
   final Map<String, dynamic> extra;
   final Map<String, dynamic>? lastRelease;
+  final DateTime? lastProfileUpdatedAt;
 
   String get brand =>
       (extra['artist_brand']?.toString().trim() ?? name).trim();
@@ -40,6 +42,13 @@ class Artist {
     return 'Unknown';
   }
 
+  /// Last profile update display: short date or "—".
+  String get lastProfileUpdatedDisplay {
+    if (lastProfileUpdatedAt == null) return '—';
+    final d = lastProfileUpdatedAt!;
+    return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  }
+
   /// Last release display: "Title" or "Title (date)" or "—".
   String get lastReleaseDisplay {
     final lr = lastRelease;
@@ -58,6 +67,15 @@ class Artist {
 
   factory Artist.fromJson(Map<String, dynamic> json) {
     final extra = json['extra'];
+    DateTime? lastProfileUpdatedAt;
+    final lpu = json['last_profile_updated_at'];
+    if (lpu != null) {
+      if (lpu is String) {
+        try {
+          lastProfileUpdatedAt = DateTime.parse(lpu);
+        } catch (_) {}
+      }
+    }
     return Artist(
       id: json['id'] as int,
       name: (json['name'] as String?) ?? '',
@@ -66,6 +84,7 @@ class Artist {
       isActive: json['is_active'] as bool? ?? true,
       extra: extra is Map<String, dynamic> ? extra : {},
       lastRelease: json['last_release'] as Map<String, dynamic>?,
+      lastProfileUpdatedAt: lastProfileUpdatedAt,
     );
   }
 
@@ -78,6 +97,7 @@ class Artist {
       'is_active': isActive,
       'extra': extra,
       if (lastRelease != null) 'last_release': lastRelease,
+      if (lastProfileUpdatedAt != null) 'last_profile_updated_at': lastProfileUpdatedAt!.toIso8601String(),
     };
   }
 }

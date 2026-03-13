@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 
 import 'core/api_client.dart';
 import 'core/app_config.dart';
+import 'core/zalmanim_icons.dart';
 import 'core/session_storage.dart';
 import 'core/session.dart';
 import 'features/auth/login_page.dart';
 import 'features/auth/reset_password_page.dart';
 import 'features/dashboard/artist_dashboard_page.dart';
 import 'features/public/landing_page.dart';
+import 'features/public/linktree_page.dart';
 
 void main() {
   runApp(const ArtistPortalApp());
@@ -61,6 +63,28 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
   @override
   Widget build(BuildContext context) {
     final primary = _primaryColor();
+    // Public linktree route: /l/{artistId}
+    final pathSegments = Uri.base.pathSegments;
+    if (pathSegments.length >= 2 &&
+        pathSegments[0].toLowerCase() == 'l' &&
+        int.tryParse(pathSegments[1]) != null) {
+      final artistId = int.parse(pathSegments[1]);
+      return MaterialApp(
+        title: AppConfig.labelName,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: primary,
+            primary: primary,
+            brightness: Brightness.light,
+          ),
+          useMaterial3: true,
+        ),
+        home: LinktreePage(
+          apiClient: ApiClient(baseUrl: _apiBaseUrl),
+          artistId: artistId,
+        ),
+      );
+    }
     return MaterialApp(
       title: AppConfig.labelName,
       theme: ThemeData(
@@ -95,16 +119,13 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    CircularProgressIndicator(color: primary),
-                    const SizedBox(height: 16),
-                    Text(
-                      AppConfig.labelName,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: primary,
-                      ),
+                    Image.asset(
+                      'assets/images/zalmanim_logo.png',
+                      height: 80,
+                      fit: BoxFit.contain,
                     ),
+                    const SizedBox(height: 16),
+                    CircularProgressIndicator(color: primary),
                   ],
                 ),
               ),
@@ -132,7 +153,7 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.block, size: 48, color: Colors.grey[600]),
+                      Icon(ZalmanimIcons.block, size: 48, color: Colors.grey[600]),
                       const SizedBox(height: 16),
                       Text(
                         'This portal is for artists only.',

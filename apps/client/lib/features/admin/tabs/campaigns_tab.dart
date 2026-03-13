@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/models/campaign.dart';
+import '../../../core/zalmanim_icons.dart';
 import '../admin_dashboard_delegate.dart';
 
 /// Campaigns tab: list, sort, create/edit/schedule/delete.
@@ -98,7 +99,7 @@ class _CampaignsTabState extends State<CampaignsTab> {
               children: [
                 FilledButton.icon(
                   onPressed: () => delegate.showCreateCampaignDialog(),
-                  icon: const Icon(Icons.add),
+                  icon: const Icon(ZalmanimIcons.add),
                   label: const Text('Create campaign'),
                 ),
                 const SizedBox(width: 24),
@@ -124,7 +125,7 @@ class _CampaignsTabState extends State<CampaignsTab> {
                 ),
                 IconButton(
                   icon: Icon(
-                    delegate.campaignsSortAsc ? Icons.arrow_upward : Icons.arrow_downward,
+                    delegate.campaignsSortAsc ? ZalmanimIcons.arrowUp : ZalmanimIcons.arrowDown,
                     size: 18,
                   ),
                   tooltip: delegate.campaignsSortAsc ? 'Ascending' : 'Descending',
@@ -194,13 +195,13 @@ class _CampaignsTabState extends State<CampaignsTab> {
                       ),
                     if (c.status == 'draft' || c.status == 'scheduled')
                       IconButton(
-                        icon: const Icon(Icons.edit, color: Colors.orange),
+                        icon: const Icon(ZalmanimIcons.edit, color: Colors.orange),
                         tooltip: 'Edit',
                         onPressed: () => delegate.showEditCampaignDialog(c.toJson()),
                       ),
                     if (c.status == 'draft' || c.status == 'failed')
                       IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
+                        icon: const Icon(ZalmanimIcons.delete, color: Colors.red),
                         tooltip: 'Delete',
                         onPressed: () => delegate.deleteCampaign(c.id, c.name),
                       ),

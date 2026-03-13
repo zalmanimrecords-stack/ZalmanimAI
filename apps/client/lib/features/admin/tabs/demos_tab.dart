@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/zalmanim_icons.dart';
 import '../admin_dashboard_delegate.dart';
 
 class DemosTab extends StatelessWidget {
@@ -81,7 +82,7 @@ class DemosTab extends StatelessWidget {
                           children: [
                             OutlinedButton.icon(
                               onPressed: () => delegate.showDemoDetailsDialog(item),
-                              icon: const Icon(Icons.visibility_outlined),
+                              icon: const Icon(ZalmanimIcons.visibility),
                               label: const Text('Details'),
                             ),
                             const SizedBox(width: 8),
@@ -89,7 +90,7 @@ class DemosTab extends StatelessWidget {
                               onPressed: status == 'approved'
                                   ? null
                                   : () => delegate.showApproveDemoDialog(item),
-                              icon: const Icon(Icons.mark_email_read_outlined),
+                              icon: const Icon(ZalmanimIcons.markEmailRead),
                               label: const Text('Approve'),
                             ),
                             const SizedBox(width: 8),
@@ -105,7 +106,7 @@ class DemosTab extends StatelessWidget {
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(Icons.more_horiz),
+                                    Icon(ZalmanimIcons.moreHoriz),
                                     SizedBox(width: 4),
                                     Text('Status'),
                                   ],

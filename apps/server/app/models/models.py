@@ -47,6 +47,7 @@ class Artist(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_login_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_profile_updated_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     releases: Mapped[list["Release"]] = relationship(
         "Release",
@@ -114,6 +115,23 @@ class ArtistMedia(Base):
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     artist: Mapped["Artist"] = relationship(back_populates="media_files")
+
+
+class CampaignRequest(Base):
+    """Artist-requested campaign for a release; label can approve and create campaign."""
+    __tablename__ = "campaign_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), nullable=False, index=True)
+    release_id: Mapped[int | None] = mapped_column(ForeignKey("releases.id", ondelete="SET NULL"), nullable=True, index=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False, index=True)  # pending | approved | rejected
+    admin_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    artist: Mapped["Artist"] = relationship()
+    release: Mapped["Release | None"] = relationship()
 
 
 class User(Base):

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/api_client.dart';
 import '../../core/session.dart';
+import '../../core/zalmanim_icons.dart';
 import '../account/user_settings_sheet.dart';
 import '../../widgets/api_connection_indicator.dart';
 
@@ -315,16 +316,20 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Artist Portal'),
+        title: Image.asset(
+          'assets/images/zalmanim_logo.png',
+          height: 32,
+          fit: BoxFit.contain,
+        ),
         actions: [
           ApiConnectionIndicator(apiClient: widget.apiClient, onConnectionRestored: _load),
           IconButton(
-            icon: const Icon(Icons.account_circle_outlined),
+            icon: const Icon(ZalmanimIcons.account),
             tooltip: 'User details',
             onPressed: _openUserSettings,
           ),
           IconButton(
-            icon: const Icon(Icons.logout),
+            icon: const Icon(ZalmanimIcons.logout),
             tooltip: 'Log out',
             onPressed: _confirmLogout,
           ),
@@ -347,7 +352,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.copy),
+                          icon: const Icon(ZalmanimIcons.copy),
                           tooltip: 'Copy error',
                           onPressed: () => Clipboard.setData(ClipboardData(text: error!)),
                         ),
@@ -449,7 +454,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                         ...demos.map((d) {
                           final item = d as Map<String, dynamic>;
                           return ListTile(
-                            leading: const Icon(Icons.send),
+                            leading: const Icon(ZalmanimIcons.send),
                             title: Text(
                               () {
                                 final msg = item['message']?.toString().trim() ?? '';
@@ -496,7 +501,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                         ...releases.map((r) {
                           final item = r as Map<String, dynamic>;
                           return ListTile(
-                            leading: const Icon(Icons.music_note),
+                            leading: const Icon(ZalmanimIcons.music),
                             title: Text(item['title'] as String),
                             subtitle: Text('Status: ${item['status']}'),
                           );
@@ -523,7 +528,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                                         height: 16,
                                         child: CircularProgressIndicator(strokeWidth: 2),
                                       )
-                                    : const Icon(Icons.upload_file),
+                                    : const Icon(ZalmanimIcons.upload),
                                 label: Text(uploadingMedia ? 'Uploading...' : 'Upload file'),
                                 onPressed: uploadingMedia ? null : _uploadMedia,
                               ),
@@ -543,19 +548,19 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                           final filename = item['filename'] as String? ?? 'file';
                           final size = item['size_bytes'] as int? ?? 0;
                           return ListTile(
-                            leading: const Icon(Icons.folder),
+                            leading: const Icon(ZalmanimIcons.folder),
                             title: Text(filename),
                             subtitle: Text('${(size / 1024).toStringAsFixed(1)} KB'),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 IconButton(
-                                  icon: const Icon(Icons.download),
+                                  icon: const Icon(ZalmanimIcons.download),
                                   tooltip: 'Download',
                                   onPressed: () => _downloadMedia(id, filename),
                                 ),
                                 IconButton(
-                                  icon: const Icon(Icons.delete_outline),
+                                  icon: const Icon(ZalmanimIcons.delete),
                                   tooltip: 'Delete',
                                   onPressed: () => _deleteMedia(id),
                                 ),
@@ -576,7 +581,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                         ...tasks.map((t) {
                           final item = t as Map<String, dynamic>;
                           return ListTile(
-                            leading: const Icon(Icons.task_alt),
+                            leading: const Icon(ZalmanimIcons.taskAlt),
                             title: Text(item['title'] as String),
                             subtitle: Text('${item['status']} | ${item['details']}'),
                           );

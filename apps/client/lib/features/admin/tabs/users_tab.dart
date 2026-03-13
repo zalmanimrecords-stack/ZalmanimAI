@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/zalmanim_icons.dart';
 import '../admin_dashboard_delegate.dart';
 
 /// Admin users tab: list users, add/edit/deactivate. Admin-only.
@@ -81,7 +82,7 @@ class _UsersTabState extends State<UsersTab> {
                 ),
                 FilledButton.icon(
                   onPressed: delegate.showAddUserDialog,
-                  icon: const Icon(Icons.add),
+                  icon: const Icon(ZalmanimIcons.add),
                   label: const Text('Add user'),
                 ),
               ],
@@ -156,12 +157,12 @@ class _LoginStatsSection extends StatelessWidget {
             _StatCard(
               title: 'Users active in 30 days',
               value: loading ? '...' : '$usersLast30Days',
-              icon: Icons.admin_panel_settings_outlined,
+              icon: ZalmanimIcons.adminPanel,
             ),
             _StatCard(
               title: 'Artists active in 30 days',
               value: loading ? '...' : '$artistsLast30Days',
-              icon: Icons.graphic_eq_outlined,
+              icon: ZalmanimIcons.graphicEq,
             ),
           ],
         ),
@@ -186,7 +187,7 @@ class _LoginStatsSection extends StatelessWidget {
                     IconButton(
                       onPressed: loading ? null : onRetry,
                       tooltip: 'Refresh activity',
-                      icon: const Icon(Icons.refresh),
+                      icon: const Icon(ZalmanimIcons.refresh),
                     ),
                   ],
                 ),
@@ -420,7 +421,7 @@ class _UserCard extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
-              icon: const Icon(Icons.edit_outlined),
+              icon: const Icon(ZalmanimIcons.edit),
               tooltip: 'Edit user',
               onPressed: () => onEdit(user),
             ),
@@ -440,7 +441,7 @@ class _UserCard extends StatelessWidget {
                     ),
                   ),
                 ],
-                icon: const Icon(Icons.more_vert),
+                icon: const Icon(ZalmanimIcons.moreVert),
               ),
           ],
         ),

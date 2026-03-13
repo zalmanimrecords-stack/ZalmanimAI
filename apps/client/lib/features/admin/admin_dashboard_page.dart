@@ -6,12 +6,14 @@ import 'package:flutter/services.dart';
 import '../../core/api_client.dart';
 import '../../core/session.dart';
 import '../../core/session_storage.dart';
+import '../../core/zalmanim_icons.dart';
 import '../account/user_settings_sheet.dart';
 import '../../widgets/api_connection_indicator.dart';
 import 'admin_dashboard_delegate.dart';
 import 'system_settings_page.dart';
 import 'tabs/artists_tab.dart';
 import 'tabs/audience_tab.dart';
+import 'tabs/campaign_requests_tab.dart';
 import 'tabs/campaigns_tab.dart';
 import 'tabs/demos_tab.dart';
 import 'tabs/releases_tab.dart';
@@ -253,6 +255,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   List<dynamic> catalogTracks = const [];
   List<dynamic> adminReleases = const [];
   List<dynamic> campaigns = const [];
+  List<dynamic> campaignRequests = const [];
   List<dynamic> audiences = const [];
   List<dynamic> audienceSubscribers = const [];
   int? _selectedAudienceId;
@@ -266,6 +269,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   bool _loadedDemos = false;
   bool _loadedReleases = false;
   bool _loadedCampaigns = false;
+  bool _loadedCampaignRequests = false;
   bool _loadedAudiences = false;
   bool _loadedUsers = false;
   bool _artistsHasMore = true;
@@ -413,7 +417,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 7, vsync: this);
+    _tabController = TabController(length: 8, vsync: this);
     _tabController.addListener(_onTabChanged);
     _artistSearchController.addListener(_onArtistSearchChanged);
     _releasesSearchController.addListener(_onReleasesSearchChanged);
@@ -452,9 +456,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         if (!_loadedCampaigns) _loadCampaigns();
         break;
       case 4:
+        if (!_loadedCampaignRequests) _loadCampaignRequests();
+        break;
+      case 5:
         if (!_loadedAudiences) _loadAudiences();
         break;
-      case 6:
+      case 7:
         if (!_loadedUsers) _loadUsers();
         break;
     }
@@ -675,6 +682,46 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
   }
 
+  Future<void> _loadCampaignRequests({String? statusFilter}) async {
+    if (mounted) setState(() => loading = true);
+    try {
+      final list = await widget.apiClient.fetchCampaignRequests(
+        token: widget.token,
+        statusFilter: statusFilter,
+      );
+      if (!mounted) return;
+      setState(() {
+        campaignRequests = list;
+        loading = false;
+        error = null;
+        _loadedCampaignRequests = true;
+      });
+    } catch (e) {
+      _setError(e);
+      if (mounted) setState(() {
+        loading = false;
+        _loadedCampaignRequests = true;
+      });
+    }
+  }
+
+  Future<void> _updateCampaignRequestStatus(int requestId, String status, {String? adminNotes}) async {
+    try {
+      await widget.apiClient.updateCampaignRequest(
+        token: widget.token,
+        requestId: requestId,
+        status: status,
+        adminNotes: adminNotes,
+      );
+      if (!mounted) return;
+      await _loadCampaignRequests();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Campaign request $status')),
+      );
+    } catch (e) {
+      _showErrorSnackBar(e.toString());
+    }
+  }
 
   Future<void> _loadAudiences({bool reset = true, bool withOverlay = true}) async {
     final showOverlay = withOverlay && (reset || audiences.isEmpty);
@@ -810,6 +857,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   Future<void> loadMoreCampaigns() => _loadCampaigns(reset: false, withOverlay: false);
 
   @override
+  List<dynamic> get campaignRequestsList => campaignRequests;
+
+  @override
+  Future<void> loadCampaignRequests({String? statusFilter}) => _loadCampaignRequests(statusFilter: statusFilter);
+
+  @override
+  void updateCampaignRequestStatus(int requestId, String status, {String? adminNotes}) =>
+      _updateCampaignRequestStatus(requestId, status, adminNotes: adminNotes);
+
+  @override
   Future<void> selectAudience(int id) async {
     if (_selectedAudienceId == id && audienceSubscribers.isNotEmpty) return;
     try {
@@ -837,11 +894,17 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   @override
   void showEditArtistDialog(int id) => _showEditArtistDialog(id);
+
+  @override
   void showSetArtistPasswordDialog(int artistId, String artistName) => _showSetArtistPasswordDialog(artistId, artistName);
 
   @override
   void sendArtistPortalInvite(int artistId, String artistName, String artistEmail) =>
       _sendArtistPortalInvite(artistId, artistName, artistEmail);
+
+  @override
+  void sendArtistUpdateProfileInvite(int artistId, String artistName, String artistEmail) =>
+      _sendArtistUpdateProfileInvite(artistId, artistName, artistEmail);
 
   @override
   void removeArtist(int id, String name) => _removeArtist(id, name);
@@ -1106,14 +1169,18 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Admin Portal'),
+        title: Image.asset(
+          'assets/images/zalmanim_logo.png',
+          height: 32,
+          fit: BoxFit.contain,
+        ),
         actions: [
           ApiConnectionIndicator(
             apiClient: widget.apiClient,
             onConnectionRestored: load,
           ),
           IconButton(
-            icon: const Icon(Icons.settings),
+            icon: const Icon(ZalmanimIcons.settings),
             tooltip: 'System settings',
             onPressed: () {
               Navigator.of(context).push(
@@ -1127,26 +1194,27 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
             },
           ),
           IconButton(
-            icon: const Icon(Icons.account_circle_outlined),
+            icon: const Icon(ZalmanimIcons.account),
             tooltip: 'User details',
             onPressed: _openUserSettings,
           ),
           IconButton(
-            icon: const Icon(Icons.logout),
+            icon: const Icon(ZalmanimIcons.logout),
             tooltip: 'Log out',
             onPressed: _confirmLogout,
           ),
         ],
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(text: 'Artists'),
-            Tab(text: 'Demos'),
-            Tab(text: 'Releases'),
-            Tab(text: 'Campaigns'),
-            Tab(text: 'Audience'),
-            Tab(text: 'Reports'),
-            Tab(text: 'Users'),
+          tabs: [
+            Tab(icon: ZalmanimIcons.alienIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Artists'),
+            Tab(icon: ZalmanimIcons.jellyfishIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Demos'),
+            Tab(icon: ZalmanimIcons.squidIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Releases'),
+            Tab(icon: ZalmanimIcons.alienIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Campaigns'),
+            Tab(icon: ZalmanimIcons.jellyfishIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Campaign requests'),
+            Tab(icon: ZalmanimIcons.squidIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Audience'),
+            Tab(icon: ZalmanimIcons.alienIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Reports'),
+            Tab(icon: ZalmanimIcons.jellyfishIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Users'),
           ],
         ),
       ),
@@ -1159,6 +1227,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               DemosTab(delegate: this),
               ReleasesTab(delegate: this),
               CampaignsTab(delegate: this),
+              CampaignRequestsTab(delegate: this),
               AudienceTab(delegate: this),
               ReportsTab(delegate: this),
               UsersTab(delegate: this),
@@ -1189,12 +1258,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.copy),
+                          icon: const Icon(ZalmanimIcons.copy),
                           tooltip: 'Copy error',
                           onPressed: () => Clipboard.setData(ClipboardData(text: error!)),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.close),
+                          icon: const Icon(ZalmanimIcons.close),
                           onPressed: clearError,
                         ),
                       ],
@@ -1228,7 +1297,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-            if (isActive) Icon(_artistsSortAsc ? Icons.arrow_drop_up : Icons.arrow_drop_down, size: 20),
+            if (isActive) Icon(_artistsSortAsc ? ZalmanimIcons.arrowDropUp : ZalmanimIcons.arrowDropDown, size: 20),
           ],
         ),
       ),
@@ -1524,7 +1593,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               controller: _artistSearchController,
               decoration: InputDecoration(
                 hintText: 'Search artists (brand, name, email)...',
-                prefixIcon: const Icon(Icons.search),
+                prefixIcon: const Icon(ZalmanimIcons.search),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1545,13 +1614,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 const SizedBox(width: 12),
                 FilledButton.icon(
                   onPressed: () => _showAddArtistDialog(),
-                  icon: const Icon(Icons.add),
+                  icon: const Icon(ZalmanimIcons.add),
                   label: const Text('Add artist'),
                 ),
                 const SizedBox(width: 8),
                 FilledButton.icon(
                   onPressed: artists.isEmpty ? null : () => _showMergeArtistsDialog(),
-                  icon: const Icon(Icons.merge_type),
+                  icon: const Icon(ZalmanimIcons.merge),
                   label: const Text('Merge artists'),
                 ),
               ],
@@ -1654,7 +1723,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                                 mainAxisAlignment: MainAxisAlignment.end,
                                 children: [
                                   IconButton(
-                                    icon: const Icon(Icons.album, color: Colors.blue, size: 22),
+                                    icon: const Icon(ZalmanimIcons.releases, color: Colors.blue, size: 22),
                                     tooltip: 'View releases',
                                     onPressed: id != null ? () => _showArtistReleases(id, displayName) : null,
                                     style: IconButton.styleFrom(
@@ -1664,7 +1733,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                                     ),
                                   ),
                                   IconButton(
-                                    icon: const Icon(Icons.edit, color: Colors.orange, size: 22),
+                                    icon: const Icon(ZalmanimIcons.edit, color: Colors.orange, size: 22),
                                     tooltip: 'Edit',
                                     onPressed: id != null
                                         ? () => _showEditArtistDialog(
@@ -1679,7 +1748,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                                     ),
                                   ),
                                   IconButton(
-                                    icon: const Icon(Icons.delete, color: Colors.red, size: 22),
+                                    icon: const Icon(ZalmanimIcons.delete, color: Colors.red, size: 22),
                                     tooltip: 'Remove',
                                     onPressed: id != null ? () => _removeArtist(id, displayName) : null,
                                     style: IconButton.styleFrom(
@@ -1941,6 +2010,41 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
   }
 
+  Future<void> _sendArtistUpdateProfileInvite(int artistId, String artistName, String artistEmail) async {
+    if (artistEmail.trim().isEmpty) {
+      _showErrorSnackBar('Artist email is required.');
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Invite to update profile'),
+        content: Text(
+          'Send an email to $artistName inviting them to update their artist page and see their releases?\n\n'
+          'The email will include the portal link. If they don\'t have a password yet, a temporary one will be set and sent.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Send email')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final result = await widget.apiClient.sendArtistUpdateProfileInvite(
+        token: widget.token,
+        artistId: artistId,
+      );
+      if (!mounted) return;
+      final username = (result['username'] ?? artistEmail).toString();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Update profile invite sent to $username')),
+      );
+    } catch (e) {
+      _showErrorSnackBar(e.toString());
+    }
+  }
+
   Widget _buildArtistFormDialog(
     BuildContext ctx, {
     required String title,
@@ -2179,14 +2283,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     itemBuilder: (_, i) {
                       final r = releases[i] as Map<String, dynamic>;
                       return ListTile(
-                        leading: const Icon(Icons.music_note, size: 20),
+                        leading: const Icon(ZalmanimIcons.music, size: 20),
                         title: SelectableText((r['title'] as String?) ?? ''),
                         subtitle: SelectableText('Status: ${r['status'] ?? ''}'),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
-                              icon: const Icon(Icons.person_add, size: 22),
+                              icon: const Icon(ZalmanimIcons.personAdd, size: 22),
                               tooltip: 'Set artists',
                               onPressed: () {
                                 Navigator.pop(ctx);
@@ -2194,7 +2298,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                               },
                             ),
                             IconButton(
-                              icon: const Icon(Icons.campaign, color: Colors.blue, size: 22),
+                              icon: const Icon(ZalmanimIcons.campaigns, color: Colors.blue, size: 22),
                               tooltip: 'Create campaign',
                               onPressed: () {
                                 Navigator.pop(ctx);
@@ -2456,12 +2560,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 const SnackBar(content: Text('Copied to clipboard')),
               );
             },
-            icon: const Icon(Icons.copy, size: 18),
+            icon: const Icon(ZalmanimIcons.copy, size: 18),
             label: const Text('Copy'),
           ),
           FilledButton.icon(
             onPressed: () => Navigator.pop(ctx, 'create'),
-            icon: const Icon(Icons.add),
+            icon: const Icon(ZalmanimIcons.add),
             label: const Text('Create campaign'),
           ),
         ],
@@ -2493,7 +2597,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           const SizedBox(height: 24),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.person_off),
+              leading: const Icon(ZalmanimIcons.personOff),
               title: const Text('Artist reminders'),
               subtitle: const Text('Artists with no catalog release in the last X months. Run report, send reminder emails.'),
               onTap: () => _showArtistRemindersReport(context),
@@ -2502,7 +2606,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           const SizedBox(height: 8),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.assessment),
+              leading: const Icon(ZalmanimIcons.reports),
               title: const Text('Artists'),
               subtitle: const Text('Artist list and data for DB import (e.g. CSV).'),
               onTap: () {
@@ -2515,7 +2619,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           const SizedBox(height: 8),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.album),
+              leading: const Icon(ZalmanimIcons.releases),
               title: const Text('Releases'),
               subtitle: const Text('Releases and catalog summary.'),
               onTap: () {
@@ -2528,7 +2632,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           const SizedBox(height: 8),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.campaign),
+              leading: const Icon(ZalmanimIcons.campaigns),
               title: const Text('Campaigns'),
               subtitle: const Text('Campaign history and delivery status.'),
               onTap: () {
@@ -2592,7 +2696,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
             child: const Text('Cancel'),
           ),
           FilledButton.icon(
-            icon: const Icon(Icons.send, size: 18),
+            icon: const Icon(ZalmanimIcons.send, size: 18),
             label: Text('Send to ${selectedIndices.length} artist(s)'),
             onPressed: () => Navigator.of(ctx).pop(true),
           ),
@@ -2716,12 +2820,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
             children: [
               FilledButton.icon(
                 onPressed: () => _importCatalogCsv(),
-                icon: const Icon(Icons.upload_file),
+                icon: const Icon(ZalmanimIcons.upload),
                 label: const Text('Import CSV'),
               ),
               FilledButton.icon(
                 onPressed: catalogTracks.isEmpty ? null : () => _syncReleasesFromCatalog(),
-                icon: const Icon(Icons.sync),
+                icon: const Icon(ZalmanimIcons.sync),
                 label: const Text('Sync to artists'),
                 style: FilledButton.styleFrom(
                   backgroundColor: catalogTracks.isEmpty ? null : Theme.of(context).colorScheme.tertiary,
@@ -2729,12 +2833,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               ),
               FilledButton.icon(
                 onPressed: catalogTracks.isEmpty ? null : () => _syncOriginalArtistsFromArtists(),
-                icon: const Icon(Icons.sync_alt),
+                icon: const Icon(ZalmanimIcons.sync),
                 label: const Text('Original Artist <- Brand'),
               ),
               FilledButton.icon(
                 onPressed: catalogTracks.isEmpty ? null : () => _createMissingOriginalArtists(),
-                icon: const Icon(Icons.person_add),
+                icon: const Icon(ZalmanimIcons.personAdd),
                 label: const Text('Create missing artists'),
               ),
             ],
@@ -2748,7 +2852,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     controller: _releasesSearchController,
                     decoration: InputDecoration(
                       hintText: 'Search releases by catalog #, title, artist, ISRC, UPC, mix...',
-                      prefixIcon: const Icon(Icons.search),
+                      prefixIcon: const Icon(ZalmanimIcons.search),
                       border: const OutlineInputBorder(),
                       isDense: true,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -2827,7 +2931,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 onChanged: (v) => setState(() => _releasesSortBy = v ?? 0),
               ),
               IconButton(
-                icon: Icon(_releasesSortAsc ? Icons.arrow_upward : Icons.arrow_downward, size: 18),
+                icon: Icon(_releasesSortAsc ? ZalmanimIcons.arrowUp : ZalmanimIcons.arrowDown, size: 18),
                 tooltip: _releasesSortAsc ? 'Ascending' : 'Descending',
                 onPressed: () => setState(() => _releasesSortAsc = !_releasesSortAsc),
               ),
@@ -2874,7 +2978,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     hasNoArtist ? 'No artist assigned' : artistNames,
                   ),
                   trailing: OutlinedButton.icon(
-                    icon: const Icon(Icons.person_add, size: 18),
+                    icon: const Icon(ZalmanimIcons.personAdd, size: 18),
                     label: const Text('Associate with artist'),
                     onPressed: () => _showSetArtistsDialog(release),
                   ),
@@ -3032,7 +3136,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
             children: [
               FilledButton.icon(
                 onPressed: () => _showCreateCampaignDialog(),
-                icon: const Icon(Icons.add),
+                icon: const Icon(ZalmanimIcons.add),
                 label: const Text('Create campaign'),
               ),
               const SizedBox(width: 24),
@@ -3050,7 +3154,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 onChanged: (v) => setState(() => _campaignsSortBy = v ?? 0),
               ),
               IconButton(
-                icon: Icon(_campaignsSortAsc ? Icons.arrow_upward : Icons.arrow_downward, size: 18),
+                icon: Icon(_campaignsSortAsc ? ZalmanimIcons.arrowUp : ZalmanimIcons.arrowDown, size: 18),
                 tooltip: _campaignsSortAsc ? 'Ascending' : 'Descending',
                 onPressed: () => setState(() => _campaignsSortAsc = !_campaignsSortAsc),
               ),
@@ -3095,13 +3199,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                           ),
                         if (status == 'draft' || status == 'scheduled')
                           IconButton(
-                            icon: const Icon(Icons.edit, color: Colors.orange),
+                            icon: const Icon(ZalmanimIcons.edit, color: Colors.orange),
                             tooltip: 'Edit',
                             onPressed: () => _showEditCampaignDialog(campaign),
                           ),
                         if (status == 'draft' || status == 'failed')
                           IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
+                            icon: const Icon(ZalmanimIcons.delete, color: Colors.red),
                             tooltip: 'Delete',
                             onPressed: () => _deleteCampaign(id, name),
                           ),
@@ -3198,7 +3302,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                               if (ctx.mounted) _showErrorSnackBar(e.toString());
                             }
                           },
-                          icon: const Icon(Icons.add_photo_alternate, size: 20),
+                          icon: const Icon(ZalmanimIcons.addPhoto, size: 20),
                           label: const Text('Add image'),
                         ),
                         if (mediaUrlController.text.trim().isNotEmpty) ...[
@@ -3211,13 +3315,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                               child: Image.network(
                                 mediaUrlController.text.trim(),
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
+                                errorBuilder: (_, __, ___) => const Icon(ZalmanimIcons.brokenImage),
                               ),
                             ),
                           ),
                           const SizedBox(width: 4),
                           IconButton(
-                            icon: const Icon(Icons.clear),
+                            icon: const Icon(ZalmanimIcons.clear),
                             tooltip: 'Remove image',
                             onPressed: () {
                               mediaUrlController.clear();
@@ -3501,7 +3605,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                               if (ctx.mounted) _showErrorSnackBar(e.toString());
                             }
                           },
-                          icon: const Icon(Icons.add_photo_alternate, size: 20),
+                          icon: const Icon(ZalmanimIcons.addPhoto, size: 20),
                           label: const Text('Add image'),
                         ),
                         if (mediaUrlController.text.trim().isNotEmpty) ...[
@@ -3514,13 +3618,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                               child: Image.network(
                                 mediaUrlController.text.trim(),
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
+                                errorBuilder: (_, __, ___) => const Icon(ZalmanimIcons.brokenImage),
                               ),
                             ),
                           ),
                           const SizedBox(width: 4),
                           IconButton(
-                            icon: const Icon(Icons.clear),
+                            icon: const Icon(ZalmanimIcons.clear),
                             tooltip: 'Remove image',
                             onPressed: () {
                               mediaUrlController.clear();
@@ -3863,7 +3967,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                             ),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.copy),
+                            icon: const Icon(ZalmanimIcons.copy),
                             tooltip: 'Copy error',
                             onPressed: () => Clipboard.setData(ClipboardData(text: dialogError!)),
                           ),
@@ -3889,7 +3993,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
-                      value: role,
+                      initialValue: role,
                       decoration: const InputDecoration(labelText: 'Role'),
                       items: _userRoles
                           .map((r) => DropdownMenuItem(value: r, child: Text(r)))
@@ -3899,7 +4003,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     if (role == 'artist') ...[
                       const SizedBox(height: 8),
                       DropdownButtonFormField<int?>(
-                        value: artistId,
+                        initialValue: artistId,
                         decoration: const InputDecoration(labelText: 'Artist (optional)'),
                         items: [
                           const DropdownMenuItem<int?>(value: null, child: Text('— None —')),
@@ -4012,7 +4116,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                             ),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.copy),
+                            icon: const Icon(ZalmanimIcons.copy),
                             tooltip: 'Copy error',
                             onPressed: () => Clipboard.setData(ClipboardData(text: dialogError!)),
                           ),
@@ -4041,7 +4145,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
-                      value: role,
+                      initialValue: role,
                       decoration: const InputDecoration(labelText: 'Role'),
                       items: _userRoles
                           .map((r) => DropdownMenuItem(value: r, child: Text(r)))
@@ -4051,7 +4155,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     if (role == 'artist') ...[
                       const SizedBox(height: 8),
                       DropdownButtonFormField<int?>(
-                        value: artistId,
+                        initialValue: artistId,
                         decoration: const InputDecoration(labelText: 'Artist (optional)'),
                         items: [
                           const DropdownMenuItem<int?>(value: null, child: Text('— None —')),
@@ -4622,7 +4726,7 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
           FilledButton.icon(
-            icon: const Icon(Icons.send, size: 18),
+            icon: const Icon(ZalmanimIcons.send, size: 18),
             label: const Text('Send'),
             onPressed: () {
               final email = toController.text.trim();
@@ -4677,7 +4781,7 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
             SelectableText(err, style: const TextStyle(color: Colors.red)),
             const SizedBox(height: 8),
             TextButton.icon(
-              icon: const Icon(Icons.copy),
+              icon: const Icon(ZalmanimIcons.copy),
               label: const Text('Copy error'),
               onPressed: () => Clipboard.setData(ClipboardData(text: err)),
             ),
@@ -4715,19 +4819,19 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
                       ),
                       const SizedBox(width: 12),
                       TextButton.icon(
-                        icon: const Icon(Icons.refresh, size: 18),
+                        icon: const Icon(ZalmanimIcons.refresh, size: 18),
                         label: const Text('Regenerate'),
                         onPressed: _loading ? null : _onRegenerate,
                       ),
                       const SizedBox(width: 12),
                       TextButton.icon(
-                        icon: const Icon(Icons.settings, size: 18),
+                        icon: const Icon(ZalmanimIcons.settings, size: 18),
                         label: const Text('Mail settings'),
                         onPressed: _showMailSettings,
                       ),
                       const SizedBox(width: 8),
                       TextButton.icon(
-                        icon: const Icon(Icons.mark_email_unread, size: 18),
+                        icon: const Icon(ZalmanimIcons.campaignRequests, size: 18),
                         label: const Text('Send test email'),
                         onPressed: _showSendTestEmail,
                       ),
@@ -4816,7 +4920,7 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
                   ),
                   const SizedBox(height: 8),
                   TextButton.icon(
-                    icon: const Icon(Icons.copy),
+                    icon: const Icon(ZalmanimIcons.copy),
                     label: const Text('Copy as CSV'),
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: _reportToCsv()));
@@ -4829,7 +4933,7 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close')),
         FilledButton.icon(
-          icon: const Icon(Icons.email, size: 18),
+          icon: const Icon(ZalmanimIcons.email, size: 18),
           label: Text(_selectedIndices.isEmpty ? 'Send email to selected' : 'Send email to ${_selectedIndices.length} artist(s)'),
           onPressed: _selectedIndices.isEmpty
               ? null
@@ -4870,7 +4974,7 @@ class _ArtistInfoTab extends StatelessWidget {
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: onEdit,
-            icon: const Icon(Icons.edit, size: 18),
+            icon: const Icon(ZalmanimIcons.edit, size: 18),
             label: const Text('Edit artist'),
           ),
         ],
@@ -5285,7 +5389,7 @@ class _ArtistLogsTabState extends State<_ArtistLogsTab> {
         }
         return ListTile(
           leading: Icon(
-            type == 'reminder_email' ? Icons.email : Icons.history,
+            type == 'reminder_email' ? ZalmanimIcons.email : ZalmanimIcons.history,
             size: 22,
             color: Theme.of(context).colorScheme.primary,
           ),
@@ -5506,12 +5610,12 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
       appBar: AppBar(
         title: const Text('Users & Permissions'),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(ZalmanimIcons.arrowBack),
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
-          IconButton(onPressed: _loading ? null : _load, icon: const Icon(Icons.refresh)),
-          IconButton(onPressed: _loading ? null : () => _showUserDialog(), icon: const Icon(Icons.person_add)),
+          IconButton(onPressed: _loading ? null : _load, icon: const Icon(ZalmanimIcons.refresh)),
+          IconButton(onPressed: _loading ? null : () => _showUserDialog(), icon: const Icon(ZalmanimIcons.personAdd)),
         ],
       ),
       body: _buildBody(),
@@ -5557,7 +5661,7 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
               ],
             ),
             trailing: IconButton(
-              icon: const Icon(Icons.edit),
+              icon: const Icon(ZalmanimIcons.edit),
               onPressed: () => _showUserDialog(user: user),
             ),
           ),

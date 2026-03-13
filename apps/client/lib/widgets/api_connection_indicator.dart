@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
+import '../core/zalmanim_icons.dart';
 
 /// Shows API connection status in the app bar (green = connected, red = disconnected).
 /// When connection is restored after being lost, [onConnectionRestored] is called so the page can refresh data.
@@ -81,7 +82,7 @@ class _ApiConnectionIndicatorState extends State<ApiConnectionIndicator> {
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
             : Icon(
-                connected ? Icons.cloud_done : Icons.cloud_off,
+                connected ? ZalmanimIcons.cloudDone : ZalmanimIcons.cloudOff,
                 color: connected ? Colors.greenAccent : Colors.redAccent,
                 size: 22,
               ),

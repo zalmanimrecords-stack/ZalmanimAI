@@ -392,6 +392,65 @@ class ApiClient {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  /// Send email inviting artist to update their portal page and see their releases.
+  Future<Map<String, dynamic>> sendArtistUpdateProfileInvite({
+    required String token,
+    required int artistId,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/admin/artists/$artistId/send-update-profile-invite'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(response.body);
+      throw Exception('Send update profile invite failed (${response.statusCode}): ${detail.isNotEmpty ? detail : response.reasonPhrase}');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<List<dynamic>> fetchCampaignRequests({
+    required String token,
+    String? statusFilter,
+  }) async {
+    final queryParams = <String, String>{};
+    if (statusFilter != null && statusFilter.isNotEmpty) {
+      queryParams['status_filter'] = statusFilter;
+    }
+    final uri = queryParams.isEmpty
+        ? Uri.parse('$baseUrl/admin/campaign-requests')
+        : Uri.parse('$baseUrl/admin/campaign-requests').replace(queryParameters: queryParams);
+    final response = await http.get(
+      uri,
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(response.body);
+      throw Exception('Campaign requests failed (${response.statusCode}): $detail');
+    }
+    return jsonDecode(response.body) as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateCampaignRequest({
+    required String token,
+    required int requestId,
+    String? status,
+    String? adminNotes,
+  }) async {
+    final body = <String, dynamic>{};
+    if (status != null) body['status'] = status;
+    if (adminNotes != null) body['admin_notes'] = adminNotes;
+    final response = await http.patch(
+      Uri.parse('$baseUrl/admin/campaign-requests/$requestId'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(response.body);
+      throw Exception('Update campaign request failed (${response.statusCode}): $detail');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> fetchArtistDashboard(String token) async {
     final response = await http.get(
       Uri.parse('$baseUrl/artist/me/dashboard'),

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../core/models/artist.dart';
+import '../../../core/zalmanim_icons.dart';
 import '../admin_dashboard_delegate.dart';
 
 /// Artists tab: list, search, sort, add/edit/remove/merge, view releases.
@@ -32,14 +33,20 @@ class _ArtistsTabState extends State<ArtistsTab> {
   void initState() {
     super.initState();
     _verticalController.addListener(_handleScroll);
+    delegate.artistSearchController.addListener(_onSearchChanged);
   }
 
   @override
   void dispose() {
+    delegate.artistSearchController.removeListener(_onSearchChanged);
     _verticalController.removeListener(_handleScroll);
     _verticalController.dispose();
     _horizontalController.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged() {
+    if (mounted) setState(() {});
   }
 
   void _handleScroll() {
@@ -90,6 +97,10 @@ class _ArtistsTabState extends State<ArtistsTab> {
           va = ar.lastReleaseDisplay.toLowerCase();
           vb = br.lastReleaseDisplay.toLowerCase();
           break;
+        case 4:
+          va = ar.lastProfileUpdatedDisplay.toLowerCase();
+          vb = br.lastProfileUpdatedDisplay.toLowerCase();
+          break;
         default:
           va = '';
           vb = '';
@@ -104,11 +115,12 @@ class _ArtistsTabState extends State<ArtistsTab> {
         final width = constraints.maxWidth * 0.95;
         final height = constraints.maxHeight * 0.9;
         final tableWidth = math.max(width - (sideMargin * 2), _minTableWidth);
-        final brandWidth = tableWidth * 0.18;
-        final nameWidth = tableWidth * 0.18;
-        final emailWidth = tableWidth * 0.26;
-        final releaseWidth = tableWidth * 0.23;
-        final actionsWidth = tableWidth * 0.15;
+        final brandWidth = tableWidth * 0.16;
+        final nameWidth = tableWidth * 0.16;
+        final emailWidth = tableWidth * 0.22;
+        final releaseWidth = tableWidth * 0.20;
+        final profileUpdatedWidth = tableWidth * 0.12;
+        final actionsWidth = tableWidth * 0.14;
 
         return Center(
           child: SizedBox(
@@ -124,7 +136,7 @@ class _ArtistsTabState extends State<ArtistsTab> {
                       controller: delegate.artistSearchController,
                       decoration: InputDecoration(
                         hintText: 'Search artists (brand, name, email)...',
-                        prefixIcon: const Icon(Icons.search),
+                        prefixIcon: const Icon(ZalmanimIcons.search),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -147,13 +159,13 @@ class _ArtistsTabState extends State<ArtistsTab> {
                         const SizedBox(width: 12),
                         FilledButton.icon(
                           onPressed: delegate.showAddArtistDialog,
-                          icon: const Icon(Icons.add),
+                          icon: const Icon(ZalmanimIcons.add),
                           label: const Text('Add artist'),
                         ),
                         const SizedBox(width: 8),
                         FilledButton.icon(
                           onPressed: delegate.artistsList.isEmpty ? null : delegate.showMergeArtistsDialog,
-                          icon: const Icon(Icons.merge_type),
+                          icon: const Icon(ZalmanimIcons.merge),
                           label: const Text('Merge artists'),
                         ),
                       ],
@@ -181,6 +193,7 @@ class _ArtistsTabState extends State<ArtistsTab> {
                                       _headerCell(context, 'Full name', 1, nameWidth),
                                       _headerCell(context, 'Email', 2, emailWidth),
                                       _headerCell(context, 'Last Release', 3, releaseWidth),
+                                      _headerCell(context, 'Profile updated', 4, profileUpdatedWidth),
                                       SizedBox(width: actionsWidth),
                                     ],
                                   ),
@@ -213,19 +226,20 @@ class _ArtistsTabState extends State<ArtistsTab> {
                                             _textCell(artist.fullName.isEmpty ? '-' : artist.fullName, nameWidth),
                                             _textCell(artist.email, emailWidth),
                                             _textCell(artist.lastReleaseDisplay, releaseWidth),
+                                            _textCell(artist.lastProfileUpdatedDisplay, profileUpdatedWidth),
                                             SizedBox(
                                               width: actionsWidth,
                                               child: Row(
                                                 mainAxisAlignment: MainAxisAlignment.end,
                                                 children: [
                                                   _actionButton(
-                                                    icon: Icons.info_outline,
+                                                    icon: ZalmanimIcons.info,
                                                     color: Colors.grey,
                                                     tooltip: 'Details & logs',
                                                     onPressed: () => delegate.showArtistDetailsDialog(artist.id),
                                                   ),
                                                   _actionButton(
-                                                    icon: Icons.album,
+                                                    icon: ZalmanimIcons.releases,
                                                     color: Colors.blue,
                                                     tooltip: 'View releases',
                                                     onPressed: () => delegate.showArtistReleases(
@@ -234,13 +248,13 @@ class _ArtistsTabState extends State<ArtistsTab> {
                                                     ),
                                                   ),
                                                   _actionButton(
-                                                    icon: Icons.edit,
+                                                    icon: ZalmanimIcons.edit,
                                                     color: Colors.orange,
                                                     tooltip: 'Edit',
                                                     onPressed: () => delegate.showEditArtistDialog(artist.id),
                                                   ),
                                                   _actionButton(
-                                                    icon: Icons.mark_email_unread,
+                                                    icon: ZalmanimIcons.campaignRequests,
                                                     color: Colors.indigo,
                                                     tooltip: 'Send portal access email',
                                                     onPressed: () => delegate.sendArtistPortalInvite(
@@ -250,7 +264,17 @@ class _ArtistsTabState extends State<ArtistsTab> {
                                                     ),
                                                   ),
                                                   _actionButton(
-                                                    icon: Icons.lock,
+                                                    icon: ZalmanimIcons.editNote,
+                                                    color: Colors.deepPurple,
+                                                    tooltip: 'Invite to update profile & see releases',
+                                                    onPressed: () => delegate.sendArtistUpdateProfileInvite(
+                                                      artist.id,
+                                                      artist.displayName,
+                                                      artist.email,
+                                                    ),
+                                                  ),
+                                                  _actionButton(
+                                                    icon: ZalmanimIcons.lock,
                                                     color: Colors.teal,
                                                     tooltip: 'Set portal password',
                                                     onPressed: () => delegate.showSetArtistPasswordDialog(
@@ -259,7 +283,7 @@ class _ArtistsTabState extends State<ArtistsTab> {
                                                     ),
                                                   ),
                                                   _actionButton(
-                                                    icon: Icons.delete,
+                                                    icon: ZalmanimIcons.delete,
                                                     color: Colors.red,
                                                     tooltip: 'Remove',
                                                     onPressed: () => delegate.removeArtist(
@@ -326,7 +350,7 @@ class _ArtistsTabState extends State<ArtistsTab> {
               ),
               if (isActive)
                 Icon(
-                  delegate.artistsSortAsc ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+                  delegate.artistsSortAsc ? ZalmanimIcons.arrowDropUp : ZalmanimIcons.arrowDropDown,
                   size: 20,
                 ),
             ],

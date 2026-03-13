@@ -1,6 +1,7 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/zalmanim_icons.dart';
 import '../admin_dashboard_delegate.dart';
 
 class AudienceTab extends StatelessWidget {
@@ -46,7 +47,7 @@ class AudienceTab extends StatelessWidget {
               ),
               FilledButton.icon(
                 onPressed: delegate.showCreateAudienceDialog,
-                icon: const Icon(Icons.add),
+                icon: const Icon(ZalmanimIcons.add),
                 label: const Text('New list'),
               ),
             ],
@@ -90,7 +91,7 @@ class AudienceTab extends StatelessWidget {
                                 IconButton(
                                   tooltip: 'Edit list',
                                   onPressed: () => delegate.showEditAudienceDialog(audience),
-                                  icon: const Icon(Icons.edit, size: 18),
+                                  icon: const Icon(ZalmanimIcons.edit, size: 18),
                                 ),
                               ],
                             ),
@@ -136,7 +137,7 @@ class AudienceTab extends StatelessWidget {
                         if (selectedAudienceId != null)
                           FilledButton.icon(
                             onPressed: delegate.showAddAudienceSubscriberDialog,
-                            icon: const Icon(Icons.person_add),
+                            icon: const Icon(ZalmanimIcons.personAdd),
                             label: const Text('Add subscriber'),
                           ),
                       ],
@@ -199,12 +200,12 @@ class AudienceTab extends StatelessWidget {
                                           const SnackBar(content: Text('Unsubscribe link copied.')),
                                         );
                                       },
-                                icon: const Icon(Icons.link, size: 18),
+                                icon: const Icon(ZalmanimIcons.link, size: 18),
                               ),
                               IconButton(
                                 tooltip: 'Edit subscriber',
                                 onPressed: () => delegate.showEditAudienceSubscriberDialog(subscriber),
-                                icon: const Icon(Icons.edit, size: 18),
+                                icon: const Icon(ZalmanimIcons.edit, size: 18),
                               ),
                               TextButton(
                                 onPressed: () => delegate.toggleAudienceSubscriberStatus(subscriber),

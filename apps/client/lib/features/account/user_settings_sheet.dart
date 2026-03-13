@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
 import '../../core/session.dart';
+import '../../core/zalmanim_icons.dart';
 
 class UserSettingsSheet extends StatefulWidget {
   const UserSettingsSheet({
@@ -201,7 +202,7 @@ class _UserSettingsSheetState extends State<UserSettingsSheet> {
                 child: Column(
                   children: [
                     ListTile(
-                      leading: const Icon(Icons.lock_reset),
+                      leading: const Icon(ZalmanimIcons.lockReset),
                       title: const Text('Reset password'),
                       subtitle: Text(
                         email == null || email.isEmpty
@@ -214,14 +215,14 @@ class _UserSettingsSheetState extends State<UserSettingsSheet> {
                               height: 20,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(Icons.chevron_right),
+                          : const Icon(ZalmanimIcons.chevronRight),
                       onTap: _sendingReset || _loggingOut ? null : _sendPasswordReset,
                     ),
                     if (widget.onRefresh != null)
                       const Divider(height: 1),
                     if (widget.onRefresh != null)
                       ListTile(
-                        leading: const Icon(Icons.refresh),
+                        leading: const Icon(ZalmanimIcons.refresh),
                         title: const Text('Refresh current screen'),
                         subtitle: const Text('Reload account data and dashboard content'),
                         trailing: _refreshing
@@ -230,13 +231,13 @@ class _UserSettingsSheetState extends State<UserSettingsSheet> {
                                 height: 20,
                                 child: CircularProgressIndicator(strokeWidth: 2),
                               )
-                            : const Icon(Icons.chevron_right),
+                            : const Icon(ZalmanimIcons.chevronRight),
                         onTap: _refreshing || _loggingOut ? null : _refresh,
                       ),
                     const Divider(height: 1),
                     ListTile(
                       leading: Icon(
-                        Icons.logout,
+                        ZalmanimIcons.logout,
                         color: theme.colorScheme.error,
                       ),
                       title: Text(
@@ -251,7 +252,7 @@ class _UserSettingsSheetState extends State<UserSettingsSheet> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : Icon(
-                              Icons.chevron_right,
+                              ZalmanimIcons.chevronRight,
                               color: theme.colorScheme.error,
                             ),
                       onTap: _loggingOut ? null : _logout,

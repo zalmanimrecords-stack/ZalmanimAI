@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/models/catalog_track.dart';
 import '../../../core/models/release.dart';
+import '../../../core/zalmanim_icons.dart';
 import '../admin_dashboard_delegate.dart';
 
 /// Releases tab: catalog (import, sync, list) + releases list with set artists.
@@ -192,12 +193,12 @@ class _ReleasesTabState extends State<ReleasesTab> {
             children: [
               FilledButton.icon(
                 onPressed: delegate.importCatalogCsv,
-                icon: const Icon(Icons.upload_file),
+                icon: const Icon(ZalmanimIcons.upload),
                 label: const Text('Import CSV'),
               ),
               FilledButton.icon(
                 onPressed: catalogTracks.isEmpty ? null : delegate.syncReleasesFromCatalog,
-                icon: const Icon(Icons.sync),
+                icon: const Icon(ZalmanimIcons.sync),
                 label: const Text('Sync to artists'),
                 style: FilledButton.styleFrom(
                   backgroundColor: catalogTracks.isEmpty
@@ -207,12 +208,12 @@ class _ReleasesTabState extends State<ReleasesTab> {
               ),
               FilledButton.icon(
                 onPressed: catalogTracks.isEmpty ? null : delegate.syncOriginalArtistsFromArtists,
-                icon: const Icon(Icons.sync_alt),
+                icon: const Icon(ZalmanimIcons.sync),
                 label: const Text('Original Artist <- Brand'),
               ),
               FilledButton.icon(
                 onPressed: catalogTracks.isEmpty ? null : delegate.createMissingOriginalArtists,
-                icon: const Icon(Icons.person_add),
+                icon: const Icon(ZalmanimIcons.personAdd),
                 label: const Text('Create missing artists'),
               ),
             ],
@@ -223,7 +224,7 @@ class _ReleasesTabState extends State<ReleasesTab> {
               controller: delegate.releasesSearchController,
               decoration: const InputDecoration(
                 hintText: 'Search releases by catalog #, title, artist, ISRC, UPC, mix...',
-                prefixIcon: Icon(Icons.search),
+                prefixIcon: Icon(ZalmanimIcons.search),
                 border: OutlineInputBorder(),
                 isDense: true,
                 contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -293,7 +294,7 @@ class _ReleasesTabState extends State<ReleasesTab> {
               ),
               IconButton(
                 icon: Icon(
-                  delegate.releasesSortAsc ? Icons.arrow_upward : Icons.arrow_downward,
+                  delegate.releasesSortAsc ? ZalmanimIcons.arrowUp : ZalmanimIcons.arrowDown,
                   size: 18,
                 ),
                 tooltip: delegate.releasesSortAsc ? 'Ascending' : 'Descending',
@@ -348,7 +349,7 @@ class _ReleasesTabState extends State<ReleasesTab> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       trailing: OutlinedButton.icon(
-                        icon: const Icon(Icons.person_add, size: 18),
+                        icon: const Icon(ZalmanimIcons.personAdd, size: 18),
                         label: const Text('Associate with artist'),
                         onPressed: () => delegate.showSetArtistsDialog(sortedReleases[index]),
                       ),
@@ -412,7 +413,7 @@ class _ReleasesTabState extends State<ReleasesTab> {
                               ),
                               if (delegate.catalogSortColumnIndex == index)
                                 Icon(
-                                  delegate.catalogSortAsc ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+                                  delegate.catalogSortAsc ? ZalmanimIcons.arrowDropUp : ZalmanimIcons.arrowDropDown,
                                   size: 20,
                                 ),
                             ],

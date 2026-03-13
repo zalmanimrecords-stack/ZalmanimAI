@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/zalmanim_icons.dart';
 import '../admin_dashboard_delegate.dart';
 
 /// Reports tab: links to report actions (artists no tracks, etc.).
@@ -31,7 +32,7 @@ class ReportsTab extends StatelessWidget {
           const SizedBox(height: 24),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.person_off),
+              leading: const Icon(ZalmanimIcons.personOff),
               title: const Text('Artist reminders'),
               subtitle: const Text(
                 'Artists with no catalog release in the last X months. '
@@ -44,7 +45,7 @@ class ReportsTab extends StatelessWidget {
           const SizedBox(height: 8),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.assessment),
+              leading: const Icon(ZalmanimIcons.reports),
               title: const Text('Artists'),
               subtitle: const Text(
                 'Artist list and data for DB import (e.g. CSV).',
@@ -63,7 +64,7 @@ class ReportsTab extends StatelessWidget {
           const SizedBox(height: 8),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.album),
+              leading: const Icon(ZalmanimIcons.releases),
               title: const Text('Releases'),
               subtitle: const Text('Releases and catalog summary.'),
               onTap: () {
@@ -80,7 +81,7 @@ class ReportsTab extends StatelessWidget {
           const SizedBox(height: 8),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.campaign),
+              leading: const Icon(ZalmanimIcons.campaigns),
               title: const Text('Campaigns'),
               subtitle: const Text('Campaign history and delivery status.'),
               onTap: () {

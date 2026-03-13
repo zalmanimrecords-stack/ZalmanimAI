@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/api_client.dart';
-import '../../core/app_config.dart';
 import '../../core/session.dart';
 import '../../core/session_storage.dart';
+import '../../core/zalmanim_icons.dart';
 import 'forgot_password_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -99,20 +99,28 @@ class _LoginPageState extends State<LoginPage> {
                           ? const SizedBox(height: 24)
                           : TextButton.icon(
                               onPressed: widget.onBack,
-                              icon: const Icon(Icons.arrow_back),
+                              icon: const Icon(ZalmanimIcons.arrowBack),
                               label: const Text('Back'),
                             ),
                     ),
                     const SizedBox(height: 12),
-                    Text(
-                      AppConfig.labelName,
-                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: primary,
-                          ),
-                      textAlign: TextAlign.center,
+                    Image.asset(
+                      'assets/images/zalmanim_logo.png',
+                      height: 72,
+                      fit: BoxFit.contain,
                     ),
                     const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ZalmanimIcons.alienIcon(size: 28, color: primary),
+                        const SizedBox(width: 12),
+                        ZalmanimIcons.jellyfishIcon(size: 28, color: primary),
+                        const SizedBox(width: 12),
+                        ZalmanimIcons.squidIcon(size: 28, color: primary),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
                     Text(
                       'Artist sign in',
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
@@ -133,7 +141,7 @@ class _LoginPageState extends State<LoginPage> {
                               decoration: const InputDecoration(
                                 labelText: 'Email',
                                 border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.email_outlined),
+                                prefixIcon: const Icon(ZalmanimIcons.email),
                               ),
                               keyboardType: TextInputType.emailAddress,
                               textInputAction: TextInputAction.next,
@@ -144,7 +152,7 @@ class _LoginPageState extends State<LoginPage> {
                               decoration: const InputDecoration(
                                 labelText: 'Password',
                                 border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.lock_outline),
+                                prefixIcon: const Icon(ZalmanimIcons.lock),
                               ),
                               obscureText: true,
                               textInputAction: TextInputAction.done,
@@ -164,7 +172,7 @@ class _LoginPageState extends State<LoginPage> {
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Icon(Icons.error_outline, size: 20, color: Theme.of(context).colorScheme.error),
+                                  Icon(ZalmanimIcons.errorOutline, size: 20, color: Theme.of(context).colorScheme.error),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: SelectableText(
@@ -173,7 +181,7 @@ class _LoginPageState extends State<LoginPage> {
                                     ),
                                   ),
                                   IconButton(
-                                    icon: const Icon(Icons.copy, size: 20),
+                                    icon: const Icon(ZalmanimIcons.copy, size: 20),
                                     tooltip: 'Copy error',
                                     onPressed: () => Clipboard.setData(ClipboardData(text: error!)),
                                   ),

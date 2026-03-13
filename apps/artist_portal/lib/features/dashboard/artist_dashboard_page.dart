@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/api_client.dart';
-import '../../core/app_config.dart';
+import '../../core/zalmanim_icons.dart';
 
 class ArtistDashboardPage extends StatefulWidget {
   const ArtistDashboardPage({
@@ -21,6 +21,22 @@ class ArtistDashboardPage extends StatefulWidget {
   State<ArtistDashboardPage> createState() => _ArtistDashboardPageState();
 }
 
+const List<MapEntry<String, String>> _socialKeys = [
+  MapEntry('website', 'Website'),
+  MapEntry('soundcloud', 'SoundCloud'),
+  MapEntry('facebook', 'Facebook'),
+  MapEntry('instagram', 'Instagram'),
+  MapEntry('twitter_1', 'Twitter / X'),
+  MapEntry('youtube', 'YouTube'),
+  MapEntry('tiktok', 'TikTok'),
+  MapEntry('spotify', 'Spotify'),
+  MapEntry('apple_music', 'Apple Music'),
+  MapEntry('linktree', 'Linktree'),
+  MapEntry('other_1', 'Other link 1'),
+  MapEntry('other_2', 'Other link 2'),
+  MapEntry('other_3', 'Other link 3'),
+];
+
 class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
   final titleController = TextEditingController();
   final demoMessageController = TextEditingController();
@@ -28,6 +44,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
   final profileNotesController = TextEditingController();
   final profileWebsiteController = TextEditingController();
   final profileFullNameController = TextEditingController();
+  final Map<String, TextEditingController> socialControllers = {};
 
   bool loading = true;
   bool uploading = false;
@@ -35,14 +52,21 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
   bool changingPassword = false;
   bool submittingDemo = false;
   bool uploadingMedia = false;
+  bool requestingCampaign = false;
   String? error;
   Map<String, dynamic>? dashboard;
   List<dynamic> demos = [];
   List<dynamic> mediaList = [];
+  int mediaUsedBytes = 0;
+  int mediaQuotaBytes = 50 * 1024 * 1024;
+  List<dynamic> campaignRequests = [];
 
   @override
   void initState() {
     super.initState();
+    for (final e in _socialKeys) {
+      socialControllers[e.key] = TextEditingController();
+    }
     _load();
   }
 
@@ -54,6 +78,9 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
     profileNotesController.dispose();
     profileWebsiteController.dispose();
     profileFullNameController.dispose();
+    for (final c in socialControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -72,14 +99,24 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
         if (extra is Map<String, dynamic>) {
           profileWebsiteController.text = extra['website']?.toString() ?? '';
           profileFullNameController.text = extra['full_name']?.toString() ?? '';
+          for (final e in _socialKeys) {
+            socialControllers[e.key]?.text = extra[e.key]?.toString() ?? '';
+          }
         }
       }
       final demosResult = await widget.apiClient.fetchArtistDemos(widget.token);
-      final mediaResult = await widget.apiClient.fetchArtistMedia(widget.token);
+      final mediaData = await widget.apiClient.fetchArtistMediaWithQuota(widget.token);
+      final mediaItems = mediaData['items'];
+      final used = mediaData['used_bytes'] is int ? mediaData['used_bytes'] as int : 0;
+      final quota = mediaData['quota_bytes'] is int ? mediaData['quota_bytes'] as int : 50 * 1024 * 1024;
+      final campaignReqs = await widget.apiClient.fetchCampaignRequests(widget.token);
       setState(() {
         dashboard = result;
         demos = demosResult;
-        mediaList = mediaResult;
+        mediaList = mediaItems is List ? mediaItems : [];
+        mediaUsedBytes = used;
+        mediaQuotaBytes = quota;
+        campaignRequests = campaignReqs;
         error = null;
         loading = false;
       });
@@ -108,6 +145,10 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
         if (profileWebsiteController.text.trim().isNotEmpty) 'website': profileWebsiteController.text.trim(),
         if (profileFullNameController.text.trim().isNotEmpty) 'full_name': profileFullNameController.text.trim(),
       };
+      for (final e in _socialKeys) {
+        final v = socialControllers[e.key]?.text.trim() ?? '';
+        if (v.isNotEmpty) extra[e.key] = v;
+      }
       await widget.apiClient.updateArtistProfile(
         widget.token,
         name: profileNameController.text.trim().isEmpty ? null : profileNameController.text.trim(),
@@ -218,6 +259,91 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
       setState(() => error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => uploading = false);
+    }
+  }
+
+  Future<void> _requestCampaign() async {
+    final releases = (dashboard?['releases'] as List<dynamic>? ?? []);
+    if (releases.isEmpty) {
+      setState(() => error = 'You have no releases yet. Upload music first.');
+      return;
+    }
+    int? selectedReleaseId = releases.isNotEmpty ? (releases.first as Map<String, dynamic>)['id'] as int? : null;
+    final messageController = TextEditingController();
+    final result = await showDialog<int?>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx2, setDialogState) {
+            return AlertDialog(
+              title: const Text('Request campaign'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Select release:'),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<int>(
+                      value: selectedReleaseId,
+                      decoration: const InputDecoration(border: OutlineInputBorder()),
+                      items: [
+                        for (final r in releases)
+                          DropdownMenuItem<int>(
+                            value: (r as Map<String, dynamic>)['id'] as int,
+                            child: Text((r['title'] as String?) ?? 'Release'),
+                          ),
+                      ],
+                      onChanged: (v) => setDialogState(() => selectedReleaseId = v),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: messageController,
+                      decoration: const InputDecoration(
+                        labelText: 'Message (optional)',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 2,
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(ctx).pop(null), child: const Text('Cancel')),
+                FilledButton(
+                  onPressed: selectedReleaseId == null ? null : () => Navigator.of(ctx).pop(selectedReleaseId),
+                  child: const Text('Send request'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    final message = messageController.text.trim();
+    messageController.dispose();
+    if (result == null) return;
+    selectedReleaseId = result;
+    setState(() {
+      requestingCampaign = true;
+      error = null;
+    });
+    try {
+      await widget.apiClient.createCampaignRequest(
+        widget.token,
+        releaseId: result,
+        message: message.isEmpty ? null : message,
+      );
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Campaign request sent')),
+        );
+      }
+    } catch (e) {
+      setState(() => error = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => requestingCampaign = false);
     }
   }
 
@@ -337,10 +463,14 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppConfig.labelName),
+        title: Image.asset(
+          'assets/images/zalmanim_logo.png',
+          height: 32,
+          fit: BoxFit.contain,
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout),
+            icon: const Icon(ZalmanimIcons.logout),
             tooltip: 'Sign out',
             onPressed: () async {
               await widget.onLogout?.call();
@@ -350,14 +480,18 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
       ),
       body: loading
           ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(color: primary),
-                  const SizedBox(height: 16),
-                  Text(AppConfig.labelName, style: TextStyle(color: primary, fontWeight: FontWeight.w600)),
-                ],
-              ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Image.asset(
+                        'assets/images/zalmanim_logo.png',
+                        height: 80,
+                        fit: BoxFit.contain,
+                      ),
+                      const SizedBox(height: 16),
+                      CircularProgressIndicator(color: primary),
+                    ],
+                  ),
             )
           : error != null
               ? Center(
@@ -374,7 +508,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.copy),
+                          icon: const Icon(ZalmanimIcons.copy),
                           tooltip: 'Copy error',
                           onPressed: () => Clipboard.setData(ClipboardData(text: error!)),
                         ),
@@ -424,6 +558,24 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                               maxLines: 2,
                             ),
                             const SizedBox(height: 16),
+                            const Text(
+                              'Social & links (for your Linktree page)',
+                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                            ),
+                            const SizedBox(height: 8),
+                            ..._socialKeys.map((e) => Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: TextField(
+                                controller: socialControllers[e.key],
+                                decoration: InputDecoration(
+                                  labelText: e.value,
+                                  border: const OutlineInputBorder(),
+                                  hintText: 'https://...',
+                                ),
+                                keyboardType: TextInputType.url,
+                              ),
+                            )),
+                            const SizedBox(height: 16),
                             FilledButton(
                               onPressed: savingProfile ? null : _saveProfile,
                               child: Text(savingProfile ? 'Saving...' : 'Save profile'),
@@ -431,6 +583,32 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                           ],
                         ),
                       ),
+                      if (artistMap != null && artistMap['id'] != null) ...[
+                        const SizedBox(height: 12),
+                        _card(
+                          context,
+                          primary,
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'My Linktree page',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 8),
+                              SelectableText(
+                                '${Uri.base.origin}/l/${artistMap['id']}',
+                                style: TextStyle(color: primary, decoration: TextDecoration.underline),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Share this link for a styled page with all your links.',
+                                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       _card(
                         context,
@@ -456,7 +634,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Submit a demo with an optional message and file.',
+                              'Your name and email are taken from your profile. Add only a message and/or file below.',
                               style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
                             ),
                             const SizedBox(height: 12),
@@ -490,7 +668,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                           final msg = item['message']?.toString().trim() ?? '';
                           final title = msg.isEmpty ? 'Demo #${item['id']}' : (msg.length > 50 ? '${msg.substring(0, 50)}...' : msg);
                           return ListTile(
-                            leading: Icon(Icons.send, color: primary),
+                            leading: Icon(ZalmanimIcons.send, color: primary),
                             title: Text(title),
                             subtitle: Text('Status: ${item['status']}'),
                           );
@@ -526,11 +704,44 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                         ...releases.map((r) {
                           final item = r as Map<String, dynamic>;
                           return ListTile(
-                            leading: Icon(Icons.music_note, color: primary),
+                            leading: Icon(ZalmanimIcons.music, color: primary),
                             title: Text(item['title'] as String),
                             subtitle: Text('Status: ${item['status']}'),
                           );
                         }),
+                      const SizedBox(height: 24),
+                      _sectionTitle(context, 'Request campaign', primary),
+                      _card(
+                        context,
+                        primary,
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Ask the label to run a campaign for one of your releases.',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+                            ),
+                            const SizedBox(height: 12),
+                            FilledButton(
+                              onPressed: requestingCampaign ? null : _requestCampaign,
+                              child: Text(requestingCampaign ? 'Sending...' : 'Request campaign for a release'),
+                            ),
+                            if (campaignRequests.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              const Text('My requests', style: TextStyle(fontWeight: FontWeight.w600)),
+                              const SizedBox(height: 8),
+                              ...campaignRequests.map((r) {
+                                final item = r as Map<String, dynamic>;
+                                return ListTile(
+                                  leading: Icon(ZalmanimIcons.campaign, color: primary),
+                                  title: Text(item['release_title']?.toString() ?? 'No release'),
+                                  subtitle: Text('${item['status']}${(item['message']?.toString().trim() ?? '').isNotEmpty ? ' · ${item['message']}' : ''}'),
+                                );
+                              }),
+                            ],
+                          ],
+                        ),
+                      ),
                       const SizedBox(height: 24),
                       _sectionTitle(context, 'My media', primary),
                       _card(
@@ -540,7 +751,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Your media folder for files you want to keep here.',
+                              'Your media folder (up to 50 MB total). Used: ${(mediaUsedBytes / (1024 * 1024)).toStringAsFixed(1)} / ${(mediaQuotaBytes / (1024 * 1024)).toStringAsFixed(0)} MB.',
                               style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
                             ),
                             const SizedBox(height: 12),
@@ -551,10 +762,18 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                                       height: 18,
                                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                                     )
-                                  : const Icon(Icons.upload_file),
+                                  : const Icon(ZalmanimIcons.upload),
                               label: Text(uploadingMedia ? 'Uploading...' : 'Upload file'),
-                              onPressed: uploadingMedia ? null : _uploadMedia,
+                              onPressed: uploadingMedia || mediaUsedBytes >= mediaQuotaBytes ? null : _uploadMedia,
                             ),
+                            if (mediaUsedBytes >= mediaQuotaBytes)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: Text(
+                                  'Quota reached. Delete files to free space.',
+                                  style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
+                                ),
+                              ),
                           ],
                         ),
                       ),
@@ -565,19 +784,19 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                           final filename = item['filename'] as String? ?? 'file';
                           final size = item['size_bytes'] as int? ?? 0;
                           return ListTile(
-                            leading: Icon(Icons.folder, color: primary),
+                            leading: Icon(ZalmanimIcons.folder, color: primary),
                             title: Text(filename),
                             subtitle: Text('${(size / 1024).toStringAsFixed(1)} KB'),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 IconButton(
-                                  icon: const Icon(Icons.download),
+                                  icon: const Icon(ZalmanimIcons.download),
                                   tooltip: 'Download',
                                   onPressed: () => _downloadMedia(id, filename),
                                 ),
                                 IconButton(
-                                  icon: const Icon(Icons.delete_outline),
+                                  icon: const Icon(ZalmanimIcons.delete),
                                   tooltip: 'Delete',
                                   onPressed: () => _deleteMedia(id),
                                 ),
@@ -596,7 +815,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                         ...tasks.map((t) {
                           final item = t as Map<String, dynamic>;
                           return ListTile(
-                            leading: Icon(Icons.task_alt, color: primary),
+                            leading: Icon(ZalmanimIcons.taskAlt, color: primary),
                             title: Text(item['title'] as String),
                             subtitle: Text('${item['status']} | ${item['details']}'),
                           );

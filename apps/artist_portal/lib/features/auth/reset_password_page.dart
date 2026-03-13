@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/api_client.dart';
+import '../../core/zalmanim_icons.dart';
 
 class ResetPasswordPage extends StatefulWidget {
   const ResetPasswordPage({
@@ -57,10 +58,12 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
       await widget.apiClient.resetPassword(token: widget.resetToken, newPassword: password);
       if (mounted) widget.onSuccess();
     } catch (e) {
-      if (mounted) setState(() {
-        error = e.toString().replaceFirst('Exception: ', '');
-        loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          error = e.toString().replaceFirst('Exception: ', '');
+          loading = false;
+        });
+      }
     }
   }
 
@@ -106,7 +109,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                           decoration: InputDecoration(
                             labelText: 'New password',
                             border: const OutlineInputBorder(),
-                            prefixIcon: const Icon(Icons.lock_outline),
+                            prefixIcon: const Icon(ZalmanimIcons.lock),
                             suffixIcon: IconButton(
                               icon: Icon(obscurePassword ? Icons.visibility_off : Icons.visibility),
                               onPressed: () => setState(() => obscurePassword = !obscurePassword),
@@ -122,9 +125,9 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                           decoration: InputDecoration(
                             labelText: 'Confirm password',
                             border: const OutlineInputBorder(),
-                            prefixIcon: const Icon(Icons.lock_outline),
+                            prefixIcon: const Icon(ZalmanimIcons.lock),
                             suffixIcon: IconButton(
-                              icon: Icon(obscureConfirm ? Icons.visibility_off : Icons.visibility),
+                              icon: Icon(obscureConfirm ? ZalmanimIcons.visibilityOff : ZalmanimIcons.visibility),
                               onPressed: () => setState(() => obscureConfirm = !obscureConfirm),
                             ),
                           ),
@@ -144,7 +147,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                                 ),
                               ),
                               IconButton(
-                                icon: const Icon(Icons.copy, size: 20),
+                                icon: const Icon(ZalmanimIcons.copy, size: 20),
                                 tooltip: 'Copy error',
                                 onPressed: () => Clipboard.setData(ClipboardData(text: error!)),
                               ),

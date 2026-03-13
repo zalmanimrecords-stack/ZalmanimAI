@@ -169,6 +169,60 @@ class ApiClient {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  /// Media list with quota (used_bytes, quota_bytes in MB).
+  Future<Map<String, dynamic>> fetchArtistMediaWithQuota(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/artist/me/media'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Media list failed (${response.statusCode})');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> createCampaignRequest(
+    String token, {
+    int? releaseId,
+    String? message,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/artist/me/campaign-requests'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        if (releaseId != null) 'release_id': releaseId,
+        if (message != null && message.trim().isNotEmpty) 'message': message.trim(),
+      }),
+    );
+    if (response.statusCode != 200) {
+      final detail = _detailFromErrorBody(response.body);
+      throw Exception('Campaign request failed (${response.statusCode}): $detail');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<List<dynamic>> fetchCampaignRequests(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/artist/me/campaign-requests'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Campaign requests failed (${response.statusCode})');
+    }
+    return jsonDecode(response.body) as List<dynamic>;
+  }
+
+  /// Public linktree data (no auth).
+  Future<Map<String, dynamic>> fetchPublicLinktree(int artistId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/public/linktree/$artistId'),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Linktree failed (${response.statusCode})');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   Future<List<dynamic>> fetchArtistDemos(String token) async {
     final response = await http.get(
       Uri.parse('$baseUrl/artist/me/demos'),
@@ -204,14 +258,9 @@ class ApiClient {
   }
 
   Future<List<dynamic>> fetchArtistMedia(String token) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/artist/me/media'),
-      headers: _authHeaders(token),
-    );
-    if (response.statusCode != 200) {
-      throw Exception('Media list failed (${response.statusCode})');
-    }
-    return jsonDecode(response.body) as List<dynamic>;
+    final data = await fetchArtistMediaWithQuota(token);
+    final items = data['items'];
+    return items is List ? items : [];
   }
 
   Future<Map<String, dynamic>> uploadArtistMedia(

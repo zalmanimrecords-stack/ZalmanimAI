@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api_client.dart';
+import '../../core/zalmanim_icons.dart';
 import '../../core/backup_download_stub.dart'
     if (dart.library.html) '../../core/backup_download_web.dart' as backup_download;
 
@@ -313,7 +314,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
       appBar: AppBar(
         title: const Text('System Settings'),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(ZalmanimIcons.arrowBack),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
@@ -467,7 +468,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
         const SizedBox(height: 12),
         FilledButton.icon(
           onPressed: _savingMail ? null : _saveMailSettings,
-          icon: _savingMail ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.save),
+          icon: _savingMail ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(ZalmanimIcons.save),
           label: Text(_savingMail ? 'Saving...' : 'Save mail settings'),
         ),
         const SizedBox(height: 8),
@@ -476,7 +477,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
             Expanded(
               child: OutlinedButton.icon(
                 onPressed: _testingMail || _sendingTestMail ? null : _testSmtpConnection,
-                icon: _testingMail ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.network_check),
+                icon: _testingMail ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(ZalmanimIcons.networkCheck),
                 label: Text(_testingMail ? 'Testing...' : 'Test SMTP'),
               ),
             ),
@@ -484,7 +485,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
             Expanded(
               child: OutlinedButton.icon(
                 onPressed: _sendingTestMail || _testingMail ? null : _sendTestEmail,
-                icon: _sendingTestMail ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.send),
+                icon: _sendingTestMail ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(ZalmanimIcons.send),
                 label: Text(_sendingTestMail ? 'Sending...' : 'Send test email'),
               ),
             ),
@@ -501,7 +502,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
         const SizedBox(height: 8),
         OutlinedButton.icon(
           onPressed: googleConfigured && !_connectingGoogle ? _connectGoogleMail : null,
-          icon: _connectingGoogle ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.alternate_email),
+          icon: _connectingGoogle ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(ZalmanimIcons.alternateEmail),
           label: Text(_connectingGoogle ? 'Opening Google...' : (gmailConnected ? 'Reconnect Gmail account' : 'Connect Gmail account')),
         ),
         const SizedBox(height: 24),
@@ -538,7 +539,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                 onPressed: _backupLoading ? null : _downloadBackup,
                 icon: _backupLoading
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.backup),
+                    : const Icon(ZalmanimIcons.backup),
                 label: Text(_backupLoading ? 'Preparing...' : 'Download backup'),
               ),
             ),
@@ -548,7 +549,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
                 onPressed: _restoreLoading ? null : _restoreBackup,
                 icon: _restoreLoading
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.restore),
+                    : const Icon(ZalmanimIcons.restore),
                 label: Text(_restoreLoading ? 'Restoring...' : 'Restore from file'),
               ),
             ),

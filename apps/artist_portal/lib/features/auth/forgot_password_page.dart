@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/api_client.dart';
+import '../../core/zalmanim_icons.dart';
 
 class ForgotPasswordPage extends StatefulWidget {
   const ForgotPasswordPage({super.key, required this.apiClient, this.initialEmail, required this.onBack});
@@ -46,10 +47,12 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
       await widget.apiClient.requestPasswordReset(email: email);
       if (mounted) setState(() { sent = true; loading = false; });
     } catch (e) {
-      if (mounted) setState(() {
-        error = e.toString().replaceFirst('Exception: ', '');
-        loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          error = e.toString().replaceFirst('Exception: ', '');
+          loading = false;
+        });
+      }
     }
   }
 
@@ -60,7 +63,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
       appBar: AppBar(
         title: const Text('Forgot password'),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(ZalmanimIcons.arrowBack),
           onPressed: widget.onBack,
         ),
       ),
@@ -92,7 +95,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                         ? Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.mark_email_read_outlined, size: 48, color: primary),
+                              Icon(ZalmanimIcons.markEmailRead, size: 48, color: primary),
                               const SizedBox(height: 16),
                               const Text(
                                 'Check your email',
@@ -144,7 +147,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                                       ),
                                     ),
                                     IconButton(
-                                      icon: const Icon(Icons.copy, size: 20),
+                                      icon: const Icon(ZalmanimIcons.copy, size: 20),
                                       tooltip: 'Copy error',
                                       onPressed: () => Clipboard.setData(ClipboardData(text: error!)),
                                     ),
