@@ -25,12 +25,11 @@ class _LandingPageState extends State<LandingPage> {
   final _phoneController = TextEditingController();
   final _genreController = TextEditingController();
   final _cityController = TextEditingController();
-  final _demoLinkController = TextEditingController();
   final _soundcloudController = TextEditingController();
-  final _spotifyController = TextEditingController();
   final _messageController = TextEditingController();
 
   bool _submitting = false;
+  bool _consentToEmails = false;
   String? _feedback;
   bool _success = false;
 
@@ -42,9 +41,7 @@ class _LandingPageState extends State<LandingPage> {
     _phoneController.dispose();
     _genreController.dispose();
     _cityController.dispose();
-    _demoLinkController.dispose();
     _soundcloudController.dispose();
-    _spotifyController.dispose();
     _messageController.dispose();
     super.dispose();
   }
@@ -59,27 +56,25 @@ class _LandingPageState extends State<LandingPage> {
       await widget.apiClient.submitPublicDemo(
         artistName: _artistNameController.text,
         email: _emailController.text,
+        consentToEmails: _consentToEmails,
         contactName: _contactNameController.text,
         phone: _phoneController.text,
         genre: _genreController.text,
         city: _cityController.text,
         message: _messageController.text,
-        links: [
-          _demoLinkController.text,
-          _soundcloudController.text,
-          _spotifyController.text,
-        ],
+        links: [_soundcloudController.text],
         fields: {
-          'demo_link': _demoLinkController.text.trim(),
-          'soundcloud': _soundcloudController.text.trim(),
-          'spotify': _spotifyController.text.trim(),
+          'private_soundcloud_link': _soundcloudController.text.trim(),
+          'consent_copy':
+              'I agree to join the Zalmanim mailing list and receive marketing and operational emails related to my demo submission.',
         },
       );
       if (!mounted) return;
       setState(() {
         _success = true;
-        _feedback = 'Your demo was sent successfully. We will review it in the LM system.';
+        _feedback = 'Your demo was received successfully. We sent a confirmation email with a summary of your submission.';
         _submitting = false;
+        _consentToEmails = false;
       });
       _formKey.currentState!.reset();
       _artistNameController.clear();
@@ -88,9 +83,7 @@ class _LandingPageState extends State<LandingPage> {
       _phoneController.clear();
       _genreController.clear();
       _cityController.clear();
-      _demoLinkController.clear();
       _soundcloudController.clear();
-      _spotifyController.clear();
       _messageController.clear();
     } catch (e) {
       if (!mounted) return;
@@ -188,12 +181,12 @@ class _LandingPageState extends State<LandingPage> {
                                 const SizedBox(height: 24),
                                 _FeatureCard(
                                   title: 'What happens next',
-                                  body: 'Your form enters the LM system with status demo. The team can review it, move it forward, and send approval by email.',
+                                  body: 'Your form enters the LM system with status demo. We also email you a submission summary, then the team reviews it and takes it into treatment.',
                                 ),
                                 const SizedBox(height: 14),
                                 _FeatureCard(
-                                  title: 'For existing artists',
-                                  body: 'Use Sign In in the top-right corner to enter your account and manage your ongoing material.',
+                                  title: 'Mailing consent',
+                                  body: 'Submitting a demo requires consent to join the Zalmanim mailing list and receive operational and marketing emails related to your submission and future updates.',
                                 ),
                               ],
                             ),
@@ -229,6 +222,14 @@ class _LandingPageState extends State<LandingPage> {
                                     'Fill in the details below and we will route your submission into the system.',
                                     style: theme.textTheme.bodyLarge?.copyWith(color: const Color(0xFF6B5D52)),
                                   ),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    'By submitting this form, you confirm that the SoundCloud link is private and that you agree to receive marketing and operational emails from Zalmanim.',
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: const Color(0xFF6B5D52),
+                                      height: 1.5,
+                                    ),
+                                  ),
                                   if (_feedback != null) ...[
                                     const SizedBox(height: 18),
                                     Container(
@@ -252,9 +253,12 @@ class _LandingPageState extends State<LandingPage> {
                                       _field(_phoneController, 'Phone', width: 280),
                                       _field(_genreController, 'Genre', width: 280),
                                       _field(_cityController, 'City', width: 280),
-                                      _field(_demoLinkController, 'Private demo link', width: 576, required: true),
-                                      _field(_soundcloudController, 'SoundCloud link', width: 280),
-                                      _field(_spotifyController, 'Spotify link', width: 280),
+                                      _field(
+                                        _soundcloudController,
+                                        'Private SoundCloud link',
+                                        width: 576,
+                                        required: true,
+                                      ),
                                     ],
                                   ),
                                   const SizedBox(height: 16),
@@ -263,6 +267,60 @@ class _LandingPageState extends State<LandingPage> {
                                     'Message',
                                     width: 576,
                                     maxLines: 5,
+                                  ),
+                                  const SizedBox(height: 18),
+                                  FormField<bool>(
+                                    initialValue: _consentToEmails,
+                                    validator: (value) {
+                                      if (value == true) return null;
+                                      return 'You must approve email consent before sending a demo.';
+                                    },
+                                    builder: (field) {
+                                      return Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Container(
+                                            width: double.infinity,
+                                            padding: const EdgeInsets.all(16),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius: BorderRadius.circular(16),
+                                              border: Border.all(
+                                                color: field.hasError
+                                                    ? const Color(0xFFB84C42)
+                                                    : const Color(0xFFD9CCBF),
+                                              ),
+                                            ),
+                                            child: CheckboxListTile(
+                                              contentPadding: EdgeInsets.zero,
+                                              value: _consentToEmails,
+                                              controlAffinity: ListTileControlAffinity.leading,
+                                              title: const Text(
+                                                'I agree to join the Zalmanim mailing list and receive marketing and operational emails.',
+                                              ),
+                                              subtitle: const Text(
+                                                'This includes updates about my demo submission and future label communications.',
+                                              ),
+                                              onChanged: (value) {
+                                                setState(() {
+                                                  _consentToEmails = value ?? false;
+                                                });
+                                                field.didChange(value ?? false);
+                                              },
+                                            ),
+                                          ),
+                                          if (field.hasError) ...[
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              field.errorText!,
+                                              style: theme.textTheme.bodySmall?.copyWith(
+                                                color: const Color(0xFFB84C42),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      );
+                                    },
                                   ),
                                   const SizedBox(height: 24),
                                   FilledButton(

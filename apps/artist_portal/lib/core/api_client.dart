@@ -257,6 +257,7 @@ class ApiClient {
   Future<Map<String, dynamic>> submitPublicDemo({
     required String artistName,
     required String email,
+    required bool consentToEmails,
     String? contactName,
     String? phone,
     String? genre,
@@ -281,6 +282,7 @@ class ApiClient {
         'message': message?.trim(),
         'links': links.where((item) => item.trim().isNotEmpty).map((item) => item.trim()).toList(),
         'fields': fields,
+        'consent_to_emails': consentToEmails,
         'source': 'artists_portal_landing',
         'source_site_url': Uri.base.origin,
       }),

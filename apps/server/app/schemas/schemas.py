@@ -484,6 +484,7 @@ class ArtistActivityLogOut(BaseModel):
 class DemoSubmissionCreate(BaseModel):
     artist_name: str
     email: EmailStr
+    consent_to_emails: bool = False
     contact_name: str | None = None
     phone: str | None = None
     genre: str | None = None
@@ -498,6 +499,7 @@ class DemoSubmissionCreate(BaseModel):
 class DemoSubmissionUpdate(BaseModel):
     artist_name: str | None = None
     email: EmailStr | None = None
+    consent_to_emails: bool | None = None
     contact_name: str | None = None
     phone: str | None = None
     genre: str | None = None
@@ -523,6 +525,8 @@ class DemoSubmissionOut(BaseModel):
     id: int
     artist_name: str
     email: str
+    consent_to_emails: bool
+    consent_at: datetime | None
     contact_name: str | None
     phone: str | None
     genre: str | None

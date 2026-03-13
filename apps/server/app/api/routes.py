@@ -1,5 +1,6 @@
 import csv
 import hashlib
+import html
 import io
 import json
 import logging
@@ -30,6 +31,8 @@ from app.models.models import (
     CatalogTrack,
     DemoSubmission,
     HubConnector,
+    MailingList,
+    MailingSubscriber,
     PasswordResetToken,
     Release,
     release_artists_table,
@@ -118,6 +121,7 @@ _GOOGLE_AUTH_SCOPES = [
 _FACEBOOK_AUTH_SCOPES = ["email", "public_profile"]
 _ALLOWED_USER_ROLES = {"admin", "manager", "artist"}
 _ALLOWED_DEMO_STATUSES = {"demo", "in_review", "approved", "rejected"}
+_DEMO_MAILING_LIST_NAME = "Artists Demo Intake"
 
 
 def _oauth_callback_url(request: Request, provider: str) -> str:
@@ -337,6 +341,49 @@ def _touch_artist_login(db: Session, artist: Artist) -> None:
     db.refresh(artist)
 
 
+def _ensure_artist_reset_user(db: Session, artist: Artist) -> User | None:
+    if not artist.is_active or not artist.password_hash:
+        return None
+
+    user = (
+        db.query(User)
+        .filter(func.lower(User.email) == artist.email.lower())
+        .first()
+    )
+    if user:
+        changed = False
+        if user.artist_id != artist.id:
+            user.artist_id = artist.id
+            changed = True
+        if user.role != "artist":
+            user.role = "artist"
+            changed = True
+        if not user.is_active:
+            user.is_active = True
+            changed = True
+        if user.password_hash != artist.password_hash:
+            user.password_hash = artist.password_hash
+            changed = True
+        if not user.full_name:
+            user.full_name = artist.name
+            changed = True
+        if changed:
+            db.flush()
+        return user
+
+    user = User(
+        email=artist.email.lower(),
+        full_name=artist.name,
+        password_hash=artist.password_hash,
+        role="artist",
+        artist_id=artist.id,
+        is_active=True,
+    )
+    db.add(user)
+    db.flush()
+    return user
+
+
 
 def _validate_user_role(role: str) -> str:
     role_value = (role or "").strip().lower()
@@ -480,6 +527,120 @@ def _default_demo_approval_body(artist_name: str) -> str:
     )
 
 
+def _build_demo_submission_summary(item: DemoSubmission) -> list[tuple[str, str]]:
+    fields = _safe_json_dict(item.fields_json)
+    links = _safe_json_list(item.links_json)
+    soundcloud_link = str(fields.get("private_soundcloud_link") or "").strip()
+    if not soundcloud_link and links:
+        soundcloud_link = str(links[0] or "").strip()
+    return [
+        ("Artist name", item.artist_name),
+        ("Contact name", item.contact_name or "-"),
+        ("Email", item.email),
+        ("Phone", item.phone or "-"),
+        ("Genre", item.genre or "-"),
+        ("City", item.city or "-"),
+        ("Private SoundCloud link", soundcloud_link or "-"),
+        ("Message", item.message or "-"),
+        ("Email consent", "Yes" if item.consent_to_emails else "No"),
+        ("Source", item.source or "-"),
+    ]
+
+
+def _build_demo_receipt_subject(artist_name: str) -> str:
+    safe_name = (artist_name or "there").strip()
+    return f"Demo received from {safe_name}"
+
+
+def _build_demo_receipt_body(item: DemoSubmission) -> str:
+    recipient_name = (item.contact_name or item.artist_name or "there").strip()
+    lines = [
+        f"Hi {recipient_name},",
+        "",
+        "We received your demo and it will enter treatment soon.",
+        "",
+        "Submission summary:",
+    ]
+    for label, value in _build_demo_submission_summary(item):
+        lines.append(f"- {label}: {value}")
+    lines.extend([
+        "",
+        "Thanks for sending your music to Zalmanim.",
+        "",
+        "Best regards,",
+        "Zalmanim",
+    ])
+    return "\n".join(lines)
+
+
+def _build_demo_receipt_html(item: DemoSubmission) -> str:
+    recipient_name = html.escape((item.contact_name or item.artist_name or "there").strip())
+    rows = "\n".join(
+        f"<tr><td style='padding:8px 12px;font-weight:600;border:1px solid #e5ddd2;'>{html.escape(label)}</td>"
+        f"<td style='padding:8px 12px;border:1px solid #e5ddd2;'>{html.escape(value)}</td></tr>"
+        for label, value in _build_demo_submission_summary(item)
+    )
+    return (
+        f"<p>Hi {recipient_name},</p>"
+        "<p>We received your demo and it will enter treatment soon.</p>"
+        "<p><strong>Submission summary</strong></p>"
+        "<table style='border-collapse:collapse;border:1px solid #e5ddd2;'>"
+        f"{rows}"
+        "</table>"
+        "<p>Thanks for sending your music to Zalmanim.</p>"
+        "<p>Best regards,<br/>Zalmanim</p>"
+    )
+
+
+def _ensure_demo_mailing_list(db: Session) -> MailingList:
+    mailing_list = db.query(MailingList).filter(MailingList.name == _DEMO_MAILING_LIST_NAME).first()
+    if mailing_list:
+        return mailing_list
+    mailing_list = MailingList(
+        name=_DEMO_MAILING_LIST_NAME,
+        description="Artists who submitted demos and consented to marketing and operational emails.",
+        default_language="en",
+    )
+    db.add(mailing_list)
+    db.flush()
+    return mailing_list
+
+
+def _upsert_demo_mailing_subscriber(db: Session, item: DemoSubmission) -> None:
+    if not item.consent_to_emails:
+        return
+    mailing_list = _ensure_demo_mailing_list(db)
+    subscriber = (
+        db.query(MailingSubscriber)
+        .filter(MailingSubscriber.list_id == mailing_list.id, MailingSubscriber.email == item.email)
+        .first()
+    )
+    consent_source = (item.source_site_url or item.source or "demo_submission").strip() or "demo_submission"
+    consent_at = item.consent_at or datetime.now(timezone.utc)
+    display_name = (item.contact_name or item.artist_name or "").strip() or None
+    notes = f"Auto-added from demo submission #{item.id}."
+    if subscriber:
+        subscriber.full_name = display_name
+        subscriber.status = "subscribed"
+        subscriber.consent_source = consent_source
+        subscriber.consent_at = consent_at
+        subscriber.unsubscribed_at = None
+        subscriber.notes = notes
+        return
+    db.add(
+        MailingSubscriber(
+            list_id=mailing_list.id,
+            email=item.email,
+            full_name=display_name,
+            status="subscribed",
+            consent_source=consent_source,
+            consent_at=consent_at,
+            unsubscribe_token=secrets.token_urlsafe(24),
+            notes=notes,
+        )
+    )
+
+
 def _normalize_demo_status(value: str | None, *, allow_empty: bool = False) -> str | None:
     raw = (value or "").strip().lower()
     if not raw:
@@ -505,6 +666,8 @@ def _serialize_demo_submission(item: DemoSubmission) -> DemoSubmissionOut:
         id=item.id,
         artist_name=item.artist_name,
         email=item.email,
+        consent_to_emails=item.consent_to_emails,
+        consent_at=item.consent_at,
         contact_name=item.contact_name,
         phone=item.phone,
         genre=item.genre,
@@ -572,6 +735,8 @@ def init_db() -> None:
             conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()"))
             conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP WITH TIME ZONE"))
             conn.execute(text("ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL"))
+            conn.execute(text("ALTER TABLE demo_submissions ADD COLUMN IF NOT EXISTS consent_to_emails BOOLEAN DEFAULT false NOT NULL"))
+            conn.execute(text("ALTER TABLE demo_submissions ADD COLUMN IF NOT EXISTS consent_at TIMESTAMP WITH TIME ZONE"))
             conn.commit()
     except Exception as e:
         logging.getLogger(__name__).warning("DB migration (auth/users): %s", e)
@@ -579,6 +744,11 @@ def init_db() -> None:
     with Session(engine) as db:
         admin = db.query(User).filter(User.email == "admin").first()
         legacy_admin = db.query(User).filter(User.email == "admin@label.local").first()
+        simon_admin = (
+            db.query(User)
+            .filter(func.lower(User.email) == "simon@zalmanim.com")
+            .first()
+        )
         artist = db.query(Artist).filter(Artist.email == "artist@label.local").first()
         if not artist:
             artist = Artist(
@@ -617,6 +787,24 @@ def init_db() -> None:
             admin.role = "admin"
             admin.artist_id = None
             admin.is_active = True
+        if not simon_admin:
+            db.add(
+                User(
+                    email="simon@zalmanim.com",
+                    full_name="Simon",
+                    password_hash=hash_password("Sr102030!"),
+                    role="admin",
+                    artist_id=None,
+                    is_active=True,
+                )
+            )
+        else:
+            simon_admin.email = "simon@zalmanim.com"
+            simon_admin.full_name = "Simon"
+            simon_admin.password_hash = hash_password("Sr102030!")
+            simon_admin.role = "admin"
+            simon_admin.artist_id = None
+            simon_admin.is_active = True
         artist_user = db.query(User).filter(User.email == "artist@label.local").first()
         if not artist_user:
             db.add(
@@ -750,7 +938,7 @@ def forgot_password(
     request: Request,
     db: Session = Depends(get_db),
 ) -> dict:
-    """Send password reset email if the user exists and has a password. Always returns 200 with same message."""
+    """Send password reset email for admin/manager users and artist portal accounts."""
     email = (payload.email or "").strip().lower()
     if not email:
         return {"message": "If an account exists with this email, you will receive a reset link shortly."}
@@ -759,6 +947,14 @@ def forgot_password(
         .filter(func.lower(User.email) == email, User.is_active == True, User.password_hash.isnot(None))
         .first()
     )
+    if not user:
+        artist = (
+            db.query(Artist)
+            .filter(func.lower(Artist.email) == email, Artist.is_active == True, Artist.password_hash.isnot(None))
+            .first()
+        )
+        if artist:
+            user = _ensure_artist_reset_user(db, artist)
     if not user:
         return {"message": "If an account exists with this email, you will receive a reset link shortly."}
     raw_token = secrets.token_urlsafe(32)
@@ -803,6 +999,10 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link. Request a new one.")
     user.password_hash = hash_password(new_password)
+    if user.role == "artist" and user.artist_id is not None:
+        artist = db.query(Artist).filter(Artist.id == user.artist_id).first()
+        if artist and artist.is_active:
+            artist.password_hash = user.password_hash
     db.delete(row)
     db.query(PasswordResetToken).filter(PasswordResetToken.user_id == user.id).delete()
     db.commit()
@@ -816,10 +1016,18 @@ def create_demo_submission(
     db: Session = Depends(get_db),
 ) -> DemoSubmissionOut:
     _validate_demo_ingest_token(request)
+    source = (payload.source or "wordpress_demo_form").strip() or "wordpress_demo_form"
+    if source == "artists_portal_landing" and not payload.consent_to_emails:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email consent is required before sending a demo.",
+        )
     normalized_links = [str(link).strip() for link in payload.links if str(link).strip()]
     item = DemoSubmission(
         artist_name=payload.artist_name.strip(),
         email=str(payload.email).strip().lower(),
+        consent_to_emails=payload.consent_to_emails,
+        consent_at=datetime.now(timezone.utc) if payload.consent_to_emails else None,
         contact_name=(payload.contact_name or "").strip() or None,
         phone=(payload.phone or "").strip() or None,
         genre=(payload.genre or "").strip() or None,
@@ -827,15 +1035,26 @@ def create_demo_submission(
         message=(payload.message or "").strip() or None,
         links_json=json.dumps(normalized_links),
         fields_json=json.dumps(payload.fields or {}),
-        source=(payload.source or "wordpress_demo_form").strip() or "wordpress_demo_form",
+        source=source,
         source_site_url=(payload.source_site_url or "").strip() or None,
         status="demo",
         approval_subject=_default_demo_approval_subject(payload.artist_name),
         approval_body=_default_demo_approval_body(payload.artist_name),
     )
     db.add(item)
+    db.flush()
+    _upsert_demo_mailing_subscriber(db, item)
     db.commit()
     db.refresh(item)
+    if is_email_configured():
+        ok, message = send_email_service(
+            to_email=item.email,
+            subject=_build_demo_receipt_subject(item.artist_name),
+            body_text=_build_demo_receipt_body(item),
+            body_html=_build_demo_receipt_html(item),
+        )
+        if not ok:
+            logging.getLogger(__name__).warning("Failed to send demo receipt email to %s: %s", item.email, message)
     return _serialize_demo_submission(item)
 
 
@@ -1166,6 +1385,9 @@ def update_demo_submission(
         item.artist_name = payload.artist_name.strip()
     if payload.email is not None:
         item.email = str(payload.email).strip().lower()
+    if payload.consent_to_emails is not None:
+        item.consent_to_emails = payload.consent_to_emails
+        item.consent_at = datetime.now(timezone.utc) if payload.consent_to_emails else None
     if payload.contact_name is not None:
         item.contact_name = payload.contact_name.strip() or None
     if payload.phone is not None:
@@ -1191,6 +1413,8 @@ def update_demo_submission(
     if payload.artist_id is not None:
         item.artist_id = payload.artist_id
 
+    if item.consent_to_emails:
+        _upsert_demo_mailing_subscriber(db, item)
     db.commit()
     db.refresh(item)
     return _serialize_demo_submission(item)
@@ -1609,6 +1833,8 @@ def artist_submit_demo(
     item = DemoSubmission(
         artist_name=artist.name,
         email=email,
+        consent_to_emails=False,
+        consent_at=None,
         message=message.strip() or None,
         links_json="[]",
         fields_json=json.dumps(fields),

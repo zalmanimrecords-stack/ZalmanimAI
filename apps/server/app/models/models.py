@@ -85,6 +85,8 @@ class DemoSubmission(Base):
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     links_json: Mapped[str] = mapped_column(Text, default="[]")
     fields_json: Mapped[str] = mapped_column(Text, default="{}")
+    consent_to_emails: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    consent_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     source: Mapped[str] = mapped_column(String(80), default="wordpress_demo_form", nullable=False)
     source_site_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="demo", nullable=False, index=True)
@@ -338,6 +340,5 @@ class CampaignDelivery(Base):
 
     campaign: Mapped["Campaign"] = relationship(back_populates="deliveries")
     target: Mapped["CampaignTarget"] = relationship(back_populates="deliveries")
-
 
 
