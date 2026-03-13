@@ -32,6 +32,7 @@ services:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-label}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-labelops}
       REDIS_URL: redis://redis:6379/0
       UPLOAD_DIR: /app/storage/uploads
+      DEMO_SUBMISSION_TOKEN: ${DEMO_SUBMISSION_TOKEN:-TOKEN}
     volumes:
       - server_storage:/app/storage
     depends_on:
@@ -78,6 +79,39 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+  artist_web:
+    image: instrumentisto/flutter:3
+    restart: unless-stopped
+    environment:
+      HOME: ${HOME:-/root}
+      PUB_CACHE: ${PUB_CACHE:-/root/.pub-cache}
+      DEBIAN_FRONTEND: ${DEBIAN_FRONTEND:-noninteractive}
+      API_BASE_URL: ${API_BASE_URL:-https://lmapi.zalmanim.com/}
+      DEMO_SUBMISSION_TOKEN: ${DEMO_SUBMISSION_TOKEN:-TOKEN}
+    command:
+      - bash
+      - -lc
+      - |
+        apt-get update && apt-get install -y --no-install-recommends curl unzip ca-certificates && \
+        rm -rf /var/lib/apt/lists/* && \
+        rm -rf /tmp/src /tmp/repo.zip && \
+        curl -L https://codeload.github.com/zalmanimrecords-stack/ZalmanimAI/zip/refs/heads/master -o /tmp/repo.zip && \
+        unzip -q /tmp/repo.zip -d /tmp && \
+        mv /tmp/ZalmanimAI-master /tmp/src && \
+        cd /tmp/src/apps/artist_portal && \
+        flutter config --enable-web && \
+        flutter pub get && \
+        flutter build web --release \
+          --dart-define=API_BASE_URL=${API_BASE_URL} \
+          --dart-define=LABEL_NAME=Zalmanim\ Artists \
+          --dart-define=PRIMARY_COLOR=B66A2C \
+          --dart-define=DEMO_SUBMISSION_TOKEN=${DEMO_SUBMISSION_TOKEN} && \
+        dart pub global activate dhttpd && \
+        exec /root/.pub-cache/bin/dhttpd --path /tmp/src/apps/artist_portal/build/web --host 0.0.0.0 --port 8081
+    depends_on:
+      api:
+        condition: service_started
 
 volumes:
   postgres_data:
