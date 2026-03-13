@@ -840,6 +840,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   void showSetArtistPasswordDialog(int artistId, String artistName) => _showSetArtistPasswordDialog(artistId, artistName);
 
   @override
+  void sendArtistPortalInvite(int artistId, String artistName, String artistEmail) =>
+      _sendArtistPortalInvite(artistId, artistName, artistEmail);
+
+  @override
   void removeArtist(int id, String name) => _removeArtist(id, name);
 
   @override
@@ -1662,7 +1666,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                                   IconButton(
                                     icon: const Icon(Icons.edit, color: Colors.orange, size: 22),
                                     tooltip: 'Edit',
-                                    onPressed: id != null ? () => _showEditArtistDialog(id) : null,
+                                    onPressed: id != null
+                                        ? () => _showEditArtistDialog(
+                                              id,
+                                              initialArtist: Map<String, dynamic>.from(artist as Map),
+                                            )
+                                        : null,
                                     style: IconButton.styleFrom(
                                       minimumSize: const Size(36, 36),
                                       padding: EdgeInsets.zero,
@@ -1760,17 +1769,27 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
   }
 
-  Future<void> _showEditArtistDialog(int id) async {
+  Future<void> _showEditArtistDialog(
+    int id, {
+    Map<String, dynamic>? initialArtist,
+  }) async {
     try {
-      final artist = await widget.apiClient.fetchArtist(widget.token, id);
+      final artist =
+          initialArtist ??
+          artists.cast<Map?>().whereType<Map>().map((e) => Map<String, dynamic>.from(e)).firstWhere(
+                (item) => item['id'] == id,
+                orElse: () => <String, dynamic>{},
+              );
+      final artistData =
+          artist.isNotEmpty ? artist : await widget.apiClient.fetchArtist(widget.token, id);
       if (!mounted) return;
-      final extra = artist['extra'] as Map<String, dynamic>? ?? {};
+      final extra = artistData['extra'] as Map<String, dynamic>? ?? {};
       final controllers = <String, TextEditingController>{};
       for (final f in _artistFormFields) {
         final key = f['key']!;
         String value = '';
         if (key == 'name' || key == 'email' || key == 'notes') {
-          value = artist[key]?.toString() ?? '';
+          value = artistData[key]?.toString() ?? '';
         } else if (key == 'artist_brands') {
           final list = extra['artist_brands'];
           value = list is List ? (list.map((e) => e?.toString().trim()).where((s) => s != null && s.isNotEmpty).join(', ')) : (extra['artist_brand']?.toString().trim() ?? '');
@@ -1786,7 +1805,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           title: 'Edit artist',
           controllers: controllers,
           isCreate: false,
-          initialIsActive: artist['is_active'] as bool? ?? true,
+          initialIsActive: artistData['is_active'] as bool? ?? true,
         ),
       );
       for (final c in controllers.values) {
@@ -1881,6 +1900,42 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Portal password set. Artist can sign in at artists.zalmanim.com.')));
+    } catch (e) {
+      _showErrorSnackBar(e.toString());
+    }
+  }
+
+  Future<void> _sendArtistPortalInvite(int artistId, String artistName, String artistEmail) async {
+    if (artistEmail.trim().isEmpty) {
+      _showErrorSnackBar('Artist email is required before sending portal access.');
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Send artist portal access'),
+        content: Text(
+          'Send a portal access email to $artistName?\n\n'
+          'The email will include the portal link, username ($artistEmail), a temporary password, and a short explanation of the portal.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Send email')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final result = await widget.apiClient.sendArtistPortalInvite(
+        token: widget.token,
+        artistId: artistId,
+      );
+      if (!mounted) return;
+      final username = (result['username'] ?? artistEmail).toString();
+      final portalUrl = (result['portal_url'] ?? 'https://artists.zalmanim.com').toString();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Portal access sent to $username via $portalUrl.')),
+      );
     } catch (e) {
       _showErrorSnackBar(e.toString());
     }
@@ -2202,7 +2257,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                         artistMap: artistMap!,
                         onEdit: () {
                           Navigator.pop(ctx);
-                          _showEditArtistDialog(artistId);
+                          _showEditArtistDialog(artistId, initialArtist: artistMap);
                         },
                       ),
                       _ArtistLogsTab(
@@ -5511,9 +5566,6 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
     );
   }
 }
-
-
-
 
 
 

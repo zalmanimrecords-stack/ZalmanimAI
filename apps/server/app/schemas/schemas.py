@@ -20,6 +20,12 @@ class ArtistSetPasswordRequest(BaseModel):
     password: str
 
 
+class ArtistPortalInviteResponse(BaseModel):
+    message: str
+    portal_url: str
+    username: str
+
+
 class ArtistChangePasswordRequest(BaseModel):
     """Artist changes own password (current + new)."""
     current_password: str

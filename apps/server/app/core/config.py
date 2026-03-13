@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     demo_submission_token: str = "TOKEN"  # Shared secret for internal demo form ingestion
     # Base URL for password reset links in email (e.g. https://app.example.com or Flutter web URL)
     password_reset_base_url: str = ""
+    artist_portal_base_url: str = "https://artists.zalmanim.com"
 
 
 settings = Settings()
-

@@ -240,6 +240,16 @@ class _ArtistsTabState extends State<ArtistsTab> {
                                                     onPressed: () => delegate.showEditArtistDialog(artist.id),
                                                   ),
                                                   _actionButton(
+                                                    icon: Icons.mark_email_unread,
+                                                    color: Colors.indigo,
+                                                    tooltip: 'Send portal access email',
+                                                    onPressed: () => delegate.sendArtistPortalInvite(
+                                                      artist.id,
+                                                      artist.displayName,
+                                                      artist.email,
+                                                    ),
+                                                  ),
+                                                  _actionButton(
                                                     icon: Icons.lock,
                                                     color: Colors.teal,
                                                     tooltip: 'Set portal password',

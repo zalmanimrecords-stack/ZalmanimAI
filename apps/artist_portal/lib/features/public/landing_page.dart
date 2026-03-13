@@ -18,20 +18,64 @@ class LandingPage extends StatefulWidget {
 }
 
 class _LandingPageState extends State<LandingPage> {
+  static const List<_GenreOption> _genreOptions = [
+    _GenreOption('House', 'House'),
+    _GenreOption('House', 'House / Acid'),
+    _GenreOption('House', 'House / Soulful'),
+    _GenreOption('House', 'Jackin House'),
+    _GenreOption('House', 'Organic House'),
+    _GenreOption('House', 'Progressive House'),
+    _GenreOption('House', 'Afro House'),
+    _GenreOption('House', 'Afro House / Afro Latin'),
+    _GenreOption('House', 'Afro House / Afro Melodic'),
+    _GenreOption('House', 'Afro House / 3Step'),
+    _GenreOption('House', 'Tech House'),
+    _GenreOption('House', 'Tech House / Latin Tech'),
+    _GenreOption('House', 'Melodic House & Techno / Melodic House'),
+    _GenreOption('Techno', 'Hard Techno'),
+    _GenreOption('Techno', 'Techno (Peak Time / Driving)'),
+    _GenreOption('Techno', 'Techno / Peak Time'),
+    _GenreOption('Techno', 'Techno / Driving'),
+    _GenreOption('Techno', 'Techno / Psy-Techno'),
+    _GenreOption('Techno', 'Techno (Raw / Deep / Hypnotic)'),
+    _GenreOption('Techno', 'Techno / Raw'),
+    _GenreOption('Techno', 'Techno / Deep / Hypnotic'),
+    _GenreOption('Techno', 'Techno / Dub'),
+    _GenreOption('Techno', 'Techno / EBM'),
+    _GenreOption('Techno', 'Techno / Broken'),
+    _GenreOption('Techno', 'Melodic House & Techno / Melodic Techno'),
+    _GenreOption('Trance', 'Trance (Main Floor)'),
+    _GenreOption('Trance', 'Trance / Progressive Trance'),
+    _GenreOption('Trance', 'Trance / Tech Trance'),
+    _GenreOption('Trance', 'Trance / Uplifting Trance'),
+    _GenreOption('Trance', 'Trance / Vocal Trance'),
+    _GenreOption('Trance', 'Trance / Hard Trance'),
+    _GenreOption('Trance', 'Trance (Raw / Deep / Hypnotic)'),
+    _GenreOption('Trance', 'Trance / Raw Trance'),
+    _GenreOption('Trance', 'Trance / Deep Trance'),
+    _GenreOption('Trance', 'Trance / Hypnotic Trance'),
+    _GenreOption('Trance', 'Psy-Trance'),
+    _GenreOption('Trance', 'Psy-Trance / Full-On'),
+    _GenreOption('Trance', 'Psy-Trance / Progressive Psy'),
+    _GenreOption('Trance', 'Psy-Trance / Psychedelic'),
+    _GenreOption('Trance', 'Psy-Trance / Dark & Forest'),
+    _GenreOption('Trance', 'Psy-Trance / Goa Trance'),
+    _GenreOption('Trance', 'Psy-Trance / Psycore & Hi-Tech'),
+  ];
+
   final _formKey = GlobalKey<FormState>();
   final _artistNameController = TextEditingController();
   final _contactNameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
-  final _genreController = TextEditingController();
   final _cityController = TextEditingController();
-  final _soundcloudController = TextEditingController();
   final _messageController = TextEditingController();
 
   bool _submitting = false;
   bool _consentToEmails = false;
   String? _feedback;
   bool _success = false;
+  String? _selectedGenre;
 
   @override
   void dispose() {
@@ -39,9 +83,7 @@ class _LandingPageState extends State<LandingPage> {
     _contactNameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
-    _genreController.dispose();
     _cityController.dispose();
-    _soundcloudController.dispose();
     _messageController.dispose();
     super.dispose();
   }
@@ -59,12 +101,10 @@ class _LandingPageState extends State<LandingPage> {
         consentToEmails: _consentToEmails,
         contactName: _contactNameController.text,
         phone: _phoneController.text,
-        genre: _genreController.text,
+        genre: _selectedGenre,
         city: _cityController.text,
         message: _messageController.text,
-        links: [_soundcloudController.text],
         fields: {
-          'private_soundcloud_link': _soundcloudController.text.trim(),
           'consent_copy':
               'I agree to join the Zalmanim mailing list and receive marketing and operational emails related to my demo submission.',
         },
@@ -75,15 +115,14 @@ class _LandingPageState extends State<LandingPage> {
         _feedback = 'Your demo was received successfully. We sent a confirmation email with a summary of your submission.';
         _submitting = false;
         _consentToEmails = false;
+        _selectedGenre = null;
       });
       _formKey.currentState!.reset();
       _artistNameController.clear();
       _contactNameController.clear();
       _emailController.clear();
       _phoneController.clear();
-      _genreController.clear();
       _cityController.clear();
-      _soundcloudController.clear();
       _messageController.clear();
     } catch (e) {
       if (!mounted) return;
@@ -255,7 +294,7 @@ class _LandingPageState extends State<LandingPage> {
                                         ),
                                         const SizedBox(height: 8),
                                         Text(
-                                          'By sending this demo, you confirm that the SoundCloud link is private and that you agree to join the Zalmanim mailing list for marketing and operational emails related to your submission and future updates.',
+                                          'By sending this demo, you agree to join the Zalmanim mailing list for marketing and operational emails related to your submission and future updates.',
                                           style: theme.textTheme.bodyMedium?.copyWith(
                                             color: const Color(0xFF6B5D52),
                                             height: 1.5,
@@ -327,14 +366,8 @@ class _LandingPageState extends State<LandingPage> {
                                       _field(_contactNameController, 'Contact name', width: 280),
                                       _field(_emailController, 'Email', width: 280, required: true, email: true),
                                       _field(_phoneController, 'Phone', width: 280),
-                                      _field(_genreController, 'Genre', width: 280),
+                                      _genreField(width: 280),
                                       _field(_cityController, 'City', width: 280),
-                                      _field(
-                                        _soundcloudController,
-                                        'Private SoundCloud link',
-                                        width: 576,
-                                        required: true,
-                                      ),
                                     ],
                                   ),
                                   const SizedBox(height: 16),
@@ -418,6 +451,54 @@ class _LandingPageState extends State<LandingPage> {
       ),
     );
   }
+
+  Widget _genreField({required double width}) {
+    return SizedBox(
+      width: width,
+      child: DropdownButtonFormField<String>(
+        initialValue: _selectedGenre,
+        decoration: InputDecoration(
+          labelText: 'Musical style',
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: Color(0xFFD9CCBF)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: Color(0xFFD9CCBF)),
+          ),
+        ),
+        items: [
+          for (final group in {'House', 'Techno', 'Trance'})
+            ...[
+              DropdownMenuItem<String>(
+                enabled: false,
+                value: '__$group',
+                child: Text(
+                  group,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              for (final option in _genreOptions.where((item) => item.group == group))
+                DropdownMenuItem<String>(
+                  value: option.value,
+                  child: Text(option.value),
+                ),
+            ],
+        ],
+        onChanged: (value) => setState(() => _selectedGenre = value),
+      ),
+    );
+  }
+}
+
+class _GenreOption {
+  const _GenreOption(this.group, this.value);
+
+  final String group;
+  final String value;
 }
 
 class _FeatureCard extends StatelessWidget {

@@ -377,6 +377,21 @@ class ApiClient {
     }
   }
 
+  Future<Map<String, dynamic>> sendArtistPortalInvite({
+    required String token,
+    required int artistId,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/admin/artists/$artistId/send-portal-invite'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(response.body);
+      throw Exception('Send portal invite failed (${response.statusCode}): ${detail.isNotEmpty ? detail : response.reasonPhrase}');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> fetchArtistDashboard(String token) async {
     final response = await http.get(
       Uri.parse('$baseUrl/artist/me/dashboard'),

@@ -69,6 +69,7 @@ from app.schemas.schemas import (
     ForgotPasswordRequest,
     ArtistChangePasswordRequest,
     ArtistLoginRequest,
+    ArtistPortalInviteResponse,
     LoginActivityOut,
     ArtistSetPasswordRequest,
     LoginStatsOut,
@@ -117,6 +118,15 @@ _GOOGLE_AUTH_SCOPES = [
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/gmail.compose",
 ]
+
+
+def _artist_portal_url() -> str:
+    return (settings.artist_portal_base_url or "").strip() or "https://artists.zalmanim.com"
+
+
+def _generate_temporary_password(length: int = 12) -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@$%*"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
 
 _FACEBOOK_AUTH_SCOPES = ["email", "public_profile"]
 _ALLOWED_USER_ROLES = {"admin", "manager", "artist"}
@@ -530,9 +540,9 @@ def _default_demo_approval_body(artist_name: str) -> str:
 def _build_demo_submission_summary(item: DemoSubmission) -> list[tuple[str, str]]:
     fields = _safe_json_dict(item.fields_json)
     links = _safe_json_list(item.links_json)
-    soundcloud_link = str(fields.get("private_soundcloud_link") or "").strip()
-    if not soundcloud_link and links:
-        soundcloud_link = str(links[0] or "").strip()
+    submission_links = ", ".join(
+        str(link).strip() for link in links if str(link).strip()
+    )
     return [
         ("Artist name", item.artist_name),
         ("Contact name", item.contact_name or "-"),
@@ -540,7 +550,7 @@ def _build_demo_submission_summary(item: DemoSubmission) -> list[tuple[str, str]
         ("Phone", item.phone or "-"),
         ("Genre", item.genre or "-"),
         ("City", item.city or "-"),
-        ("Private SoundCloud link", soundcloud_link or "-"),
+        ("Links", submission_links or "-"),
         ("Message", item.message or "-"),
         ("Email consent", "Yes" if item.consent_to_emails else "No"),
         ("Source", item.source or "-"),
@@ -1572,6 +1582,84 @@ def admin_set_artist_password(
     artist.password_hash = hash_password(payload.password)
     db.commit()
     return {"ok": True, "message": "Password set. Artist can sign in at the artist portal."}
+
+
+@router.post("/admin/artists/{artist_id}/send-portal-invite", response_model=ArtistPortalInviteResponse)
+def admin_send_artist_portal_invite(
+    artist_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> ArtistPortalInviteResponse:
+    """Generate a temporary artist portal password and email portal login instructions."""
+    require_admin(user)
+    artist = db.query(Artist).filter(Artist.id == artist_id).first()
+    if not artist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    if not artist.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Artist is inactive")
+    username = (artist.email or "").strip().lower()
+    if not username:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Artist email is required")
+
+    extra = _artist_extra_from_model(artist)
+    display_name = (
+        str(extra.get("full_name") or "").strip()
+        or str(extra.get("artist_brand") or "").strip()
+        or (artist.name or "").strip()
+        or username
+    )
+    portal_url = _artist_portal_url()
+    temporary_password = _generate_temporary_password()
+    subject = "Your Zalmanim Artists Portal access"
+    body_text = (
+        f"Hi {display_name},\n\n"
+        "Your access to the Zalmanim Artists Portal is ready.\n\n"
+        "Inside the portal you can update your profile, upload media, upload releases, submit demos, "
+        "and change your password.\n\n"
+        f"Portal link: {portal_url}\n"
+        f"Username: {username}\n"
+        f"Temporary password: {temporary_password}\n\n"
+        "Please sign in and change your password after your first login.\n\n"
+        "If you have any questions, reply to this email.\n"
+    )
+    body_html = (
+        f"<p>Hi {html.escape(display_name)},</p>"
+        "<p>Your access to the Zalmanim Artists Portal is ready.</p>"
+        "<p>Inside the portal you can update your profile, upload media, upload releases, submit demos, "
+        "and change your password.</p>"
+        f"<p><strong>Portal link:</strong> <a href=\"{html.escape(portal_url)}\">{html.escape(portal_url)}</a><br>"
+        f"<strong>Username:</strong> {html.escape(username)}<br>"
+        f"<strong>Temporary password:</strong> {html.escape(temporary_password)}</p>"
+        "<p>Please sign in and change your password after your first login.</p>"
+        "<p>If you have any questions, reply to this email.</p>"
+    )
+
+    artist.password_hash = hash_password(temporary_password)
+    success, message = send_email_service(
+        to_email=username,
+        subject=subject,
+        body_text=body_text,
+        body_html=body_html,
+    )
+    if not success:
+        db.rollback()
+        if "limit" in message.lower():
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+
+    db.add(
+        ArtistActivityLog(
+            artist_id=artist.id,
+            activity_type="portal_invite_email",
+            details=f"Portal invite sent to {username}",
+        )
+    )
+    db.commit()
+    return ArtistPortalInviteResponse(
+        message="Artist portal invitation sent.",
+        portal_url=portal_url,
+        username=username,
+    )
 
 
 @router.get("/artists/{artist_id}/releases", response_model=list[ReleaseOut])
