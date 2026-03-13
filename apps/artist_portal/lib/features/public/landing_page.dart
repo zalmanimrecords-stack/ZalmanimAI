@@ -222,14 +222,6 @@ class _LandingPageState extends State<LandingPage> {
                                     'Fill in the details below and we will route your submission into the system.',
                                     style: theme.textTheme.bodyLarge?.copyWith(color: const Color(0xFF6B5D52)),
                                   ),
-                                  const SizedBox(height: 10),
-                                  Text(
-                                    'By submitting this form, you confirm that the SoundCloud link is private and that you agree to receive marketing and operational emails from Zalmanim.',
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: const Color(0xFF6B5D52),
-                                      height: 1.5,
-                                    ),
-                                  ),
                                   if (_feedback != null) ...[
                                     const SizedBox(height: 18),
                                     Container(
@@ -242,6 +234,90 @@ class _LandingPageState extends State<LandingPage> {
                                       child: Text(_feedback!),
                                     ),
                                   ],
+                                  const SizedBox(height: 22),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(18),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFFFBF6),
+                                      borderRadius: BorderRadius.circular(18),
+                                      border: Border.all(color: const Color(0xFFD9CCBF)),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Submission terms',
+                                          style: theme.textTheme.titleMedium?.copyWith(
+                                            fontWeight: FontWeight.w800,
+                                            color: const Color(0xFF231A14),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'By sending this demo, you confirm that the SoundCloud link is private and that you agree to join the Zalmanim mailing list for marketing and operational emails related to your submission and future updates.',
+                                          style: theme.textTheme.bodyMedium?.copyWith(
+                                            color: const Color(0xFF6B5D52),
+                                            height: 1.5,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 14),
+                                        FormField<bool>(
+                                          initialValue: _consentToEmails,
+                                          validator: (value) {
+                                            if (value == true) return null;
+                                            return 'You must approve email consent before sending a demo.';
+                                          },
+                                          builder: (field) {
+                                            return Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Container(
+                                                  width: double.infinity,
+                                                  padding: const EdgeInsets.all(16),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.white,
+                                                    borderRadius: BorderRadius.circular(16),
+                                                    border: Border.all(
+                                                      color: field.hasError
+                                                          ? const Color(0xFFB84C42)
+                                                          : const Color(0xFFD9CCBF),
+                                                    ),
+                                                  ),
+                                                  child: CheckboxListTile(
+                                                    contentPadding: EdgeInsets.zero,
+                                                    value: _consentToEmails,
+                                                    controlAffinity: ListTileControlAffinity.leading,
+                                                    title: const Text(
+                                                      'I approve the use of my email for marketing and operational communication.',
+                                                    ),
+                                                    subtitle: const Text(
+                                                      'This includes confirmation emails, status updates, and future label communication.',
+                                                    ),
+                                                    onChanged: (value) {
+                                                      setState(() {
+                                                        _consentToEmails = value ?? false;
+                                                      });
+                                                      field.didChange(value ?? false);
+                                                    },
+                                                  ),
+                                                ),
+                                                if (field.hasError) ...[
+                                                  const SizedBox(height: 8),
+                                                  Text(
+                                                    field.errorText!,
+                                                    style: theme.textTheme.bodySmall?.copyWith(
+                                                      color: const Color(0xFFB84C42),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ],
+                                            );
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                   const SizedBox(height: 22),
                                   Wrap(
                                     spacing: 16,
@@ -267,60 +343,6 @@ class _LandingPageState extends State<LandingPage> {
                                     'Message',
                                     width: 576,
                                     maxLines: 5,
-                                  ),
-                                  const SizedBox(height: 18),
-                                  FormField<bool>(
-                                    initialValue: _consentToEmails,
-                                    validator: (value) {
-                                      if (value == true) return null;
-                                      return 'You must approve email consent before sending a demo.';
-                                    },
-                                    builder: (field) {
-                                      return Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Container(
-                                            width: double.infinity,
-                                            padding: const EdgeInsets.all(16),
-                                            decoration: BoxDecoration(
-                                              color: Colors.white,
-                                              borderRadius: BorderRadius.circular(16),
-                                              border: Border.all(
-                                                color: field.hasError
-                                                    ? const Color(0xFFB84C42)
-                                                    : const Color(0xFFD9CCBF),
-                                              ),
-                                            ),
-                                            child: CheckboxListTile(
-                                              contentPadding: EdgeInsets.zero,
-                                              value: _consentToEmails,
-                                              controlAffinity: ListTileControlAffinity.leading,
-                                              title: const Text(
-                                                'I agree to join the Zalmanim mailing list and receive marketing and operational emails.',
-                                              ),
-                                              subtitle: const Text(
-                                                'This includes updates about my demo submission and future label communications.',
-                                              ),
-                                              onChanged: (value) {
-                                                setState(() {
-                                                  _consentToEmails = value ?? false;
-                                                });
-                                                field.didChange(value ?? false);
-                                              },
-                                            ),
-                                          ),
-                                          if (field.hasError) ...[
-                                            const SizedBox(height: 8),
-                                            Text(
-                                              field.errorText!,
-                                              style: theme.textTheme.bodySmall?.copyWith(
-                                                color: const Color(0xFFB84C42),
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      );
-                                    },
                                   ),
                                   const SizedBox(height: 24),
                                   FilledButton(
