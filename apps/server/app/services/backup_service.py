@@ -125,6 +125,16 @@ def restore_database(db: Session, data: dict) -> None:
     if data.get("version") != 1:
         raise ValueError("Unsupported backup version")
     tables = data.get("tables") or {}
+    valid_release_ids = {
+        int(row["id"])
+        for row in tables.get("releases", [])
+        if isinstance(row, dict) and row.get("id") is not None
+    }
+    valid_artist_ids = {
+        int(row["id"])
+        for row in tables.get("artists", [])
+        if isinstance(row, dict) and row.get("id") is not None
+    }
 
     # Replace means clearing the full known backup surface, even if some tables
     # are empty or omitted in the uploaded file. Truncate all at once so
@@ -148,6 +158,15 @@ def restore_database(db: Session, data: dict) -> None:
             db.flush()
         else:
             for row_data in rows:
+                release_id = row_data.get("release_id")
+                artist_id = row_data.get("artist_id")
+                if release_id not in valid_release_ids or artist_id not in valid_artist_ids:
+                    logger.warning(
+                        "Skipping orphaned release_artists row during restore: release_id=%s artist_id=%s",
+                        release_id,
+                        artist_id,
+                    )
+                    continue
                 db.execute(
                     text(
                         'INSERT INTO release_artists (release_id, artist_id) VALUES (:release_id, :artist_id)'
