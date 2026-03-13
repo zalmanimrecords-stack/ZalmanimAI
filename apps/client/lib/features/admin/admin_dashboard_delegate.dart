@@ -83,6 +83,10 @@ abstract class AdminDashboardDelegate {
   Future<void> loadCampaignRequests({String? statusFilter});
   void updateCampaignRequestStatus(int requestId, String status, {String? adminNotes});
 
+  // Pending for release (tracks with full details submitted, waiting for treatment)
+  List<dynamic> get pendingReleasesList;
+  Future<void> loadPendingReleases({String? statusFilter});
+
   // Audience / email lists
   List<dynamic> get audiencesList;
   List<dynamic> get audienceSubscribersList;

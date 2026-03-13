@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/api_client.dart';
 import '../../core/session.dart';
@@ -16,6 +17,7 @@ import 'tabs/audience_tab.dart';
 import 'tabs/campaign_requests_tab.dart';
 import 'tabs/campaigns_tab.dart';
 import 'tabs/demos_tab.dart';
+import 'tabs/pending_releases_tab.dart';
 import 'tabs/releases_tab.dart';
 import 'tabs/reports_tab.dart';
 import 'tabs/users_tab.dart';
@@ -256,6 +258,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   List<dynamic> adminReleases = const [];
   List<dynamic> campaigns = const [];
   List<dynamic> campaignRequests = const [];
+  List<dynamic> pendingReleases = const [];
   List<dynamic> audiences = const [];
   List<dynamic> audienceSubscribers = const [];
   int? _selectedAudienceId;
@@ -270,6 +273,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   bool _loadedReleases = false;
   bool _loadedCampaigns = false;
   bool _loadedCampaignRequests = false;
+  bool _loadedPendingReleases = false;
   bool _loadedAudiences = false;
   bool _loadedUsers = false;
   bool _artistsHasMore = true;
@@ -417,7 +421,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 8, vsync: this);
+    _tabController = TabController(length: 9, vsync: this);
     _tabController.addListener(_onTabChanged);
     _artistSearchController.addListener(_onArtistSearchChanged);
     _releasesSearchController.addListener(_onReleasesSearchChanged);
@@ -460,6 +464,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         break;
       case 5:
         if (!_loadedAudiences) _loadAudiences();
+        break;
+      case 8:
+        if (!_loadedPendingReleases) _loadPendingReleases();
         break;
       case 7:
         if (!_loadedUsers) _loadUsers();
@@ -698,10 +705,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       });
     } catch (e) {
       _setError(e);
-      if (mounted) setState(() {
-        loading = false;
-        _loadedCampaignRequests = true;
-      });
+      if (mounted) {
+        setState(() {
+          loading = false;
+          _loadedCampaignRequests = true;
+        });
+      }
     }
   }
 
@@ -715,11 +724,43 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       );
       if (!mounted) return;
       await _loadCampaignRequests();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Campaign request $status')),
+        SnackBar(
+          content: Text(
+            status == 'approved'
+                ? 'Campaign request approved. The artist was sent an email with a link to submit their full release details.'
+                : 'Campaign request $status',
+          ),
+        ),
       );
     } catch (e) {
       _showErrorSnackBar(e.toString());
+    }
+  }
+
+  Future<void> _loadPendingReleases({String? statusFilter}) async {
+    if (mounted) setState(() => loading = true);
+    try {
+      final list = await widget.apiClient.fetchPendingReleases(
+        token: widget.token,
+        statusFilter: statusFilter,
+      );
+      if (!mounted) return;
+      setState(() {
+        pendingReleases = list;
+        loading = false;
+        error = null;
+        _loadedPendingReleases = true;
+      });
+    } catch (e) {
+      _setError(e);
+      if (mounted) {
+        setState(() {
+          loading = false;
+          _loadedPendingReleases = true;
+        });
+      }
     }
   }
 
@@ -865,6 +906,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   @override
   void updateCampaignRequestStatus(int requestId, String status, {String? adminNotes}) =>
       _updateCampaignRequestStatus(requestId, status, adminNotes: adminNotes);
+
+  @override
+  List<dynamic> get pendingReleasesList => pendingReleases;
+
+  @override
+  Future<void> loadPendingReleases({String? statusFilter}) => _loadPendingReleases(statusFilter: statusFilter);
 
   @override
   Future<void> selectAudience(int id) async {
@@ -1215,6 +1262,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
             Tab(icon: ZalmanimIcons.squidIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Audience'),
             Tab(icon: ZalmanimIcons.alienIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Reports'),
             Tab(icon: ZalmanimIcons.jellyfishIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Users'),
+            Tab(icon: ZalmanimIcons.squidIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Pending for release'),
           ],
         ),
       ),
@@ -1231,6 +1279,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               AudienceTab(delegate: this),
               ReportsTab(delegate: this),
               UsersTab(delegate: this),
+              PendingReleasesTab(delegate: this),
             ],
           ),
             if (loading)
@@ -1334,20 +1383,66 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     );
   }
 
+  /// Collects SoundCloud URLs from demo submission links, fields, and message text.
+  static List<String> _getSoundCloudUrls(Map<String, dynamic> submission) {
+    final urls = <String>{};
+    bool isSoundCloudUrl(String s) {
+      final lower = s.toLowerCase().trim();
+      return (lower.contains('soundcloud.com') ||
+              lower.contains('on.soundcloud.com') ||
+              lower.contains('soundcloud.app.goo.gl')) &&
+          (lower.startsWith('http://') || lower.startsWith('https://'));
+    }
+    void addIfSoundCloud(String s) {
+      final t = s.trim();
+      if (t.isEmpty) return;
+      if (isSoundCloudUrl(t)) urls.add(t);
+    }
+    for (final link in (submission['links'] as List<dynamic>? ?? const [])) {
+      addIfSoundCloud(link.toString());
+    }
+    final fields = submission['fields'];
+    if (fields is Map<String, dynamic>) {
+      for (final entry in fields.entries) {
+        final val = entry.value;
+        if (val is! String) continue;
+        addIfSoundCloud(val);
+      }
+    }
+    // Extract URLs from message (e.g. pasted SoundCloud link)
+    final message = (submission['message'] ?? '').toString();
+    if (message.isNotEmpty) {
+      final uriPattern = RegExp(
+        r'https?://[^\s<>"{}|\\^`\[\]]+',
+        caseSensitive: false,
+      );
+      for (final match in uriPattern.allMatches(message)) {
+        addIfSoundCloud(match.group(0)!);
+      }
+    }
+    return urls.toList();
+  }
+
   Future<void> _updateDemoStatus(Map<String, dynamic> submission, String status) async {
     final id = submission['id'] as int?;
     if (id == null) return;
     try {
-      await widget.apiClient.updateDemoSubmission(
+      final updated = await widget.apiClient.updateDemoSubmission(
         token: widget.token,
         id: id,
         body: {'status': status},
       );
       await _loadDemoSubmissions(withOverlay: false);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Demo updated to $status.')),
-      );
+      String message;
+      if (status == 'rejected') {
+        message = updated['rejection_email_sent_at'] != null
+            ? 'Demo rejected. A rejection email was sent to the artist.'
+            : 'Demo rejected.';
+      } else {
+        message = 'Demo updated to $status.';
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
     } catch (e) {
       _setError(e);
     }
@@ -1476,6 +1571,24 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 const SizedBox(height: 6),
                 ...(((submission['links'] as List<dynamic>? ?? const <dynamic>[]))
                     .map((link) => SelectableText(link.toString()))),
+                if (_getSoundCloudUrls(submission).isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const Text('SoundCloud', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  ..._getSoundCloudUrls(submission).map(
+                    (url) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SelectableText(url, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                          const SizedBox(height: 4),
+                          _SoundCloudEmbedWidget(soundCloudUrl: url),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 const Text('Extra fields', style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 6),
@@ -5667,6 +5780,39 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
           ),
         );
       },
+    );
+  }
+}
+
+/// Embeds a SoundCloud player for the given track/page URL.
+class _SoundCloudEmbedWidget extends StatefulWidget {
+  const _SoundCloudEmbedWidget({required this.soundCloudUrl});
+
+  final String soundCloudUrl;
+
+  @override
+  State<_SoundCloudEmbedWidget> createState() => _SoundCloudEmbedWidgetState();
+}
+
+class _SoundCloudEmbedWidgetState extends State<_SoundCloudEmbedWidget> {
+  late final WebViewController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    final encoded = Uri.encodeComponent(widget.soundCloudUrl);
+    final embedUrl = 'https://w.soundcloud.com/player/?url=$encoded&color=%23ff5500&auto_play=false&hide_related=false&show_comments=true&show_user=true&show_reposts=false&show_teaser=true';
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..loadRequest(Uri.parse(embedUrl));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 166,
+      width: double.infinity,
+      child: WebViewWidget(controller: _controller),
     );
   }
 }

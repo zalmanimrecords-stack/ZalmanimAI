@@ -572,6 +572,7 @@ class DemoSubmissionOut(BaseModel):
     approval_subject: str | None
     approval_body: str | None
     approval_email_sent_at: datetime | None
+    rejection_email_sent_at: datetime | None
     artist_id: int | None
     created_at: datetime
     updated_at: datetime | None
@@ -604,6 +605,38 @@ class CampaignRequestOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# Pending for release (artist filled form after track approved)
+class PendingReleaseFormInfo(BaseModel):
+    """Public: info returned when validating a pending-release form token."""
+    artist_name: str
+    release_title: str
+
+
+class PendingReleaseSubmit(BaseModel):
+    """Public: submit artist + track details after track approval."""
+    token: str
+    artist_name: str
+    artist_email: EmailStr
+    artist_data: dict = {}  # Same keys as Artist extra (artist_brand, full_name, website, ...)
+    release_title: str
+    release_data: dict = {}  # catalog_number, release_date, track_title, etc.
+
+
+class PendingReleaseOut(BaseModel):
+    """Admin: one row in Pending for release tab."""
+    id: int
+    campaign_request_id: int | None
+    artist_id: int | None
+    artist_name: str
+    artist_email: str
+    artist_data: dict = {}
+    release_title: str
+    release_data: dict = {}
+    status: str
+    created_at: datetime
+    updated_at: datetime | None
 
 
 # Campaigns (unified: social + Mailchimp + WordPress)
@@ -804,6 +837,9 @@ class SystemSettingsOut(BaseModel):
     smtp_user_configured: bool = False  # True if smtp_user is set (password not exposed)
     emails_per_hour: int = 30
     email_configured: bool = False  # True if SMTP is usable
+    # Demo rejection email template (editable in settings)
+    demo_rejection_subject: str = ""
+    demo_rejection_body: str = ""
     # OAuth / redirects
     oauth_redirect_base: str = ""
     oauth_success_redirect: str = ""
@@ -841,6 +877,8 @@ class SystemSettingsMailUpdate(BaseModel):
     smtp_user: str | None = None
     smtp_password: str | None = None
     emails_per_hour: int | None = None
+    demo_rejection_subject: str | None = None
+    demo_rejection_body: str | None = None
 
 
 

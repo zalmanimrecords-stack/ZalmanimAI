@@ -35,6 +35,8 @@ from app.models.models import (
     MailingList,
     MailingSubscriber,
     PasswordResetToken,
+    PendingRelease,
+    PendingReleaseToken,
     Release,
     release_artists_table,
     SocialConnection,
@@ -81,6 +83,9 @@ from app.schemas.schemas import (
     ArtistSetPasswordRequest,
     LoginStatsOut,
     LoginRequest,
+    PendingReleaseFormInfo,
+    PendingReleaseOut,
+    PendingReleaseSubmit,
     ReleaseOut,
     ResetPasswordRequest,
     ReleaseUpdateArtists,
@@ -544,6 +549,45 @@ def _default_demo_approval_body(artist_name: str) -> str:
     )
 
 
+def _default_demo_rejection_subject(artist_name: str) -> str:
+    safe_name = (artist_name or "there").strip()
+    return f"Thank you for your demo submission, {safe_name}"
+
+
+def _default_demo_rejection_body(artist_name: str) -> str:
+    portal_url = _artist_portal_url()
+    website_url = (settings.zalmanim_website_url or "").strip() or "https://zalmanim.com"
+    safe_name = (artist_name or "there").strip()
+    return (
+        f"Hi {safe_name},\n\n"
+        "Thank you for sending us your music. We received it with respect and appreciate you thinking of us.\n\n"
+        "After careful consideration, we feel it does not quite fit the musical direction of our labels at this time. "
+        "We would be happy to receive more demos from you in the future in the hope they may align with our line.\n\n"
+        f"Our website: {website_url}\n"
+        f"Artist portal (submit demos): {portal_url}\n\n"
+        "Best regards,\nZalmanim"
+    )
+
+
+def _get_demo_rejection_subject_and_body(item: DemoSubmission) -> tuple[str, str]:
+    """Resolve rejection email subject and body from settings or defaults; replace placeholders."""
+    mail = get_effective_mail_config_for_api()
+    subject = (mail.get("demo_rejection_subject") or "").strip()
+    body = (mail.get("demo_rejection_body") or "").strip()
+    if not subject:
+        subject = _default_demo_rejection_subject(item.artist_name)
+    if not body:
+        body = _default_demo_rejection_body(item.artist_name)
+    else:
+        portal_url = _artist_portal_url()
+        website_url = (settings.zalmanim_website_url or "").strip() or "https://zalmanim.com"
+        safe_name = (item.artist_name or "there").strip()
+        body = body.replace("{artist_name}", safe_name).replace("{artist_portal_url}", portal_url).replace("{zalmanim_website}", website_url)
+    safe_name = (item.artist_name or "there").strip()
+    subject = subject.replace("{artist_name}", safe_name)
+    return subject, body
+
+
 def _build_demo_submission_summary(item: DemoSubmission) -> list[tuple[str, str]]:
     fields = _safe_json_dict(item.fields_json)
     links = _safe_json_list(item.links_json)
@@ -699,6 +743,7 @@ def _serialize_demo_submission(item: DemoSubmission) -> DemoSubmissionOut:
         approval_subject=item.approval_subject,
         approval_body=item.approval_body,
         approval_email_sent_at=item.approval_email_sent_at,
+        rejection_email_sent_at=item.rejection_email_sent_at,
         artist_id=item.artist_id,
         created_at=item.created_at,
         updated_at=item.updated_at,
@@ -755,6 +800,9 @@ def init_db() -> None:
             conn.execute(text("ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL"))
             conn.execute(text("ALTER TABLE demo_submissions ADD COLUMN IF NOT EXISTS consent_to_emails BOOLEAN DEFAULT false NOT NULL"))
             conn.execute(text("ALTER TABLE demo_submissions ADD COLUMN IF NOT EXISTS consent_at TIMESTAMP WITH TIME ZONE"))
+            conn.execute(text("ALTER TABLE demo_submissions ADD COLUMN IF NOT EXISTS rejection_email_sent_at TIMESTAMP WITH TIME ZONE"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_rejection_subject VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_rejection_body TEXT"))
             conn.commit()
     except Exception as e:
         logging.getLogger(__name__).warning("DB migration (auth/users): %s", e)
@@ -1444,6 +1492,7 @@ def update_demo_submission(
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
 
+    old_status = item.status
     if payload.artist_name is not None:
         item.artist_name = payload.artist_name.strip()
     if payload.email is not None:
@@ -1475,6 +1524,23 @@ def update_demo_submission(
         item.approval_body = payload.approval_body
     if payload.artist_id is not None:
         item.artist_id = payload.artist_id
+
+    # When status changes to rejected, send rejection email once (if not already sent).
+    if item.status == "rejected" and old_status != "rejected" and item.rejection_email_sent_at is None:
+        if is_email_configured():
+            subject, body = _get_demo_rejection_subject_and_body(item)
+            success, message = send_email_service(
+                to_email=item.email,
+                subject=subject,
+                body_text=body,
+            )
+            if success:
+                item.rejection_email_sent_at = datetime.now(timezone.utc)
+            else:
+                if "limit" in message.lower():
+                    raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message)
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+        # If email not configured, still allow marking as rejected; no email sent.
 
     if item.consent_to_emails:
         _upsert_demo_mailing_subscriber(db, item)
@@ -2334,6 +2400,58 @@ def admin_list_campaign_requests(
     return out
 
 
+def _create_pending_release_token_and_send_approval_email(
+    db: Session,
+    req: CampaignRequest,
+    artist: Artist,
+    release_title: str | None,
+) -> None:
+    """Create a one-time token and email the artist with the pending-release form link."""
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    portal_url = (_artist_portal_url()).rstrip("/")
+    form_link = f"{portal_url}/pending-release?token={raw_token}"
+    expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+    token_row = PendingReleaseToken(
+        token_hash=token_hash,
+        campaign_request_id=req.id,
+        artist_id=req.artist_id,
+        expires_at=expires_at,
+    )
+    db.add(token_row)
+    db.flush()
+
+    artist_name = (artist.name or "").strip() or "there"
+    subject = f"Your track was approved – next steps, {artist_name}"
+    body = (
+        f"Hi {artist_name},\n\n"
+        "Thank you! We're happy to move forward and release the track you sent.\n\n"
+        "Please fill in the form below with your full artist details and the track/release details "
+        "so we can proceed:\n\n"
+        f"{form_link}\n\n"
+        "Best regards,\nZalmanim"
+    )
+    if release_title:
+        body = (
+            f"Hi {artist_name},\n\n"
+            f"Thank you! We're happy to move forward and release \"{release_title}\".\n\n"
+            "Please fill in the form below with your full artist details and the track/release details "
+            "so we can proceed:\n\n"
+            f"{form_link}\n\n"
+            "Best regards,\nZalmanim"
+        )
+    if is_email_configured():
+        success, message = send_email_service(
+            to_email=artist.email,
+            subject=subject,
+            body_text=body,
+        )
+        if not success:
+            logging.getLogger(__name__).warning(
+                "Failed to send track-approved email to %s: %s", artist.email, message
+            )
+
+
 @router.patch("/admin/campaign-requests/{request_id}", response_model=CampaignRequestOut)
 def admin_update_campaign_request(
     request_id: int,
@@ -2341,20 +2459,148 @@ def admin_update_campaign_request(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> CampaignRequestOut:
-    """Update campaign request status (approve/reject) and notes."""
+    """Update campaign request status (approve/reject) and notes. On approve, sends artist an email with form link."""
     require_admin(user)
-    req = db.query(CampaignRequest).filter(CampaignRequest.id == request_id).first()
+    req = db.query(CampaignRequest).options(
+        joinedload(CampaignRequest.artist),
+        joinedload(CampaignRequest.release),
+    ).filter(CampaignRequest.id == request_id).first()
     if not req:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign request not found")
+    old_status = req.status
     if payload.status is not None:
         req.status = payload.status
     if payload.admin_notes is not None:
         req.admin_notes = payload.admin_notes
+
+    if req.status == "approved" and old_status != "approved":
+        artist = req.artist or db.query(Artist).filter(Artist.id == req.artist_id).first()
+        if artist:
+            release_title = req.release.title if req.release else None
+            _create_pending_release_token_and_send_approval_email(db, req, artist, release_title)
+
     db.commit()
     db.refresh(req)
     artist = db.query(Artist).filter(Artist.id == req.artist_id).first()
     release_title = req.release.title if req.release else None
     return _campaign_request_out(req, artist.name if artist else "", release_title)
+
+
+@router.get("/public/pending-release-form", response_model=PendingReleaseFormInfo)
+def public_pending_release_form_validate(
+    token: str = Query(..., description="One-time token from approval email"),
+    db: Session = Depends(get_db),
+) -> PendingReleaseFormInfo:
+    """Validate token and return artist/release names for the pending-release form (no auth)."""
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    row = (
+        db.query(PendingReleaseToken)
+        .filter(
+            PendingReleaseToken.token_hash == token_hash,
+            PendingReleaseToken.used_at.is_(None),
+            PendingReleaseToken.expires_at > datetime.now(timezone.utc),
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid or expired token")
+    artist = db.query(Artist).filter(Artist.id == row.artist_id).first()
+    release_title = None
+    if row.campaign_request_id:
+        cr = db.query(CampaignRequest).filter(CampaignRequest.id == row.campaign_request_id).first()
+        if cr and cr.release_id:
+            rel = db.query(Release).filter(Release.id == cr.release_id).first()
+            if rel:
+                release_title = rel.title
+    return PendingReleaseFormInfo(
+        artist_name=artist.name if artist else "Artist",
+        release_title=release_title or "Your release",
+    )
+
+
+@router.post("/public/pending-release-submit", response_model=PendingReleaseOut)
+def public_pending_release_submit(
+    payload: PendingReleaseSubmit,
+    db: Session = Depends(get_db),
+) -> PendingReleaseOut:
+    """Submit artist + track details using the one-time token (no auth). Creates a pending release."""
+    token_hash = hashlib.sha256(payload.token.encode()).hexdigest()
+    row = (
+        db.query(PendingReleaseToken)
+        .filter(
+            PendingReleaseToken.token_hash == token_hash,
+            PendingReleaseToken.used_at.is_(None),
+            PendingReleaseToken.expires_at > datetime.now(timezone.utc),
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid or expired token")
+    row.used_at = datetime.now(timezone.utc)
+    pr = PendingRelease(
+        campaign_request_id=row.campaign_request_id,
+        artist_id=row.artist_id,
+        artist_name=(payload.artist_name or "").strip() or "Artist",
+        artist_email=payload.artist_email.strip().lower(),
+        artist_data_json=json.dumps(payload.artist_data if isinstance(payload.artist_data, dict) else {}),
+        release_title=(payload.release_title or "").strip() or "Untitled",
+        release_data_json=json.dumps(payload.release_data if isinstance(payload.release_data, dict) else {}),
+        status="pending",
+    )
+    db.add(pr)
+    db.commit()
+    db.refresh(pr)
+    artist_data = json.loads(pr.artist_data_json or "{}") if isinstance(pr.artist_data_json, str) else {}
+    release_data = json.loads(pr.release_data_json or "{}") if isinstance(pr.release_data_json, str) else {}
+    return PendingReleaseOut(
+        id=pr.id,
+        campaign_request_id=pr.campaign_request_id,
+        artist_id=pr.artist_id,
+        artist_name=pr.artist_name,
+        artist_email=pr.artist_email,
+        artist_data=artist_data,
+        release_title=pr.release_title,
+        release_data=release_data,
+        status=pr.status,
+        created_at=pr.created_at,
+        updated_at=pr.updated_at,
+    )
+
+
+@router.get("/admin/pending-releases", response_model=list[PendingReleaseOut])
+def admin_list_pending_releases(
+    status_filter: str | None = Query(None, description="pending | processed"),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> list[PendingReleaseOut]:
+    """List pending-for-release items (tracks with full details submitted, waiting for treatment)."""
+    require_admin(user)
+    q = db.query(PendingRelease).order_by(desc(PendingRelease.created_at)).offset(offset).limit(limit)
+    if status_filter in ("pending", "processed"):
+        q = q.filter(PendingRelease.status == status_filter)
+    items = q.all()
+    out = []
+    for pr in items:
+        artist_data = json.loads(pr.artist_data_json or "{}") if isinstance(pr.artist_data_json, str) else {}
+        release_data = json.loads(pr.release_data_json or "{}") if isinstance(pr.release_data_json, str) else {}
+        out.append(
+            PendingReleaseOut(
+                id=pr.id,
+                campaign_request_id=pr.campaign_request_id,
+                artist_id=pr.artist_id,
+                artist_name=pr.artist_name,
+                artist_email=pr.artist_email,
+                artist_data=artist_data,
+                release_title=pr.release_title,
+                release_data=release_data,
+                status=pr.status,
+                created_at=pr.created_at,
+                updated_at=pr.updated_at,
+            )
+        )
+    return out
 
 
 @router.get("/admin/releases", response_model=list[ReleaseOut])
@@ -2490,6 +2736,8 @@ def get_system_settings(
         smtp_user_configured=mail["smtp_user_configured"],
         emails_per_hour=mail["emails_per_hour"],
         email_configured=is_email_configured(),
+        demo_rejection_subject=mail.get("demo_rejection_subject", "") or "",
+        demo_rejection_body=mail.get("demo_rejection_body", "") or "",
         oauth_redirect_base=settings.oauth_redirect_base or "",
         google_oauth_configured=bool(settings.google_client_id and settings.google_client_secret),
         gmail_connected=gmail_connected,
@@ -2517,6 +2765,8 @@ def update_system_settings_mail(
         smtp_user=payload.smtp_user,
         smtp_password=payload.smtp_password,
         emails_per_hour=payload.emails_per_hour,
+        demo_rejection_subject=payload.demo_rejection_subject,
+        demo_rejection_body=payload.demo_rejection_body,
     )
     mail = get_effective_mail_config_for_api()
     gmail_connected, gmail_email = _gmail_connection_status(db)
@@ -2529,6 +2779,8 @@ def update_system_settings_mail(
         smtp_user_configured=mail["smtp_user_configured"],
         emails_per_hour=mail["emails_per_hour"],
         email_configured=is_email_configured(),
+        demo_rejection_subject=mail.get("demo_rejection_subject", "") or "",
+        demo_rejection_body=mail.get("demo_rejection_body", "") or "",
         oauth_redirect_base=settings.oauth_redirect_base or "",
         google_oauth_configured=bool(settings.google_client_id and settings.google_client_secret),
         gmail_connected=gmail_connected,

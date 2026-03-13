@@ -12,6 +12,7 @@ import 'features/dashboard/artist_dashboard_page.dart';
 import 'features/legal/cookie_consent_page.dart';
 import 'features/public/landing_page.dart';
 import 'features/public/linktree_page.dart';
+import 'features/public/pending_release_form_page.dart';
 
 void main() {
   runApp(const ArtistPortalApp());
@@ -70,8 +71,30 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
   @override
   Widget build(BuildContext context) {
     final primary = _primaryColor();
-    // Public linktree route: /l/{artistId}
+    // Public pending-release form: /pending-release?token=xxx
     final pathSegments = Uri.base.pathSegments;
+    final token = Uri.base.queryParameters['token'];
+    if (pathSegments.isNotEmpty &&
+        pathSegments[0].toLowerCase() == 'pending-release' &&
+        token != null &&
+        token.trim().isNotEmpty) {
+      return MaterialApp(
+        title: AppConfig.labelName,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: primary,
+            primary: primary,
+            brightness: Brightness.light,
+          ),
+          useMaterial3: true,
+        ),
+        home: PendingReleaseFormPage(
+          apiClient: ApiClient(baseUrl: _apiBaseUrl),
+          token: token.trim(),
+        ),
+      );
+    }
+    // Public linktree route: /l/{artistId}
     if (pathSegments.length >= 2 &&
         pathSegments[0].toLowerCase() == 'l' &&
         int.tryParse(pathSegments[1]) != null) {

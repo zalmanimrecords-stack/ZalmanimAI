@@ -285,7 +285,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                     const Text('Select release:'),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<int>(
-                      value: selectedReleaseId,
+                      initialValue: selectedReleaseId,
                       decoration: const InputDecoration(border: OutlineInputBorder()),
                       items: [
                         for (final r in releases)

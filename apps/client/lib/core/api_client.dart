@@ -451,6 +451,29 @@ class ApiClient {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  /// List pending-for-release items (tracks with full details submitted, waiting for treatment).
+  Future<List<dynamic>> fetchPendingReleases({
+    required String token,
+    String? statusFilter,
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final queryParams = <String, String>{
+      'limit': '$limit',
+      'offset': '$offset',
+    };
+    if (statusFilter != null && statusFilter.isNotEmpty) {
+      queryParams['status_filter'] = statusFilter;
+    }
+    final uri = Uri.parse('$baseUrl/admin/pending-releases').replace(queryParameters: queryParams);
+    final response = await http.get(uri, headers: _authHeaders(token));
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(response.body);
+      throw Exception('Pending releases failed (${response.statusCode}): $detail');
+    }
+    return jsonDecode(response.body) as List<dynamic>;
+  }
+
   Future<Map<String, dynamic>> fetchArtistDashboard(String token) async {
     final response = await http.get(
       Uri.parse('$baseUrl/artist/me/dashboard'),
@@ -847,7 +870,7 @@ class ApiClient {
     return jsonDecode(response.body) as List<dynamic>;
   }
 
-  /// Update mail server settings. Returns updated system settings.
+  /// Update mail server settings and demo rejection email template. Returns updated system settings.
   Future<Map<String, dynamic>> updateSystemSettingsMail({
     required String token,
     String? smtpHost,
@@ -858,6 +881,8 @@ class ApiClient {
     String? smtpUser,
     String? smtpPassword,
     int? emailsPerHour,
+    String? demoRejectionSubject,
+    String? demoRejectionBody,
   }) async {
     final body = <String, dynamic>{};
     if (smtpHost != null) body['smtp_host'] = smtpHost;
@@ -868,6 +893,8 @@ class ApiClient {
     if (smtpUser != null) body['smtp_user'] = smtpUser;
     if (smtpPassword != null) body['smtp_password'] = smtpPassword;
     if (emailsPerHour != null) body['emails_per_hour'] = emailsPerHour;
+    if (demoRejectionSubject != null) body['demo_rejection_subject'] = demoRejectionSubject;
+    if (demoRejectionBody != null) body['demo_rejection_body'] = demoRejectionBody;
 
     final response = await http.patch(
       Uri.parse('$baseUrl/admin/settings/mail'),

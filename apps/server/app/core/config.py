@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     # Base URL for password reset links in email (e.g. https://app.example.com or Flutter web URL)
     password_reset_base_url: str = ""
     artist_portal_base_url: str = "https://artists.zalmanim.com"
+    zalmanim_website_url: str = "https://zalmanim.com"
 
 
 settings = Settings()

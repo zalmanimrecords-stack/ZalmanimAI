@@ -19,6 +19,8 @@ class MailSettings(Base):
     smtp_user: Mapped[str | None] = mapped_column(String(255), nullable=True)
     smtp_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     emails_per_hour: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    demo_rejection_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    demo_rejection_body: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
 # Many-to-many: a release can have multiple artists (e.g. when sync failed and admin assigns, or collab)
@@ -95,6 +97,7 @@ class DemoSubmission(Base):
     approval_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     approval_body: Mapped[str | None] = mapped_column(Text, nullable=True)
     approval_email_sent_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejection_email_sent_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     artist_id: Mapped[int | None] = mapped_column(ForeignKey("artists.id"), nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -132,6 +135,42 @@ class CampaignRequest(Base):
 
     artist: Mapped["Artist"] = relationship()
     release: Mapped["Release | None"] = relationship()
+
+
+class PendingReleaseToken(Base):
+    """One-time token sent to artist when a campaign request is approved; links to form for artist + track details."""
+    __tablename__ = "pending_release_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    campaign_request_id: Mapped[int] = mapped_column(ForeignKey("campaign_requests.id", ondelete="CASCADE"), nullable=False, index=True)
+    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), nullable=False, index=True)
+    expires_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    campaign_request: Mapped["CampaignRequest"] = relationship()
+    artist: Mapped["Artist"] = relationship()
+
+
+class PendingRelease(Base):
+    """Track approved for release; artist submitted full details via form; waiting for label treatment."""
+    __tablename__ = "pending_releases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    campaign_request_id: Mapped[int | None] = mapped_column(ForeignKey("campaign_requests.id", ondelete="SET NULL"), nullable=True, index=True)
+    artist_id: Mapped[int | None] = mapped_column(ForeignKey("artists.id", ondelete="SET NULL"), nullable=True, index=True)
+    artist_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    artist_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    artist_data_json: Mapped[str] = mapped_column(Text, default="{}")  # Same keys as Artist extra_json
+    release_title: Mapped[str] = mapped_column(String(300), nullable=False)
+    release_data_json: Mapped[str] = mapped_column(Text, default="{}")  # catalog_number, release_date, track_title, etc.
+    status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False, index=True)  # pending | processed
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    campaign_request: Mapped["CampaignRequest | None"] = relationship()
+    artist: Mapped["Artist | None"] = relationship()
 
 
 class User(Base):

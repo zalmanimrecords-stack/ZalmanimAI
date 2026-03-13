@@ -143,7 +143,7 @@ class _LoginPageState extends State<LoginPage> {
                               decoration: const InputDecoration(
                                 labelText: 'Email',
                                 border: OutlineInputBorder(),
-                                prefixIcon: const Icon(ZalmanimIcons.email),
+                                prefixIcon: Icon(ZalmanimIcons.email),
                               ),
                               keyboardType: TextInputType.emailAddress,
                               textInputAction: TextInputAction.next,
@@ -154,7 +154,7 @@ class _LoginPageState extends State<LoginPage> {
                               decoration: const InputDecoration(
                                 labelText: 'Password',
                                 border: OutlineInputBorder(),
-                                prefixIcon: const Icon(ZalmanimIcons.lock),
+                                prefixIcon: Icon(ZalmanimIcons.lock),
                               ),
                               obscureText: true,
                               textInputAction: TextInputAction.done,
