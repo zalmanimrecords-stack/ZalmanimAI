@@ -1,9 +1,10 @@
-﻿__pycache__/
+__pycache__/
 *.pyc
 *.pyo
 *.pyd
 .env
 deploy/.env.production
+secrets-backup.txt
 .DS_Store
 
 apps/server/storage/uploads/*

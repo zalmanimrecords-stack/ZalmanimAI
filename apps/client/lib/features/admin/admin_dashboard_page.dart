@@ -11,7 +11,6 @@ import '../../core/zalmanim_icons.dart';
 import '../account/user_settings_sheet.dart';
 import '../../widgets/api_connection_indicator.dart';
 import 'admin_dashboard_delegate.dart';
-import 'system_settings_page.dart';
 import 'tabs/artists_tab.dart';
 import 'tabs/audience_tab.dart';
 import 'tabs/campaign_requests_tab.dart';
@@ -294,6 +293,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   int _campaignsSortBy = 0;
   bool _campaignsSortAsc = true;
 
+  /// Last system update from Git (from /health), shown in the app bar.
+  String? _lastGitUpdate;
+
   @override
   ApiClient get apiClient => widget.apiClient;
 
@@ -425,6 +427,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     _artistSearchController.addListener(_onArtistSearchChanged);
     _releasesSearchController.addListener(_onReleasesSearchChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadTabIfNeeded());
+    _fetchLastGitUpdate();
+  }
+
+  Future<void> _fetchLastGitUpdate() async {
+    final health = await widget.apiClient.fetchHealth();
+    if (!mounted) return;
+    final last = health?['last_git_update'];
+    setState(() => _lastGitUpdate = last is String ? last : null);
   }
 
   void _onArtistSearchChanged() {
@@ -1265,23 +1275,36 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           fit: BoxFit.contain,
         ),
         actions: [
+          if (_lastGitUpdate != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Tooltip(
+                    message: 'Last system update from Git: $_lastGitUpdate',
+                    child: SelectableText(
+                      _lastGitUpdate!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(ZalmanimIcons.copy, size: 18),
+                    tooltip: 'Copy last update time',
+                    onPressed: () => Clipboard.setData(ClipboardData(text: _lastGitUpdate!)),
+                    style: IconButton.styleFrom(
+                      minimumSize: const Size(32, 32),
+                      padding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ApiConnectionIndicator(
             apiClient: widget.apiClient,
             onConnectionRestored: load,
-          ),
-          IconButton(
-            icon: const Icon(ZalmanimIcons.settings),
-            tooltip: 'System settings',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (context) => SystemSettingsPage(
-                    apiClient: widget.apiClient,
-                    token: widget.token,
-                  ),
-                ),
-              );
-            },
           ),
           IconButton(
             icon: const Icon(ZalmanimIcons.account),

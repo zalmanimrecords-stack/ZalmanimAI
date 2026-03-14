@@ -73,6 +73,8 @@ What this does:
 - starts `postgres`, `redis`, `api`, `worker`, and `web`
 - serves the admin app, artist portal, and reverse-proxies the API through nginx
 
+When you deploy with `scripts/deploy-prod.sh` or `scripts/deploy-prod-remote.ps1`, the built images are tagged with **IMAGE_TAG** = date and time of the deploy (e.g. `2025-03-14-1530`). If `IMAGE_TAG` is not set, `latest` is used.
+
 ## 4. Deploy latest updates to production
 
 **If PROD doesn’t show your latest changes**, the VPS likely has old code or Docker used cached images. Do this on the VPS from the project root:

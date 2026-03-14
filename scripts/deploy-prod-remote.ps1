@@ -15,7 +15,9 @@ if (-not (Test-Path -LiteralPath $sshKey)) {
 }
 
 Write-Host "[deploy-prod-remote] Connecting to 187.124.22.93 and deploying from $repoPathOnVps ..."
-$remoteCmd = "cd $repoPathOnVps && git pull && docker compose --env-file deploy/.env.production -f docker-compose.prod.yml up -d --build && docker compose --env-file deploy/.env.production -f docker-compose.prod.yml ps"
+# IMAGE_TAG on remote = date and time of deploy (e.g. 2025-03-14-1530); $(date ...) is evaluated on the VPS
+# Escape [ ] for PowerShell; $IMAGE_TAG is sent to remote so bash expands it there
+$remoteCmd = "cd $repoPathOnVps && export IMAGE_TAG=`$(date +%Y-%m-%d-%H%M) && export GIT_LAST_UPDATE=`$(date -u +'%Y-%m-%d %H:%M:%S UTC') && echo `"`[deploy`] Image tag: `$IMAGE_TAG`" && git pull && docker compose --env-file deploy/.env.production -f docker-compose.prod.yml up -d --build && docker compose --env-file deploy/.env.production -f docker-compose.prod.yml ps"
 ssh -F $emptyConfig -i $sshKey -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new root@187.124.22.93 $remoteCmd
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""

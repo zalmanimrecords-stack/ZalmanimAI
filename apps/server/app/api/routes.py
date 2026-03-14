@@ -835,6 +835,10 @@ def init_db() -> None:
             .filter(func.lower(User.email) == "simon@zalmanim.com")
             .first()
         )
+        seed_artist_pw = os.environ.get("SEED_ARTIST_PASSWORD", "").strip()
+        seed_admin_pw = os.environ.get("SEED_ADMIN_PASSWORD", "").strip()
+        seed_simon_pw = os.environ.get("SEED_SIMON_PASSWORD", "").strip()
+
         artist = db.query(Artist).filter(Artist.email == "artist@label.local").first()
         if not artist:
             artist = Artist(
@@ -842,17 +846,20 @@ def init_db() -> None:
                 email="artist@label.local",
                 notes="Seed artist",
                 is_active=True,
-                password_hash=hash_password("artist123"),
+                password_hash=hash_password(seed_artist_pw) if seed_artist_pw else None,
             )
             db.add(artist)
             db.flush()
-        elif not artist.password_hash:
-            artist.password_hash = hash_password("artist123")
+            if not seed_artist_pw:
+                logging.getLogger(__name__).warning("Seed artist created without password; set SEED_ARTIST_PASSWORD in .env or set password in UI")
+        elif not artist.password_hash and seed_artist_pw:
+            artist.password_hash = hash_password(seed_artist_pw)
         if not admin:
             if legacy_admin:
                 legacy_admin.email = "admin"
                 legacy_admin.full_name = legacy_admin.full_name or "System Admin"
-                legacy_admin.password_hash = hash_password("Zalmanim102030")
+                if seed_admin_pw:
+                    legacy_admin.password_hash = hash_password(seed_admin_pw)
                 legacy_admin.role = "admin"
                 legacy_admin.artist_id = None
                 legacy_admin.is_active = True
@@ -861,15 +868,18 @@ def init_db() -> None:
                     User(
                         email="admin",
                         full_name="System Admin",
-                        password_hash=hash_password("Zalmanim102030"),
+                        password_hash=hash_password(seed_admin_pw) if seed_admin_pw else None,
                         role="admin",
                         artist_id=None,
                         is_active=True,
                     )
                 )
+                if not seed_admin_pw:
+                    logging.getLogger(__name__).warning("Seed admin created without password; set SEED_ADMIN_PASSWORD in .env or set password in UI")
         else:
             admin.full_name = admin.full_name or "System Admin"
-            admin.password_hash = hash_password("Zalmanim102030")
+            if seed_admin_pw:
+                admin.password_hash = hash_password(seed_admin_pw)
             admin.role = "admin"
             admin.artist_id = None
             admin.is_active = True
@@ -878,16 +888,19 @@ def init_db() -> None:
                 User(
                     email="simon@zalmanim.com",
                     full_name="Simon",
-                    password_hash=hash_password("Sr102030!"),
+                    password_hash=hash_password(seed_simon_pw) if seed_simon_pw else None,
                     role="admin",
                     artist_id=None,
                     is_active=True,
                 )
             )
+            if not seed_simon_pw:
+                logging.getLogger(__name__).warning("Seed simon@zalmanim.com created without password; set SEED_SIMON_PASSWORD in .env or set password in UI")
         else:
             simon_admin.email = "simon@zalmanim.com"
             simon_admin.full_name = "Simon"
-            simon_admin.password_hash = hash_password("Sr102030!")
+            if seed_simon_pw:
+                simon_admin.password_hash = hash_password(seed_simon_pw)
             simon_admin.role = "admin"
             simon_admin.artist_id = None
             simon_admin.is_active = True
@@ -897,12 +910,14 @@ def init_db() -> None:
                 User(
                     email="artist@label.local",
                     full_name="Demo Artist",
-                    password_hash=hash_password("artist123"),
+                    password_hash=hash_password(seed_artist_pw) if seed_artist_pw else None,
                     role="artist",
                     artist_id=artist.id,
                     is_active=True,
                 )
             )
+            if not seed_artist_pw:
+                logging.getLogger(__name__).warning("Seed artist user created without password; set SEED_ARTIST_PASSWORD in .env or set password in UI")
         db.commit()
 
 

@@ -42,14 +42,13 @@ git push -u origin main
 
 ## Quick Start
 
+Create a `.env` in the project root with required secrets (see `secrets-backup.txt` for local dev values; that file is gitignored). Then:
+
 ```bash
 docker compose up --build
 ```
 
-Seed users (auto-created first run):
-
-- Admin: `admin@label.local` / `admin123`
-- Artist: `artist@label.local` / `artist123`
+Seed users are auto-created on first run; set `SEED_ARTIST_PASSWORD`, `SEED_ADMIN_PASSWORD`, `SEED_SIMON_PASSWORD` in `.env` to assign passwords, or set them in the UI after first login.
 
 Flutter run:
 

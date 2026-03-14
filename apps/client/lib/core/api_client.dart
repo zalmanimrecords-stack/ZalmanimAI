@@ -26,6 +26,22 @@ class ApiClient {
     }
   }
 
+  /// Fetches /health and returns the response body, or null on failure.
+  /// Used to display last_git_update (last system update from Git) on the admin dashboard.
+  Future<Map<String, dynamic>?> fetchHealth() async {
+    try {
+      final r = await http.get(Uri.parse(healthUrl)).timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => throw Exception('timeout'),
+      );
+      if (r.statusCode != 200) return null;
+      final data = jsonDecode(r.body);
+      return data is Map<String, dynamic> ? data : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<AuthSession> login({required String email, required String password}) async {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/login'),

@@ -22,6 +22,7 @@ services:
       - redis_data:/data
 
   api:
+    image: zalmanimai-api:${IMAGE_TAG:-latest}
     build:
       context: ./apps/server
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
@@ -32,7 +33,8 @@ services:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-label}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-labelops}
       REDIS_URL: redis://redis:6379/0
       UPLOAD_DIR: /app/storage/uploads
-      DEMO_SUBMISSION_TOKEN: ${DEMO_SUBMISSION_TOKEN:-TOKEN}
+      DEMO_SUBMISSION_TOKEN: ${DEMO_SUBMISSION_TOKEN:-}
+      GIT_LAST_UPDATE: ${GIT_LAST_UPDATE:-}
     volumes:
       - server_storage:/app/storage
     depends_on:
@@ -44,6 +46,7 @@ services:
       - "8000"
 
   worker:
+    image: zalmanimai-worker:${IMAGE_TAG:-latest}
     build:
       context: ./apps/server
     command: ["python", "worker.py"]
@@ -63,6 +66,7 @@ services:
         condition: service_started
 
   web:
+    image: zalmanimai-web:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: ./deploy/web/Dockerfile
@@ -71,7 +75,7 @@ services:
         ARTIST_API_BASE_URL: ${API_BASE_URL:-https://lmapi.zalmanim.com/}
         ARTIST_LABEL_NAME: ${ARTIST_LABEL_NAME:-Zalmanim Artists}
         ARTIST_PRIMARY_COLOR: ${ARTIST_PRIMARY_COLOR:-B66A2C}
-        DEMO_SUBMISSION_TOKEN: ${DEMO_SUBMISSION_TOKEN:-TOKEN}
+        DEMO_SUBMISSION_TOKEN: ${DEMO_SUBMISSION_TOKEN:-}
     restart: unless-stopped
     depends_on:
       api:

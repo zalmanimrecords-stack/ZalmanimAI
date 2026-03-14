@@ -47,10 +47,22 @@ class _DbTabState extends State<DbTab> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = _formatConnectionError(e, delegate.apiClient.healthUrl);
         _loadingTables = false;
       });
     }
+  }
+
+  /// If [e] looks like a connection/fetch failure, appends a hint so the message is copyable and actionable.
+  static String _formatConnectionError(Object e, String healthUrl) {
+    final msg = e.toString();
+    if (msg.contains('Failed to fetch') ||
+        msg.contains('ClientException') ||
+        msg.contains('Connection refused') ||
+        msg.contains('SocketException')) {
+      return '$msg\n\nEnsure the API is running (e.g. run the restart script or: docker compose up -d). Check: $healthUrl';
+    }
+    return msg;
   }
 
   Future<void> _loadTableContent(String tableName, {int offset = 0}) async {
@@ -75,7 +87,7 @@ class _DbTabState extends State<DbTab> {
       if (!mounted) return;
       setState(() {
         _loadingContent = false;
-        _error = e.toString();
+        _error = _formatConnectionError(e, delegate.apiClient.healthUrl);
       });
     }
   }

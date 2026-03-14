@@ -5,10 +5,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_name: str = "LabelOps API"
-    jwt_secret: str = "change-me"
+    jwt_secret: str = ""  # Set via env (e.g. JWT_SECRET); see secrets-backup.txt for local dev
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 60 * 24
-    database_url: str = "postgresql+psycopg2://label:label@postgres:5432/labelops"  # env: DATABASE_URL
+    database_url: str = ""  # Set via env DATABASE_URL; see secrets-backup.txt for local dev
     upload_dir: str = "storage/uploads"
 
     oauth_redirect_base: str = "http://localhost:8000/api/admin/social/callback"
@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     smtp_from_email: str = ""  # Default "From" address; fallback to smtp_user if empty
     emails_per_hour: int = 30  # Max emails per hour; 0 = no limit (not recommended)
     redis_url: str = "redis://redis:6379/0"  # Used for rate-limit counter
-    demo_submission_token: str = "TOKEN"  # Shared secret for internal demo form ingestion
+    demo_submission_token: str = ""  # Set via env DEMO_SUBMISSION_TOKEN; optional shared secret for demo form
     # Base URL for password reset links in email (e.g. https://app.example.com or Flutter web URL)
     password_reset_base_url: str = ""
     artist_portal_base_url: str = "https://artists.zalmanim.com"

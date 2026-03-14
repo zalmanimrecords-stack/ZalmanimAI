@@ -1,4 +1,6 @@
-﻿from fastapi import FastAPI
+import os
+
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
@@ -49,4 +51,8 @@ def root() -> str:
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok"}
+    out: dict = {"status": "ok"}
+    last = os.environ.get("GIT_LAST_UPDATE")
+    if last:
+        out["last_git_update"] = last
+    return out
