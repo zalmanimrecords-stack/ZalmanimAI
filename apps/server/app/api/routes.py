@@ -82,6 +82,7 @@ from app.schemas.schemas import (
     ArtistPortalInviteResponse,
     LoginActivityOut,
     ArtistSetPasswordRequest,
+    AdminDashboardStatsOut,
     LoginStatsOut,
     LoginRequest,
     PendingReleaseFormInfo,
@@ -1389,6 +1390,18 @@ def get_login_stats(
         artists_logged_in_last_30_days=len(artist_keys),
         recent_logins=recent_logins[:10],
     )
+
+
+@router.get("/admin/dashboard/stats", response_model=AdminDashboardStatsOut)
+def get_admin_dashboard_stats(
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> AdminDashboardStatsOut:
+    """Return counts for the admin dashboard header: active artists and total releases."""
+    require_admin(user)
+    artists_count = db.query(Artist).filter(Artist.is_active.is_(True)).count()
+    releases_count = db.query(Release).count()
+    return AdminDashboardStatsOut(artists_count=artists_count, releases_count=releases_count)
 
 
 @router.post("/admin/users", response_model=UserOut)

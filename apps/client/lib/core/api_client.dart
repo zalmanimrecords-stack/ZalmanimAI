@@ -152,6 +152,18 @@ class ApiClient {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  /// Dashboard header counts: artists_count (active), releases_count.
+  Future<Map<String, dynamic>> fetchAdminDashboardStats(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/admin/dashboard/stats'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Dashboard stats failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> createUser({
     required String token,
     required Map<String, dynamic> body,
@@ -394,7 +406,7 @@ class ApiClient {
   }
 
   /// Sending the invite can take 20–30s (server sends email). Use a long timeout to avoid "Failed to fetch".
-  static const Duration _portalInviteTimeout = Duration(seconds: 60);
+  static const Duration _portalInviteTimeout = Duration(seconds: 90);
 
   /// Returns true if the server can send email (SMTP or Gmail configured). Use before inviting artists.
   Future<bool> isEmailConfigured(String token) async {

@@ -297,6 +297,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   String? _lastGitUpdate;
   /// Build version from /health (increments on each PROD deploy).
   String? _buildNumber;
+  /// Dashboard header: active artists count and total releases count.
+  int? _artistsCount;
+  int? _releasesCount;
 
   @override
   ApiClient get apiClient => widget.apiClient;
@@ -430,6 +433,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     _releasesSearchController.addListener(_onReleasesSearchChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadTabIfNeeded());
     _fetchLastGitUpdate();
+    _fetchDashboardStats();
   }
 
   Future<void> _fetchLastGitUpdate() async {
@@ -441,6 +445,23 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       _lastGitUpdate = last is String ? last : null;
       _buildNumber = build != null ? build.toString() : null;
     });
+  }
+
+  Future<void> _fetchDashboardStats() async {
+    try {
+      final stats = await widget.apiClient.fetchAdminDashboardStats(widget.token);
+      if (!mounted) return;
+      setState(() {
+        _artistsCount = stats['artists_count'] is int ? stats['artists_count'] as int : null;
+        _releasesCount = stats['releases_count'] is int ? stats['releases_count'] as int : null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _artistsCount = null;
+        _releasesCount = null;
+      });
+    }
   }
 
   void _onArtistSearchChanged() {
@@ -852,6 +873,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       _loadReleases(reset: true, withOverlay: false),
       _loadCampaigns(reset: true, withOverlay: false),
       _loadAudiences(reset: true, withOverlay: false),
+      _fetchDashboardStats(),
     ]);
     if (!mounted) return;
     setState(() => loading = false);
@@ -1281,6 +1303,20 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           fit: BoxFit.contain,
         ),
         actions: [
+          if (_artistsCount != null || _releasesCount != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: Tooltip(
+                message: 'Active artists and total releases',
+                child: SelectableText(
+                  '${_artistsCount ?? '—'} artists · ${_releasesCount ?? '—'} releases',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
           if (_buildNumber != null || _lastGitUpdate != null)
             Padding(
               padding: const EdgeInsets.only(left: 8),

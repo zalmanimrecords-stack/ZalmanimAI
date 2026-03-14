@@ -296,6 +296,12 @@ class LoginStatsOut(BaseModel):
     recent_logins: list[LoginActivityOut] = []
 
 
+class AdminDashboardStatsOut(BaseModel):
+    """Counts for the admin dashboard header: active artists and total releases."""
+    artists_count: int
+    releases_count: int
+
+
 class ReleaseOut(BaseModel):
     id: int
     artist_id: int | None  # Primary/first artist (backward compat)

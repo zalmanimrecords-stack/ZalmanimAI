@@ -5,7 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/api_client.dart';
 import '../../core/zalmanim_icons.dart';
 
-/// Mail settings UI: SMTP, demo rejection template, test, Google Mail.
+/// Mail settings UI: SMTP, test, Google Mail. (Demo rejection template is in Email Templates.)
 /// Used in System Settings page and in Settings > Mail settings tab.
 class MailSettingsContent extends StatefulWidget {
   const MailSettingsContent({
@@ -42,8 +42,6 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
   final _smtpPasswordController = TextEditingController();
   final _emailsPerHourController = TextEditingController();
   final _testEmailController = TextEditingController();
-  final _demoRejectionSubjectController = TextEditingController();
-  final _demoRejectionBodyController = TextEditingController();
   bool _smtpUseTls = true;
   bool _smtpUseSsl = false;
 
@@ -56,8 +54,6 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
     _smtpPasswordController.dispose();
     _emailsPerHourController.dispose();
     _testEmailController.dispose();
-    _demoRejectionSubjectController.dispose();
-    _demoRejectionBodyController.dispose();
     super.dispose();
   }
 
@@ -107,8 +103,6 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
     _emailsPerHourController.text = (s['emails_per_hour'] as int?)?.toString() ?? '30';
     _smtpUseTls = s['smtp_use_tls'] as bool? ?? true;
     _smtpUseSsl = s['smtp_use_ssl'] as bool? ?? false;
-    _demoRejectionSubjectController.text = s['demo_rejection_subject'] as String? ?? '';
-    _demoRejectionBodyController.text = s['demo_rejection_body'] as String? ?? '';
   }
 
   int? get _smtpPort => int.tryParse(_smtpPortController.text.trim());
@@ -131,8 +125,6 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
         smtpUser: _smtpUserController.text.trim(),
         smtpPassword: _smtpPasswordController.text.trim().isEmpty ? null : _smtpPasswordController.text.trim(),
         emailsPerHour: _emailsPerHour,
-        demoRejectionSubject: _demoRejectionSubjectController.text.trim(),
-        demoRejectionBody: _demoRejectionBodyController.text.trim(),
       );
       if (mounted) {
         setState(() {
@@ -413,34 +405,6 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
           textInputAction: TextInputAction.done,
         ),
         const SizedBox(height: 24),
-        _sectionTitle('Demo rejection email'),
-        const Text(
-          'When you mark a demo as rejected, an email is sent to the artist. Edit the subject and body below. '
-          'Placeholders: {artist_name}, {artist_portal_url}, {zalmanim_website}.',
-          style: TextStyle(fontSize: 12, color: Colors.grey),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _demoRejectionSubjectController,
-          decoration: const InputDecoration(
-            labelText: 'Rejection email subject',
-            hintText: 'Thank you for your demo submission',
-            border: OutlineInputBorder(),
-          ),
-          textInputAction: TextInputAction.next,
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _demoRejectionBodyController,
-          decoration: const InputDecoration(
-            labelText: 'Rejection email body',
-            hintText: 'Hi {artist_name}, ...',
-            alignLabelWithHint: true,
-            border: OutlineInputBorder(),
-          ),
-          maxLines: 8,
-          textInputAction: TextInputAction.newline,
-        ),
         if (_mailSaveError != null) ...[
           const SizedBox(height: 8),
           SelectableText(_mailSaveError!, style: const TextStyle(color: Colors.red)),

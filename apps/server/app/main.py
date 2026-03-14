@@ -1,14 +1,51 @@
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.audience_routes import router as audience_router
 from app.api.routes import router
 from app.core.config import settings
+from app.services.system_log import append_system_log
 
 app = FastAPI(title=settings.app_name)
+
+
+def _log_category(path: str) -> str:
+    """Use 'artist_portal' for public/artist endpoints, else 'api' (LB)."""
+    if "/api/public/" in path or "/public/" in path:
+        return "artist_portal"
+    return "api"
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    """Log every HTTP error (4xx/5xx) to system log so Settings > Logs shows LB and artist portal errors."""
+    path = request.url.path or ""
+    category = _log_category(path)
+    status_code = exc.status_code
+    detail = getattr(exc, "detail", None)
+    if isinstance(detail, dict):
+        detail_str = str(detail)[:400]
+    else:
+        detail_str = str(detail)[:400] if detail else ""
+    message = f"{request.method} {path} → {status_code}"
+    details = detail_str if detail_str else None
+    append_system_log("error", category, message, details=details)
+    return JSONResponse(status_code=status_code, content={"detail": exc.detail})
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Log unhandled exceptions to system log so Settings > Logs shows all LB/artist portal errors."""
+    path = request.url.path or ""
+    category = _log_category(path)
+    message = f"{request.method} {path} → 500"
+    details = f"{type(exc).__name__}: {str(exc)}"[:500]
+    append_system_log("error", category, message, details=details)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 # Allow Flutter web (e.g. localhost:port) to call the API from the browser.
 # Cannot use allow_origins=["*"] with allow_credentials=True (browser rejects it).

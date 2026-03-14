@@ -18,8 +18,15 @@ class _LogsTabState extends State<LogsTab> {
   List<dynamic> _logs = [];
   bool _loading = true;
   String? _error;
+  /// When true, show only entries with level == 'error' (LB and artist portal errors).
+  bool _errorsOnly = false;
 
   AdminDashboardDelegate get delegate => widget.delegate;
+
+  List<dynamic> get _filteredLogs {
+    if (!_errorsOnly) return _logs;
+    return _logs.where((e) => (e as Map<String, dynamic>)['level'] == 'error').toList();
+  }
 
   @override
   void initState() {
@@ -106,7 +113,29 @@ class _LogsTabState extends State<LogsTab> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Mail sends and errors will appear here.',
+              'Errors from the API (LB), artist portal, and mail will appear here.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+    final displayed = _filteredLogs;
+    if (displayed.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 48, color: Colors.grey.shade400),
+            const SizedBox(height: 16),
+            Text(
+              'No error entries.',
+              style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Turn off "Errors only" to see all logs.',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
             ),
           ],
@@ -115,85 +144,100 @@ class _LogsTabState extends State<LogsTab> {
     }
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-        itemCount: _logs.length,
-        itemBuilder: (context, i) {
-          final log = _logs[i] as Map<String, dynamic>;
-          final level = (log['level'] ?? 'info').toString();
-          final category = (log['category'] ?? '').toString();
-          final message = (log['message'] ?? '').toString();
-          final details = log['details']?.toString();
-          final createdAt = _formatTime(log['created_at']);
-          final fullText = [
-            '[$level] [$category] $createdAt',
-            message,
-            if (details != null && details.isNotEmpty) details,
-          ].join('\n');
-          return Card(
-            margin: const EdgeInsets.only(bottom: 8),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: _levelColor(level).withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          level.toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: _levelColor(level),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        category,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                      const Spacer(),
-                      Text(
-                        createdAt,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey.shade500,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(ZalmanimIcons.copy, size: 18),
-                        tooltip: 'Copy',
-                        onPressed: () => Clipboard.setData(ClipboardData(text: fullText)),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  SelectableText(
-                    message,
-                    style: const TextStyle(fontSize: 14),
-                  ),
-                  if (details != null && details.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    SelectableText(
-                      details,
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                    ),
-                  ],
-                ],
-              ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: FilterChip(
+              label: const Text('Errors only'),
+              selected: _errorsOnly,
+              onSelected: (v) => setState(() => _errorsOnly = v),
             ),
-          );
-        },
+          ),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              itemCount: displayed.length,
+              itemBuilder: (context, i) {
+                final log = displayed[i] as Map<String, dynamic>;
+                final level = (log['level'] ?? 'info').toString();
+                final category = (log['category'] ?? '').toString();
+                final message = (log['message'] ?? '').toString();
+                final details = log['details']?.toString();
+                final createdAt = _formatTime(log['created_at']);
+                final fullText = [
+                  '[$level] [$category] $createdAt',
+                  message,
+                  if (details != null && details.isNotEmpty) details,
+                ].join('\n');
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: _levelColor(level).withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                level.toUpperCase(),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: _levelColor(level),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              category,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              createdAt,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade500,
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(ZalmanimIcons.copy, size: 18),
+                              tooltip: 'Copy',
+                              onPressed: () => Clipboard.setData(ClipboardData(text: fullText)),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        SelectableText(
+                          message,
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                        if (details != null && details.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          SelectableText(
+                            details,
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
