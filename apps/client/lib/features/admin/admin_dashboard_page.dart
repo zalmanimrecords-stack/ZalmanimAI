@@ -295,6 +295,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   /// Last system update from Git (from /health), shown in the app bar.
   String? _lastGitUpdate;
+  /// Build version from /health (increments on each PROD deploy).
+  String? _buildNumber;
 
   @override
   ApiClient get apiClient => widget.apiClient;
@@ -434,7 +436,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     final health = await widget.apiClient.fetchHealth();
     if (!mounted) return;
     final last = health?['last_git_update'];
-    setState(() => _lastGitUpdate = last is String ? last : null);
+    final build = health?['build_number'];
+    setState(() {
+      _lastGitUpdate = last is String ? last : null;
+      _buildNumber = build != null ? build.toString() : null;
+    });
   }
 
   void _onArtistSearchChanged() {
@@ -1275,30 +1281,50 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           fit: BoxFit.contain,
         ),
         actions: [
-          if (_lastGitUpdate != null)
+          if (_buildNumber != null || _lastGitUpdate != null)
             Padding(
               padding: const EdgeInsets.only(left: 8),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Tooltip(
-                    message: 'Last system update from Git: $_lastGitUpdate',
-                    child: SelectableText(
-                      _lastGitUpdate!,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  if (_buildNumber != null)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Tooltip(
+                        message: 'Build version (increments on each PROD deploy)',
+                        child: SelectableText(
+                          'v$_buildNumber',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                  IconButton(
-                    icon: const Icon(ZalmanimIcons.copy, size: 18),
-                    tooltip: 'Copy last update time',
-                    onPressed: () => Clipboard.setData(ClipboardData(text: _lastGitUpdate!)),
-                    style: IconButton.styleFrom(
-                      minimumSize: const Size(32, 32),
-                      padding: EdgeInsets.zero,
+                  if (_lastGitUpdate != null)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Tooltip(
+                          message: 'Last system update from Git: $_lastGitUpdate',
+                          child: SelectableText(
+                            _lastGitUpdate!,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(ZalmanimIcons.copy, size: 18),
+                          tooltip: 'Copy last update time',
+                          onPressed: () => Clipboard.setData(ClipboardData(text: _lastGitUpdate!)),
+                          style: IconButton.styleFrom(
+                            minimumSize: const Size(32, 32),
+                            padding: EdgeInsets.zero,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
                 ],
               ),
             ),

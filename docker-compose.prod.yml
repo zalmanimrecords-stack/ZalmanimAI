@@ -35,6 +35,7 @@ services:
       UPLOAD_DIR: /app/storage/uploads
       DEMO_SUBMISSION_TOKEN: ${DEMO_SUBMISSION_TOKEN:-}
       GIT_LAST_UPDATE: ${GIT_LAST_UPDATE:-}
+      BUILD_NUMBER: ${BUILD_NUMBER:-}
     volumes:
       - server_storage:/app/storage
     depends_on:

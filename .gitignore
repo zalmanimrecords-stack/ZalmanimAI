@@ -4,6 +4,7 @@ __pycache__/
 *.pyd
 .env
 deploy/.env.production
+deploy/build_number
 secrets-backup.txt
 .DS_Store
 

@@ -55,4 +55,7 @@ def health() -> dict:
     last = os.environ.get("GIT_LAST_UPDATE")
     if last:
         out["last_git_update"] = last
+    build_number = os.environ.get("BUILD_NUMBER")
+    if build_number:
+        out["build_number"] = build_number
     return out

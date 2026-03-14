@@ -7,7 +7,16 @@ cd "$(dirname "$0")/.."
 export IMAGE_TAG=$(date +%Y-%m-%d-%H%M)
 # Last update from Git (deploy time) for /health and admin dashboard display
 export GIT_LAST_UPDATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-echo "[deploy-prod] Image tag: $IMAGE_TAG"
+# Increment build version (stored on server only; deploy/build_number is gitignored)
+VERSION_FILE=deploy/build_number
+if [ -f "$VERSION_FILE" ]; then
+  BUILD_NUMBER=$(($(cat "$VERSION_FILE") + 1))
+else
+  BUILD_NUMBER=1
+fi
+echo "$BUILD_NUMBER" > "$VERSION_FILE"
+export BUILD_NUMBER
+echo "[deploy-prod] Image tag: $IMAGE_TAG, build version: $BUILD_NUMBER"
 echo "[deploy-prod] Pulling latest code..."
 git pull
 echo "[deploy-prod] Building and starting containers..."

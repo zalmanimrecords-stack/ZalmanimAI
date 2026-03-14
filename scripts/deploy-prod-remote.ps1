@@ -17,7 +17,8 @@ if (-not (Test-Path -LiteralPath $sshKey)) {
 Write-Host "[deploy-prod-remote] Connecting to 187.124.22.93 and deploying from $repoPathOnVps ..."
 # IMAGE_TAG on remote = date and time of deploy (e.g. 2025-03-14-1530); $(date ...) is evaluated on the VPS
 # Escape [ ] for PowerShell; $IMAGE_TAG is sent to remote so bash expands it there
-$remoteCmd = "cd $repoPathOnVps && export IMAGE_TAG=`$(date +%Y-%m-%d-%H%M) && export GIT_LAST_UPDATE=`$(date -u +'%Y-%m-%d %H:%M:%S UTC') && echo `"`[deploy`] Image tag: `$IMAGE_TAG`" && git pull && docker compose --env-file deploy/.env.production -f docker-compose.prod.yml up -d --build && docker compose --env-file deploy/.env.production -f docker-compose.prod.yml ps"
+# On VPS: bump build version (deploy/build_number is gitignored), then pull and build
+$remoteCmd = "cd $repoPathOnVps && export IMAGE_TAG=`$(date +%Y-%m-%d-%H%M) && export GIT_LAST_UPDATE=`$(date -u +'%Y-%m-%d %H:%M:%S UTC') && ( [ -f deploy/build_number ] && export BUILD_NUMBER=`$((`$(cat deploy/build_number)+1)) || export BUILD_NUMBER=1 ) && echo `$BUILD_NUMBER > deploy/build_number && echo '[deploy] Image tag:' `$IMAGE_TAG 'version:' `$BUILD_NUMBER && git pull && docker compose --env-file deploy/.env.production -f docker-compose.prod.yml up -d --build && docker compose --env-file deploy/.env.production -f docker-compose.prod.yml ps"
 # Use key explicitly (quoted for Windows paths). If key has a passphrase, ssh will prompt once, or run ssh-add first for no prompt.
 & ssh -F $emptyConfig -i "$sshKey" -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new root@187.124.22.93 $remoteCmd
 if ($LASTEXITCODE -ne 0) {
