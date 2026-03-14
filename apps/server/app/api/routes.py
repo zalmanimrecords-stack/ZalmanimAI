@@ -1064,7 +1064,8 @@ def forgot_password(
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=_PASSWORD_RESET_EXPIRY_MINUTES)
     db.add(PasswordResetToken(user_id=user.id, token_hash=token_hash, expires_at=expires_at))
     db.commit()
-    base_url = (settings.password_reset_base_url or "").strip() or str(request.base_url).rstrip("/")
+    # Use configured client URL; never use request.base_url (API) so the link opens the login app.
+    base_url = (settings.password_reset_base_url or "").strip() or "https://lm.zalmanim.com"
     reset_link = f"{base_url.rstrip('/')}?reset_token={raw_token}"
     subject = "Password reset"
     body_text = f"Use this link to reset your password (valid for {_PASSWORD_RESET_EXPIRY_MINUTES} minutes):\n\n{reset_link}\n\nIf you did not request this, ignore this email."
@@ -1158,6 +1159,106 @@ def create_demo_submission(
         )
         if not ok:
             logging.getLogger(__name__).warning("Failed to send demo receipt email to %s: %s", item.email, message)
+    return _serialize_demo_submission(item)
+
+
+ALLOWED_DEMO_FILE_EXT = (".mp3",)
+
+
+def _form_bool(value: str | None) -> bool:
+    return (value or "").strip().lower() in ("true", "1", "yes", "on")
+
+
+@router.post("/public/demo-submissions/with-file", response_model=DemoSubmissionOut)
+def create_demo_submission_with_file(
+    request: Request,
+    artist_name: str = Form(...),
+    email: str = Form(...),
+    consent_to_emails: str = Form("false"),
+    contact_name: str | None = Form(None),
+    phone: str | None = Form(None),
+    genre: str | None = Form(None),
+    city: str | None = Form(None),
+    message: str | None = Form(None),
+    links_json: str = Form("[]"),
+    source: str = Form("artists_portal_landing"),
+    source_site_url: str | None = Form(None),
+    file: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
+) -> DemoSubmissionOut:
+    """Public demo submission with optional MP3 file and/or SoundCloud (or other) links. At least one of file or a link is required. Only MP3 files are accepted."""
+    _validate_demo_ingest_token(request)
+    consent = _form_bool(consent_to_emails)
+    source = (source or "wordpress_demo_form").strip() or "wordpress_demo_form"
+    if source == "artists_portal_landing" and not consent:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email consent is required before sending a demo.",
+        )
+    try:
+        links_list = json.loads(links_json or "[]")
+        normalized_links = [str(link).strip() for link in links_list if str(link).strip()]
+    except (json.JSONDecodeError, TypeError):
+        normalized_links = []
+    demo_file_path: str | None = None
+    if file and file.filename:
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in ALLOWED_DEMO_FILE_EXT:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only MP3 files are allowed for demo upload.",
+            )
+        demo_uploads_dir = os.path.join(settings.upload_dir, "demo_uploads")
+        os.makedirs(demo_uploads_dir, exist_ok=True)
+        stored_name = f"{uuid.uuid4().hex}{ext}"
+        path = os.path.join(demo_uploads_dir, stored_name)
+        with open(path, "wb") as out:
+            out.write(file.file.read())
+        demo_file_path = path
+    if not normalized_links and not demo_file_path:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please provide either a SoundCloud (or other) track link or upload an MP3 file.",
+        )
+    fields: dict = {}
+    if demo_file_path:
+        fields["demo_file_path"] = demo_file_path
+    fields["consent_copy"] = "I agree to join the Zalmanim mailing list and receive marketing and operational emails related to my demo submission."
+    default_approval_subj, default_approval_body = _get_demo_approval_subject_and_body(artist_name.strip())
+    item = DemoSubmission(
+        artist_name=artist_name.strip(),
+        email=email.strip().lower(),
+        consent_to_emails=consent,
+        consent_at=datetime.now(timezone.utc) if consent else None,
+        contact_name=(contact_name or "").strip() or None,
+        phone=(phone or "").strip() or None,
+        genre=(genre or "").strip() or None,
+        city=(city or "").strip() or None,
+        message=(message or "").strip() or None,
+        links_json=json.dumps(normalized_links),
+        fields_json=json.dumps(fields),
+        source=source,
+        source_site_url=(source_site_url or "").strip() or None,
+        status="demo",
+        approval_subject=default_approval_subj,
+        approval_body=default_approval_body,
+    )
+    db.add(item)
+    db.flush()
+    _upsert_demo_mailing_subscriber(db, item)
+    db.commit()
+    db.refresh(item)
+    if is_email_configured():
+        ok, message_out = send_email_service(
+            to_email=item.email,
+            subject=_build_demo_receipt_subject(item.artist_name),
+            body_text=_build_demo_receipt_body(item),
+            body_html=_build_demo_receipt_html(item),
+        )
+        if not ok:
+            logging.getLogger(__name__).warning(
+                "Failed to send demo receipt email to %s: %s", item.email, message_out
+            )
     return _serialize_demo_submission(item)
 
 
@@ -2027,7 +2128,7 @@ def artist_dashboard(
     )
 
     return ArtistDashboard(
-        artist=ArtistOut.model_validate(artist),
+        artist=ArtistOut.from_artist(artist),
         releases=[ReleaseOut.from_release(item) for item in releases],
         tasks=[TaskOut.model_validate(item) for item in tasks],
     )
@@ -2769,9 +2870,11 @@ def run_inactivity_check(
 
 # Database browser (Settings > DB) - admin only
 def _db_row_to_dict(row) -> dict:
-    """Convert a result row to a JSON-serializable dict (dates to isoformat)."""
+    """Convert a result row to a JSON-serializable dict (dates to isoformat).
+    Supports both Row (row._mapping) and RowMapping from result.mappings()."""
+    mapping = getattr(row, "_mapping", row)
     out = {}
-    for k, v in row._mapping.items():
+    for k, v in mapping.items():
         if hasattr(v, "isoformat"):
             out[k] = v.isoformat()
         elif v is None or isinstance(v, (str, int, float, bool)):

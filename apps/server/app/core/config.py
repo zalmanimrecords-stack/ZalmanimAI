@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     emails_per_hour: int = 30  # Max emails per hour; 0 = no limit (not recommended)
     redis_url: str = "redis://redis:6379/0"  # Used for rate-limit counter
     demo_submission_token: str = ""  # Set via env DEMO_SUBMISSION_TOKEN; optional shared secret for demo form
-    # Base URL for password reset links in email (e.g. https://app.example.com or Flutter web URL)
+    # Base URL for password reset links in email (client app, not API). If empty, routes use https://lm.zalmanim.com
     password_reset_base_url: str = ""
     artist_portal_base_url: str = "https://artists.zalmanim.com"
     zalmanim_website_url: str = "https://zalmanim.com"

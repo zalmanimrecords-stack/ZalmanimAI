@@ -384,4 +384,65 @@ class ApiClient {
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
+
+  /// Submit a public demo with optional SoundCloud (or other) link and/or MP3 file.
+  /// At least one of [soundCloudOrTrackLink] or [fileBytes] must be provided.
+  /// [fileBytes] must be an MP3 file (filename should end in .mp3).
+  Future<Map<String, dynamic>> submitPublicDemoWithLinkOrFile({
+    required String artistName,
+    required String email,
+    required bool consentToEmails,
+    String? contactName,
+    String? phone,
+    String? genre,
+    String? city,
+    String? message,
+    String? soundCloudOrTrackLink,
+    List<int>? fileBytes,
+    String fileFilename = 'demo.mp3',
+  }) async {
+    final links = <String>[];
+    if (soundCloudOrTrackLink != null && soundCloudOrTrackLink.trim().isNotEmpty) {
+      links.add(soundCloudOrTrackLink.trim());
+    }
+    if (links.isEmpty && (fileBytes == null || fileBytes.isEmpty)) {
+      throw Exception('Please provide either a SoundCloud track link or an MP3 file.');
+    }
+    if (fileBytes != null && fileBytes.isNotEmpty && !fileFilename.toLowerCase().endsWith('.mp3')) {
+      throw Exception('Only MP3 files are allowed.');
+    }
+
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/public/demo-submissions/with-file'),
+    );
+    request.headers['x-demo-token'] = AppConfig.demoSubmissionToken;
+    request.fields['artist_name'] = artistName.trim();
+    request.fields['email'] = email.trim().toLowerCase();
+    request.fields['consent_to_emails'] = consentToEmails.toString();
+    request.fields['contact_name'] = contactName?.trim() ?? '';
+    request.fields['phone'] = phone?.trim() ?? '';
+    request.fields['genre'] = genre?.trim() ?? '';
+    request.fields['city'] = city?.trim() ?? '';
+    request.fields['message'] = message?.trim() ?? '';
+    request.fields['links_json'] = jsonEncode(links);
+    request.fields['source'] = 'artists_portal_landing';
+    request.fields['source_site_url'] = Uri.base.origin;
+
+    if (fileBytes != null && fileBytes.isNotEmpty) {
+      request.files.add(http.MultipartFile.fromBytes(
+        'file',
+        fileBytes,
+        filename: fileFilename,
+      ));
+    }
+
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+    if (response.statusCode != 200) {
+      final detail = _detailFromErrorBody(response.body);
+      throw Exception('Demo submission failed (${response.statusCode}): $detail');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
 }

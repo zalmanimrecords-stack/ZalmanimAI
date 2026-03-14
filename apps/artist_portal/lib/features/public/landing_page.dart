@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../../core/api_client.dart';
 import '../legal/privacy_policy_page.dart';
@@ -71,12 +73,15 @@ class _LandingPageState extends State<LandingPage> {
   final _phoneController = TextEditingController();
   final _cityController = TextEditingController();
   final _messageController = TextEditingController();
+  final _soundCloudLinkController = TextEditingController();
 
   bool _submitting = false;
   bool _consentToEmails = false;
   String? _feedback;
   bool _success = false;
   String? _selectedGenre;
+  List<int>? _pickedMp3Bytes;
+  String _pickedMp3Name = 'demo.mp3';
 
   @override
   void dispose() {
@@ -86,17 +91,28 @@ class _LandingPageState extends State<LandingPage> {
     _phoneController.dispose();
     _cityController.dispose();
     _messageController.dispose();
+    _soundCloudLinkController.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
+    final soundCloudLink = _soundCloudLinkController.text.trim();
+    final hasLink = soundCloudLink.isNotEmpty;
+    final hasFile = _pickedMp3Bytes != null && _pickedMp3Bytes!.isNotEmpty;
+    if (!hasLink && !hasFile) {
+      setState(() {
+        _feedback = 'Please provide either a SoundCloud (or private track) link or upload an MP3 file.';
+        _success = false;
+      });
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
     setState(() {
       _submitting = true;
       _feedback = null;
     });
     try {
-      await widget.apiClient.submitPublicDemo(
+      await widget.apiClient.submitPublicDemoWithLinkOrFile(
         artistName: _artistNameController.text,
         email: _emailController.text,
         consentToEmails: _consentToEmails,
@@ -105,10 +121,9 @@ class _LandingPageState extends State<LandingPage> {
         genre: _selectedGenre,
         city: _cityController.text,
         message: _messageController.text,
-        fields: {
-          'consent_copy':
-              'I agree to join the Zalmanim mailing list and receive marketing and operational emails related to my demo submission.',
-        },
+        soundCloudOrTrackLink: hasLink ? soundCloudLink : null,
+        fileBytes: _pickedMp3Bytes,
+        fileFilename: _pickedMp3Name,
       );
       if (!mounted) return;
       setState(() {
@@ -117,6 +132,8 @@ class _LandingPageState extends State<LandingPage> {
         _submitting = false;
         _consentToEmails = false;
         _selectedGenre = null;
+        _pickedMp3Bytes = null;
+        _pickedMp3Name = 'demo.mp3';
       });
       _formKey.currentState!.reset();
       _artistNameController.clear();
@@ -125,6 +142,7 @@ class _LandingPageState extends State<LandingPage> {
       _phoneController.clear();
       _cityController.clear();
       _messageController.clear();
+      _soundCloudLinkController.clear();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -133,6 +151,30 @@ class _LandingPageState extends State<LandingPage> {
         _submitting = false;
       });
     }
+  }
+
+  Future<void> _pickMp3() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.audio,
+      withData: true,
+      allowMultiple: false,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final f = result.files.single;
+    if (f.bytes == null || f.bytes!.isEmpty) {
+      setState(() => _feedback = 'Could not read the file.');
+      return;
+    }
+    final name = f.name.toLowerCase();
+    if (!name.endsWith('.mp3')) {
+      setState(() => _feedback = 'Only MP3 files are allowed.');
+      return;
+    }
+    setState(() {
+      _pickedMp3Bytes = f.bytes;
+      _pickedMp3Name = f.name;
+      _feedback = null;
+    });
   }
 
   @override
@@ -285,7 +327,22 @@ class _LandingPageState extends State<LandingPage> {
                                         color: _success ? const Color(0xFFE7F6EA) : const Color(0xFFFBE9E8),
                                         borderRadius: BorderRadius.circular(14),
                                       ),
-                                      child: Text(_feedback!),
+                                      child: Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(
+                                            child: SelectableText(_feedback!),
+                                          ),
+                                          if (!_success)
+                                            IconButton(
+                                              icon: const Icon(Icons.copy, size: 20),
+                                              onPressed: () => Clipboard.setData(
+                                                ClipboardData(text: _feedback!),
+                                              ),
+                                              tooltip: 'Copy error',
+                                            ),
+                                        ],
+                                      ),
                                     ),
                                   ],
                                   const SizedBox(height: 22),
@@ -391,6 +448,48 @@ class _LandingPageState extends State<LandingPage> {
                                     'Message',
                                     width: 576,
                                     maxLines: 5,
+                                  ),
+                                  const SizedBox(height: 18),
+                                  Text(
+                                    'Demo track (provide one or both)',
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color(0xFF231A14),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _field(
+                                    _soundCloudLinkController,
+                                    'SoundCloud or private track link',
+                                    width: 576,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    children: [
+                                      OutlinedButton.icon(
+                                        onPressed: _submitting ? null : _pickMp3,
+                                        icon: const Icon(Icons.upload_file, size: 20),
+                                        label: Text(_pickedMp3Bytes != null
+                                            ? 'MP3: $_pickedMp3Name'
+                                            : 'Upload MP3 only'),
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: const Color(0xFF1E1A17),
+                                          side: const BorderSide(color: Color(0xFFD9CCBF)),
+                                        ),
+                                      ),
+                                      if (_pickedMp3Bytes != null) ...[
+                                        const SizedBox(width: 12),
+                                        TextButton(
+                                          onPressed: _submitting
+                                              ? null
+                                              : () => setState(() {
+                                                    _pickedMp3Bytes = null;
+                                                    _pickedMp3Name = 'demo.mp3';
+                                                  }),
+                                          child: const Text('Remove file'),
+                                        ),
+                                      ],
+                                    ],
                                   ),
                                   const SizedBox(height: 24),
                                   FilledButton(

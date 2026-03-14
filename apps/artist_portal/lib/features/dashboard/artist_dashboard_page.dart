@@ -1,6 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api_client.dart';
 import '../../core/zalmanim_icons.dart';
@@ -384,7 +385,10 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
   }
 
   Future<void> _uploadMedia() async {
-    final result = await FilePicker.platform.pickFiles(withData: true);
+    final result = await FilePicker.platform.pickFiles(
+      withData: true,
+      type: FileType.any,
+    );
     if (result == null || result.files.isEmpty) return;
     final f = result.files.single;
     if (f.bytes == null || f.bytes!.isEmpty) {
@@ -596,9 +600,22 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                                 style: TextStyle(fontWeight: FontWeight.w600),
                               ),
                               const SizedBox(height: 8),
-                              SelectableText(
-                                '${Uri.base.origin}/l/${artistMap['id']}',
-                                style: TextStyle(color: primary, decoration: TextDecoration.underline),
+                              InkWell(
+                                onTap: () {
+                                  final link = '${Uri.base.origin}/l/${artistMap['id']}';
+                                  launchUrl(Uri.parse(link), mode: LaunchMode.platformDefault);
+                                },
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: SelectableText(
+                                        '${Uri.base.origin}/l/${artistMap['id']}',
+                                        style: TextStyle(color: primary, decoration: TextDecoration.underline),
+                                      ),
+                                    ),
+                                    Icon(Icons.open_in_new, size: 18, color: primary),
+                                  ],
+                                ),
                               ),
                               const SizedBox(height: 4),
                               Text(
@@ -609,6 +626,68 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                           ),
                         ),
                       ],
+                      const SizedBox(height: 24),
+                      _sectionTitle(context, 'My media', primary),
+                      _card(
+                        context,
+                        primary,
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Your media folder (up to 50 MB total). Used: ${(mediaUsedBytes / (1024 * 1024)).toStringAsFixed(1)} / ${(mediaQuotaBytes / (1024 * 1024)).toStringAsFixed(0)} MB.',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+                            ),
+                            const SizedBox(height: 12),
+                            FilledButton.icon(
+                              icon: uploadingMedia
+                                  ? SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                    )
+                                  : const Icon(ZalmanimIcons.upload),
+                              label: Text(uploadingMedia ? 'Uploading...' : 'Upload image or file'),
+                              onPressed: uploadingMedia || mediaUsedBytes >= mediaQuotaBytes ? null : _uploadMedia,
+                            ),
+                            if (mediaUsedBytes >= mediaQuotaBytes)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: Text(
+                                  'Quota reached. Delete files to free space.',
+                                  style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (mediaList.isNotEmpty)
+                        ...mediaList.map((m) {
+                          final item = m as Map<String, dynamic>;
+                          final id = item['id'] as int;
+                          final filename = item['filename'] as String? ?? 'file';
+                          final size = item['size_bytes'] as int? ?? 0;
+                          return ListTile(
+                            leading: Icon(ZalmanimIcons.folder, color: primary),
+                            title: Text(filename),
+                            subtitle: Text('${(size / 1024).toStringAsFixed(1)} KB'),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(ZalmanimIcons.download),
+                                  tooltip: 'Download',
+                                  onPressed: () => _downloadMedia(id, filename),
+                                ),
+                                IconButton(
+                                  icon: const Icon(ZalmanimIcons.delete),
+                                  tooltip: 'Delete',
+                                  onPressed: () => _deleteMedia(id),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
                       const SizedBox(height: 16),
                       _card(
                         context,
@@ -742,68 +821,6 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 24),
-                      _sectionTitle(context, 'My media', primary),
-                      _card(
-                        context,
-                        primary,
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Your media folder (up to 50 MB total). Used: ${(mediaUsedBytes / (1024 * 1024)).toStringAsFixed(1)} / ${(mediaQuotaBytes / (1024 * 1024)).toStringAsFixed(0)} MB.',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
-                            ),
-                            const SizedBox(height: 12),
-                            FilledButton.icon(
-                              icon: uploadingMedia
-                                  ? SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                    )
-                                  : const Icon(ZalmanimIcons.upload),
-                              label: Text(uploadingMedia ? 'Uploading...' : 'Upload file'),
-                              onPressed: uploadingMedia || mediaUsedBytes >= mediaQuotaBytes ? null : _uploadMedia,
-                            ),
-                            if (mediaUsedBytes >= mediaQuotaBytes)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 8),
-                                child: Text(
-                                  'Quota reached. Delete files to free space.',
-                                  style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      if (mediaList.isNotEmpty)
-                        ...mediaList.map((m) {
-                          final item = m as Map<String, dynamic>;
-                          final id = item['id'] as int;
-                          final filename = item['filename'] as String? ?? 'file';
-                          final size = item['size_bytes'] as int? ?? 0;
-                          return ListTile(
-                            leading: Icon(ZalmanimIcons.folder, color: primary),
-                            title: Text(filename),
-                            subtitle: Text('${(size / 1024).toStringAsFixed(1)} KB'),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(ZalmanimIcons.download),
-                                  tooltip: 'Download',
-                                  onPressed: () => _downloadMedia(id, filename),
-                                ),
-                                IconButton(
-                                  icon: const Icon(ZalmanimIcons.delete),
-                                  tooltip: 'Delete',
-                                  onPressed: () => _deleteMedia(id),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
                       const SizedBox(height: 24),
                       _sectionTitle(context, 'Tasks', primary),
                       if (tasks.isEmpty)
