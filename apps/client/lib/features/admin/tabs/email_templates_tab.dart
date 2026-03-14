@@ -5,6 +5,7 @@ import '../../../core/zalmanim_icons.dart';
 import '../admin_dashboard_delegate.dart';
 
 /// Settings > Email templates: manage all outgoing email templates in one place.
+/// Each template type is edited in its own sub-tab.
 class EmailTemplatesTab extends StatefulWidget {
   const EmailTemplatesTab({super.key, required this.delegate});
 
@@ -56,10 +57,14 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _rejectionSubjectController.text = (data['demo_rejection_subject'] as String? ?? '').toString();
-        _rejectionBodyController.text = (data['demo_rejection_body'] as String? ?? '').toString();
-        _approvalSubjectController.text = (data['demo_approval_subject'] as String? ?? '').toString();
-        _approvalBodyController.text = (data['demo_approval_body'] as String? ?? '').toString();
+        _rejectionSubjectController.text =
+            (data['demo_rejection_subject'] as String? ?? '').toString();
+        _rejectionBodyController.text =
+            (data['demo_rejection_body'] as String? ?? '').toString();
+        _approvalSubjectController.text =
+            (data['demo_approval_subject'] as String? ?? '').toString();
+        _approvalBodyController.text =
+            (data['demo_approval_body'] as String? ?? '').toString();
       });
     } catch (e) {
       if (!mounted) return;
@@ -86,7 +91,9 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
         _savingRejection = false;
         _rejectionSaveError = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Demo rejection template saved.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Demo rejection template saved.')),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -112,7 +119,9 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
         _savingApproval = false;
         _approvalSaveError = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Demo approval template saved.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Demo approval template saved.')),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -153,7 +162,8 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
                 IconButton(
                   icon: const Icon(Icons.copy),
                   tooltip: 'Copy error',
-                  onPressed: () => Clipboard.setData(ClipboardData(text: _error!)),
+                  onPressed: () =>
+                      Clipboard.setData(ClipboardData(text: _error!)),
                 ),
                 FilledButton(onPressed: _load, child: const Text('Retry')),
               ],
@@ -162,41 +172,159 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
         ),
       );
     }
+    return DefaultTabController(
+      length: 3,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Material(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: TabBar(
+              tabs: [
+                Tab(
+                  icon: Icon(
+                    ZalmanimIcons.email,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  text: 'Artist reminder',
+                ),
+                Tab(
+                  icon: Icon(
+                    Icons.cancel_rounded,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  text: 'Demo rejection',
+                ),
+                Tab(
+                  icon: Icon(
+                    Icons.check_circle_rounded,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  text: 'Demo approval',
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                _ArtistReminderSubTab(
+                  delegate: delegate,
+                  sectionTitle: _sectionTitle,
+                ),
+                _DemoRejectionSubTab(
+                  sectionTitle: _sectionTitle,
+                  subjectController: _rejectionSubjectController,
+                  bodyController: _rejectionBodyController,
+                  saving: _savingRejection,
+                  saveError: _rejectionSaveError,
+                  onChanged: () => setState(() {}),
+                  onSave: _saveRejection,
+                ),
+                _DemoApprovalSubTab(
+                  sectionTitle: _sectionTitle,
+                  subjectController: _approvalSubjectController,
+                  bodyController: _approvalBodyController,
+                  saving: _savingApproval,
+                  saveError: _approvalSaveError,
+                  onChanged: () => setState(() {}),
+                  onSave: _saveApproval,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Sub-tab: Artist reminder email template (opens dialog).
+class _ArtistReminderSubTab extends StatelessWidget {
+  const _ArtistReminderSubTab({
+    required this.delegate,
+    required this.sectionTitle,
+  });
+
+  final AdminDashboardDelegate delegate;
+  final Widget Function(String) sectionTitle;
+
+  @override
+  Widget build(BuildContext context) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _sectionTitle('Artist reminder email'),
+          sectionTitle('Artist reminder email'),
           const Text(
-            'Default subject and body for reminder emails sent from Reports > Artist reminders. Supports placeholders like {name}, {email}, {artist_brand}.',
+            'Default subject and body for reminder emails sent from '
+            'Reports > Artist reminders. Supports placeholders like '
+            '{name}, {email}, {artist_brand}.',
             style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: () => delegate.showArtistReminderMailSettingsDialog(context),
+            onPressed: () =>
+                delegate.showArtistReminderMailSettingsDialog(context),
             icon: const Icon(ZalmanimIcons.edit, size: 18),
             label: const Text('Edit artist reminder template'),
           ),
-          const SizedBox(height: 24),
-          _sectionTitle('Demo rejection email'),
+        ],
+      ),
+    );
+  }
+}
+
+/// Sub-tab: Demo rejection email template (subject + body + save).
+class _DemoRejectionSubTab extends StatelessWidget {
+  const _DemoRejectionSubTab({
+    required this.sectionTitle,
+    required this.subjectController,
+    required this.bodyController,
+    required this.saving,
+    required this.saveError,
+    required this.onChanged,
+    required this.onSave,
+  });
+
+  final Widget Function(String) sectionTitle;
+  final TextEditingController subjectController;
+  final TextEditingController bodyController;
+  final bool saving;
+  final String? saveError;
+  final VoidCallback onChanged;
+  final VoidCallback onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          sectionTitle('Demo rejection email'),
           const Text(
-            'Sent when you reject a demo submission. Placeholders: {artist_name}, {artist_portal_url}, {zalmanim_website}.',
+            'Sent when you reject a demo submission. Placeholders: '
+            '{artist_name}, {artist_portal_url}, {zalmanim_website}.',
             style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
           const SizedBox(height: 12),
           TextField(
-            controller: _rejectionSubjectController,
+            controller: subjectController,
             decoration: const InputDecoration(
               labelText: 'Subject',
               hintText: 'Thank you for your demo submission',
               border: OutlineInputBorder(),
             ),
-            onChanged: (_) => setState(() {}),
+            onChanged: (_) => onChanged(),
           ),
           const SizedBox(height: 8),
           TextField(
-            controller: _rejectionBodyController,
+            controller: bodyController,
             decoration: const InputDecoration(
               labelText: 'Body',
               hintText: 'Hi {artist_name}, ...',
@@ -204,43 +332,87 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
               border: OutlineInputBorder(),
             ),
             maxLines: 8,
-            onChanged: (_) => setState(() {}),
+            onChanged: (_) => onChanged(),
           ),
           const SizedBox(height: 8),
-          if (_rejectionSaveError != null) ...[
-            SelectableText(_rejectionSaveError!, style: const TextStyle(color: Colors.red)),
+          if (saveError != null) ...[
+            SelectableText(
+              saveError!,
+              style: const TextStyle(color: Colors.red),
+            ),
             IconButton(
               icon: const Icon(Icons.copy),
               tooltip: 'Copy error',
-              onPressed: () => Clipboard.setData(ClipboardData(text: _rejectionSaveError!)),
+              onPressed: () =>
+                  Clipboard.setData(ClipboardData(text: saveError!)),
             ),
           ],
           FilledButton.icon(
-            onPressed: _savingRejection ? null : _saveRejection,
-            icon: _savingRejection
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+            onPressed: saving ? null : onSave,
+            icon: saving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Icon(ZalmanimIcons.save, size: 18),
-            label: Text(_savingRejection ? 'Saving...' : 'Save demo rejection template'),
+            label: Text(
+              saving ? 'Saving...' : 'Save demo rejection template',
+            ),
           ),
-          const SizedBox(height: 24),
-          _sectionTitle('Demo approval email (default)'),
+        ],
+      ),
+    );
+  }
+}
+
+/// Sub-tab: Demo approval email template (subject + body + save).
+class _DemoApprovalSubTab extends StatelessWidget {
+  const _DemoApprovalSubTab({
+    required this.sectionTitle,
+    required this.subjectController,
+    required this.bodyController,
+    required this.saving,
+    required this.saveError,
+    required this.onChanged,
+    required this.onSave,
+  });
+
+  final Widget Function(String) sectionTitle;
+  final TextEditingController subjectController;
+  final TextEditingController bodyController;
+  final bool saving;
+  final String? saveError;
+  final VoidCallback onChanged;
+  final VoidCallback onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          sectionTitle('Demo approval email (default)'),
           const Text(
-            'Default subject and body when approving a demo. Used when the approval dialog does not override them. Placeholder: {artist_name}.',
+            'Default subject and body when approving a demo. Used when '
+            'the approval dialog does not override them. '
+            'Placeholder: {artist_name}.',
             style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
           const SizedBox(height: 12),
           TextField(
-            controller: _approvalSubjectController,
+            controller: subjectController,
             decoration: const InputDecoration(
               labelText: 'Subject',
               hintText: 'Your demo was approved, {artist_name}',
               border: OutlineInputBorder(),
             ),
-            onChanged: (_) => setState(() {}),
+            onChanged: (_) => onChanged(),
           ),
           const SizedBox(height: 8),
           TextField(
-            controller: _approvalBodyController,
+            controller: bodyController,
             decoration: const InputDecoration(
               labelText: 'Body',
               hintText: 'Hi {artist_name}, ...',
@@ -248,23 +420,33 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
               border: OutlineInputBorder(),
             ),
             maxLines: 8,
-            onChanged: (_) => setState(() {}),
+            onChanged: (_) => onChanged(),
           ),
           const SizedBox(height: 8),
-          if (_approvalSaveError != null) ...[
-            SelectableText(_approvalSaveError!, style: const TextStyle(color: Colors.red)),
+          if (saveError != null) ...[
+            SelectableText(
+              saveError!,
+              style: const TextStyle(color: Colors.red),
+            ),
             IconButton(
               icon: const Icon(Icons.copy),
               tooltip: 'Copy error',
-              onPressed: () => Clipboard.setData(ClipboardData(text: _approvalSaveError!)),
+              onPressed: () =>
+                  Clipboard.setData(ClipboardData(text: saveError!)),
             ),
           ],
           FilledButton.icon(
-            onPressed: _savingApproval ? null : _saveApproval,
-            icon: _savingApproval
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+            onPressed: saving ? null : onSave,
+            icon: saving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Icon(ZalmanimIcons.save, size: 18),
-            label: Text(_savingApproval ? 'Saving...' : 'Save demo approval template'),
+            label: Text(
+              saving ? 'Saving...' : 'Save demo approval template',
+            ),
           ),
         ],
       ),

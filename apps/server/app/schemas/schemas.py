@@ -224,6 +224,19 @@ class ArtistDemoSubmitRequest(BaseModel):
 
 
 def _artist_extra_from_model(m: BaseModel) -> dict:
+    # ORM Artist: extra fields live in extra_json, not as attributes (no artist.artist_brand)
+    if hasattr(m, "extra_json") and m.extra_json is not None:
+        try:
+            raw = m.extra_json
+            data = json.loads(raw) if isinstance(raw, str) else dict(raw)
+            if isinstance(data, dict):
+                out = {k: v for k, v in data.items() if v is not None}
+                brands = out.get("artist_brands")
+                if brands is not None and isinstance(brands, list):
+                    out["artist_brands"] = [b for b in brands if isinstance(b, str) and b.strip()]
+                return out
+        except (json.JSONDecodeError, TypeError):
+            pass
     keys = (
         "artist_brand", "full_name", "website", "soundcloud", "facebook",
         "twitter_1", "twitter_2", "youtube", "tiktok", "instagram", "spotify",

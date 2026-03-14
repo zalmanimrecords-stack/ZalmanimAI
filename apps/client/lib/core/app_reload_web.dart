@@ -1,8 +1,8 @@
 // Web: force full reload from server (bypass cache).
 
-import 'dart:html' as html;
+import 'package:web/web.dart' as web;
 
 /// Reloads the app from the server (full page reload, bypass cache).
 void reloadApp() {
-  html.window.location.reload();
+  web.window.location.reload();
 }

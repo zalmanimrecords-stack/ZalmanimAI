@@ -443,7 +443,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     final build = health?['build_number'];
     setState(() {
       _lastGitUpdate = last is String ? last : null;
-      _buildNumber = build != null ? build.toString() : null;
+      _buildNumber = build?.toString();
     });
   }
 
@@ -1102,6 +1102,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     final subjectController = TextEditingController(text: savedSubject ?? _defaultReminderSubject);
     final bodyController = TextEditingController(text: savedBody ?? _defaultReminderBody);
     if (!mounted) return;
+    if (!context.mounted) return;
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1131,6 +1132,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       subjectController.dispose();
       bodyController.dispose();
       if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mail settings saved.')));
     } else {
       subjectController.dispose();
@@ -4949,6 +4951,7 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
     final subjectController = TextEditingController(text: savedSubject ?? _defaultReminderSubject);
     final bodyController = TextEditingController(text: savedBody ?? _defaultReminderBody);
     if (!mounted) return;
+    if (!context.mounted) return;
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -4978,6 +4981,7 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
       subjectController.dispose();
       bodyController.dispose();
       if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mail settings saved.')));
     } else {
       subjectController.dispose();
