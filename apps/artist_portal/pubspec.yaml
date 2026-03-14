@@ -1,7 +1,7 @@
 name: artist_portal
 description: Label-branded artist portal. Separate from the admin app.
 publish_to: "none"
-version: 0.1.0+1
+version: 0.1.0+2
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -12,6 +12,7 @@ dependencies:
   flutter_svg: ^2.0.10+1
   http: ^1.3.0
   file_picker: ^8.1.6
+  package_info_plus: ^8.0.2
   shared_preferences: ^2.3.3
   url_launcher: ^6.2.5
 

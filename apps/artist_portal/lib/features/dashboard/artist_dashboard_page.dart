@@ -1,6 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api_client.dart';
@@ -61,6 +62,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
   int mediaUsedBytes = 0;
   int mediaQuotaBytes = 50 * 1024 * 1024;
   List<dynamic> campaignRequests = [];
+  String? appVersion;
 
   @override
   void initState() {
@@ -68,6 +70,9 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
     for (final e in _socialKeys) {
       socialControllers[e.key] = TextEditingController();
     }
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted) setState(() => appVersion = 'v${info.version}+${info.buildNumber}');
+    });
     _load();
   }
 
@@ -467,10 +472,25 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Image.asset(
-          'assets/images/zalmanim_logo.png',
-          height: 32,
-          fit: BoxFit.contain,
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'assets/images/zalmanim_logo.png',
+              height: 32,
+              fit: BoxFit.contain,
+            ),
+            if (appVersion != null) ...[
+              const SizedBox(width: 12),
+              Text(
+                appVersion!,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.9),
+                ),
+              ),
+            ],
+          ],
         ),
         actions: [
           IconButton(
