@@ -13,8 +13,7 @@ import '../../widgets/api_connection_indicator.dart';
 import 'admin_dashboard_delegate.dart';
 import 'tabs/artists_tab.dart';
 import 'tabs/audience_tab.dart';
-import 'tabs/campaign_requests_tab.dart';
-import 'tabs/campaigns_tab.dart';
+import 'tabs/campaigns_section_tab.dart';
 import 'tabs/demos_tab.dart';
 import 'tabs/releases_section_tab.dart';
 import 'tabs/reports_tab.dart';
@@ -427,7 +426,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 8, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
     _tabController.addListener(_onTabChanged);
     _artistSearchController.addListener(_onArtistSearchChanged);
     _releasesSearchController.addListener(_onReleasesSearchChanged);
@@ -495,14 +494,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         break;
       case 3:
         if (!_loadedCampaigns) _loadCampaigns();
-        break;
-      case 4:
         if (!_loadedCampaignRequests) _loadCampaignRequests();
         break;
-      case 5:
+      case 4:
         if (!_loadedAudiences) _loadAudiences();
         break;
-      case 7:
+      case 6:
         if (!_loadedUsers) _loadUsers();
         break;
     }
@@ -1387,8 +1384,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
             Tab(icon: ZalmanimIcons.alienIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Artists'),
             Tab(icon: ZalmanimIcons.jellyfishIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Demos'),
             Tab(icon: ZalmanimIcons.squidIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Releases'),
-            Tab(icon: ZalmanimIcons.alienIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Campaigns'),
-            Tab(icon: ZalmanimIcons.jellyfishIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Campaign requests'),
+            Tab(icon: ZalmanimIcons.alienIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'CAMPAIGNS'),
             Tab(icon: ZalmanimIcons.squidIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Audience'),
             Tab(icon: ZalmanimIcons.alienIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Reports'),
             Tab(icon: Icon(ZalmanimIcons.settings, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Settings'),
@@ -1403,8 +1399,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               ArtistsTab(delegate: this),
               DemosTab(delegate: this),
               ReleasesSectionTab(delegate: this),
-              CampaignsTab(delegate: this),
-              CampaignRequestsTab(delegate: this),
+              CampaignsSectionTab(delegate: this),
               AudienceTab(delegate: this),
               ReportsTab(delegate: this),
               SettingsTab(delegate: this),
@@ -2332,7 +2327,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       ),
     );
     if (openSettings == true && mounted) {
-      _tabController.animateTo(7); // Settings tab
+      _tabController.animateTo(6); // Settings tab
     }
   }
 

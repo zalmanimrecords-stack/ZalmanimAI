@@ -161,7 +161,7 @@ The worker container needs the same Mailchimp and WordPress env vars as the API 
 
 ## Restart Script
 
-Use this script to re-initialize and restart the full dev system. It starts the backend and launches the Flutter app as a **web server**, then opens the browser automatically.
+Use this script to re-initialize and restart the full dev system. It starts the backend and launches both the **admin app** and the **Artist Portal** as web servers, then opens the browser to each.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\restart-system.ps1 -Rebuild
@@ -169,19 +169,22 @@ powershell -ExecutionPolicy Bypass -File .\scripts\restart-system.ps1 -Rebuild
 
 By default the script:
 
-1. Stops and starts the backend stack (API, Postgres, Redis, MinIO, worker).
-2. Waits for the API health check.
-3. Runs `flutter pub get`.
-4. Starts `flutter run -d web-server --web-hostname 127.0.0.1 --web-port 3000` in a new PowerShell window.
-5. Opens the browser to `http://127.0.0.1:3000`.
+1. Stops existing Docker containers.
+2. Cleans dev ports (3000, 3001, 8000, 5432) so nothing is left bound from a previous run.
+3. Starts the backend stack (API, Postgres, Redis, MinIO, worker).
+4. Waits for the API health check.
+5. Runs `flutter pub get` for the admin app and starts `flutter run -d web-server --web-port 3000` in a new window; opens `http://127.0.0.1:3000`.
+6. Runs `flutter pub get` for the Artist Portal and starts it on port 3001 in another window; opens `http://127.0.0.1:3001`.
 
 Useful flags:
 
-- `-NoFlutter` : restart only backend containers
-- `-NoBrowser` : start Flutter web server but do not open browser automatically
+- `-NoFlutter` : restart only backend containers (no admin app)
+- `-NoArtistPortal` : do not launch the Artist Portal (admin app only)
+- `-NoBrowser` : start Flutter web servers but do not open the browser automatically
 - `-CleanVolumes` : reset Docker volumes (wipes local DB data)
 - `-FlutterDevice chrome` : use another Flutter device instead of the local web server
 - `-FlutterTarget lib/main.dart` : entry target for Flutter
 - `-WebHost 127.0.0.1` : host for `web-server`
-- `-WebPort 3000` : port for `web-server`
+- `-WebPort 3000` : port for the admin app
+- `-ArtistPortalPort 3001` : port for the Artist Portal
 

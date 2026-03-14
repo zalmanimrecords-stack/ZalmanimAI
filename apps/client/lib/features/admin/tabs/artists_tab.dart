@@ -229,69 +229,73 @@ class _ArtistsTabState extends State<ArtistsTab> {
                                             _textCell(artist.lastProfileUpdatedDisplay, profileUpdatedWidth),
                                             SizedBox(
                                               width: actionsWidth,
-                                              child: Row(
-                                                mainAxisAlignment: MainAxisAlignment.end,
-                                                children: [
-                                                  _actionButton(
-                                                    icon: ZalmanimIcons.info,
-                                                    color: Colors.grey,
-                                                    tooltip: 'Details & logs',
-                                                    onPressed: () => delegate.showArtistDetailsDialog(artist.id),
-                                                  ),
-                                                  _actionButton(
-                                                    icon: ZalmanimIcons.releases,
-                                                    color: Colors.blue,
-                                                    tooltip: 'View releases',
-                                                    onPressed: () => delegate.showArtistReleases(
-                                                      artist.id,
-                                                      artist.displayName,
+                                              child: SingleChildScrollView(
+                                                scrollDirection: Axis.horizontal,
+                                                child: Row(
+                                                  mainAxisAlignment: MainAxisAlignment.end,
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    _actionButton(
+                                                      icon: ZalmanimIcons.info,
+                                                      color: Colors.grey,
+                                                      tooltip: 'Details & logs',
+                                                      onPressed: () => delegate.showArtistDetailsDialog(artist.id),
                                                     ),
-                                                  ),
-                                                  _actionButton(
-                                                    icon: ZalmanimIcons.edit,
-                                                    color: Colors.orange,
-                                                    tooltip: 'Edit',
-                                                    onPressed: () => delegate.showEditArtistDialog(artist.id),
-                                                  ),
-                                                  _actionButton(
-                                                    icon: ZalmanimIcons.campaignRequests,
-                                                    color: Colors.indigo,
-                                                    tooltip: 'Send portal access email',
-                                                    onPressed: () => delegate.sendArtistPortalInvite(
-                                                      artist.id,
-                                                      artist.displayName,
-                                                      artist.email,
+                                                    _actionButton(
+                                                      icon: ZalmanimIcons.releases,
+                                                      color: Colors.blue,
+                                                      tooltip: 'View releases',
+                                                      onPressed: () => delegate.showArtistReleases(
+                                                        artist.id,
+                                                        artist.displayName,
+                                                      ),
                                                     ),
-                                                  ),
-                                                  _actionButton(
-                                                    icon: ZalmanimIcons.editNote,
-                                                    color: Colors.deepPurple,
-                                                    tooltip: 'Invite to update profile & see releases',
-                                                    onPressed: () => delegate.sendArtistUpdateProfileInvite(
-                                                      artist.id,
-                                                      artist.displayName,
-                                                      artist.email,
+                                                    _actionButton(
+                                                      icon: ZalmanimIcons.edit,
+                                                      color: Colors.orange,
+                                                      tooltip: 'Edit',
+                                                      onPressed: () => delegate.showEditArtistDialog(artist.id),
                                                     ),
-                                                  ),
-                                                  _actionButton(
-                                                    icon: ZalmanimIcons.lock,
-                                                    color: Colors.teal,
-                                                    tooltip: 'Set portal password',
-                                                    onPressed: () => delegate.showSetArtistPasswordDialog(
-                                                      artist.id,
-                                                      artist.displayName,
+                                                    _actionButton(
+                                                      icon: ZalmanimIcons.campaignRequests,
+                                                      color: Colors.indigo,
+                                                      tooltip: 'Send portal access email',
+                                                      onPressed: () => delegate.sendArtistPortalInvite(
+                                                        artist.id,
+                                                        artist.displayName,
+                                                        artist.email,
+                                                      ),
                                                     ),
-                                                  ),
-                                                  _actionButton(
-                                                    icon: ZalmanimIcons.delete,
-                                                    color: Colors.red,
-                                                    tooltip: 'Remove',
-                                                    onPressed: () => delegate.removeArtist(
-                                                      artist.id,
-                                                      artist.displayName,
+                                                    _actionButton(
+                                                      icon: ZalmanimIcons.editNote,
+                                                      color: Colors.deepPurple,
+                                                      tooltip: 'Invite to update profile & see releases',
+                                                      onPressed: () => delegate.sendArtistUpdateProfileInvite(
+                                                        artist.id,
+                                                        artist.displayName,
+                                                        artist.email,
+                                                      ),
                                                     ),
-                                                  ),
-                                                ],
+                                                    _actionButton(
+                                                      icon: ZalmanimIcons.lock,
+                                                      color: Colors.teal,
+                                                      tooltip: 'Set portal password',
+                                                      onPressed: () => delegate.showSetArtistPasswordDialog(
+                                                        artist.id,
+                                                        artist.displayName,
+                                                      ),
+                                                    ),
+                                                    _actionButton(
+                                                      icon: ZalmanimIcons.delete,
+                                                      color: Colors.red,
+                                                      tooltip: 'Remove',
+                                                      onPressed: () => delegate.removeArtist(
+                                                        artist.id,
+                                                        artist.displayName,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
                                             ),
                                           ],
