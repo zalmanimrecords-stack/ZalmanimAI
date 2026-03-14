@@ -377,14 +377,34 @@ class ApiClient {
     }
   }
 
+  /// Sending the invite can take 20–30s (server sends email). Use a long timeout to avoid "Failed to fetch".
+  static const Duration _portalInviteTimeout = Duration(seconds: 60);
+
+  /// Returns true if the server can send email (SMTP or Gmail configured). Use before inviting artists.
+  Future<bool> isEmailConfigured(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/admin/email/rate-limit'),
+        headers: _authHeaders(token),
+      );
+      if (response.statusCode != 200) return false;
+      final data = jsonDecode(response.body) as Map<String, dynamic>?;
+      return data?['configured'] as bool? ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<Map<String, dynamic>> sendArtistPortalInvite({
     required String token,
     required int artistId,
   }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/admin/artists/$artistId/send-portal-invite'),
-      headers: _authHeaders(token),
-    );
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/admin/artists/$artistId/send-portal-invite'),
+          headers: _authHeaders(token),
+        )
+        .timeout(_portalInviteTimeout);
     if (response.statusCode != 200) {
       final detail = ApiClient._detailFromErrorBody(response.body);
       throw Exception('Send portal invite failed (${response.statusCode}): ${detail.isNotEmpty ? detail : response.reasonPhrase}');
@@ -397,10 +417,12 @@ class ApiClient {
     required String token,
     required int artistId,
   }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/admin/artists/$artistId/send-update-profile-invite'),
-      headers: _authHeaders(token),
-    );
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/admin/artists/$artistId/send-update-profile-invite'),
+          headers: _authHeaders(token),
+        )
+        .timeout(_portalInviteTimeout);
     if (response.statusCode != 200) {
       final detail = ApiClient._detailFromErrorBody(response.body);
       throw Exception('Send update profile invite failed (${response.statusCode}): ${detail.isNotEmpty ? detail : response.reasonPhrase}');

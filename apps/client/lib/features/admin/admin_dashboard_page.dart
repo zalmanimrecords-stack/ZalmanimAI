@@ -2148,6 +2148,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       ),
     );
     if (confirmed != true) return;
+    final emailConfigured = await widget.apiClient.isEmailConfigured(widget.token);
+    if (!mounted) return;
+    if (!emailConfigured) {
+      await _showEmailNotConfiguredDialog(context);
+      return;
+    }
     try {
       final result = await widget.apiClient.sendArtistPortalInvite(
         token: widget.token,
@@ -2160,7 +2166,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         SnackBar(content: Text('Portal access sent to $username via $portalUrl.')),
       );
     } catch (e) {
-      _showErrorSnackBar(e.toString());
+      final msg = e.toString();
+      final isNotConfigured = msg.contains('not configured') || msg.contains('Email is not configured');
+      final isNetworkFailure = msg.contains('Failed to fetch') || msg.contains('ClientException') || msg.contains('TimeoutException');
+      if (isNotConfigured) {
+        _showErrorSnackBar('$msg\n\nGo to Settings → Mail to configure SMTP or connect Gmail.');
+      } else if (isNetworkFailure) {
+        _showErrorSnackBar('$msg\n\nNetwork or timeout. The server may be busy sending the email. Try again; if it persists, check the API is reachable.');
+      } else {
+        _showErrorSnackBar(msg);
+      }
     }
   }
 
@@ -2184,6 +2199,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       ),
     );
     if (confirmed != true) return;
+    final emailConfigured = await widget.apiClient.isEmailConfigured(widget.token);
+    if (!mounted) return;
+    if (!emailConfigured) {
+      await _showEmailNotConfiguredDialog(context);
+      return;
+    }
     try {
       final result = await widget.apiClient.sendArtistUpdateProfileInvite(
         token: widget.token,
@@ -2195,7 +2216,36 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         SnackBar(content: Text('Update profile invite sent to $username')),
       );
     } catch (e) {
-      _showErrorSnackBar(e.toString());
+      final msg = e.toString();
+      final isNotConfigured = msg.contains('not configured') || msg.contains('Email is not configured');
+      final isNetworkFailure = msg.contains('Failed to fetch') || msg.contains('ClientException') || msg.contains('TimeoutException');
+      if (isNotConfigured) {
+        _showErrorSnackBar('$msg\n\nGo to Settings → Mail to configure SMTP or connect Gmail.');
+      } else if (isNetworkFailure) {
+        _showErrorSnackBar('$msg\n\nNetwork or timeout. Try again; if it persists, check the API is reachable.');
+      } else {
+        _showErrorSnackBar(msg);
+      }
+    }
+  }
+
+  /// Shows a dialog when email is not configured; "Open Settings" switches to the Settings tab.
+  Future<void> _showEmailNotConfiguredDialog(BuildContext context) async {
+    final openSettings = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Email not set up'),
+        content: const SelectableText(
+          'To send invite emails, configure SMTP or connect Gmail in Settings → Mail.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Open Settings')),
+        ],
+      ),
+    );
+    if (openSettings == true && mounted) {
+      _tabController.animateTo(7); // Settings tab
     }
   }
 
