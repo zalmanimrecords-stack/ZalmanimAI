@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/api_client.dart';
@@ -296,6 +297,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   String? _lastGitUpdate;
   /// Build version from /health (increments on each PROD deploy).
   String? _buildNumber;
+  /// App version from package (pubspec), shown next to logo when server build is not yet loaded.
+  String? _appVersion;
   /// Dashboard header: active artists count and total releases count.
   int? _artistsCount;
   int? _releasesCount;
@@ -431,6 +434,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     _artistSearchController.addListener(_onArtistSearchChanged);
     _releasesSearchController.addListener(_onReleasesSearchChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadTabIfNeeded());
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted) setState(() => _appVersion = 'v${info.version}+${info.buildNumber}');
+    });
     _fetchLastGitUpdate();
     _fetchDashboardStats();
   }
@@ -1296,10 +1302,30 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Image.asset(
-          'assets/images/zalmanim_logo.png',
-          height: 32,
-          fit: BoxFit.contain,
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'assets/images/zalmanim_logo.png',
+              height: 32,
+              fit: BoxFit.contain,
+            ),
+            if (_appVersion != null || _buildNumber != null) ...[
+              const SizedBox(width: 12),
+              Tooltip(
+                message: _buildNumber != null
+                    ? 'Build version (from server, increments on each PROD deploy)'
+                    : 'App version',
+                child: SelectableText(
+                  _buildNumber ?? _appVersion!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurface,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
         actions: [
           if (_artistsCount != null || _releasesCount != null)
@@ -1316,50 +1342,30 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 ),
               ),
             ),
-          if (_buildNumber != null || _lastGitUpdate != null)
+          if (_lastGitUpdate != null)
             Padding(
               padding: const EdgeInsets.only(left: 8),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (_buildNumber != null)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: Tooltip(
-                        message: 'Build version (increments on each PROD deploy)',
-                        child: SelectableText(
-                          'v$_buildNumber',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                  Tooltip(
+                    message: 'Last system update from Git: $_lastGitUpdate',
+                    child: SelectableText(
+                      _lastGitUpdate!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
-                  if (_lastGitUpdate != null)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Tooltip(
-                          message: 'Last system update from Git: $_lastGitUpdate',
-                          child: SelectableText(
-                            _lastGitUpdate!,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(ZalmanimIcons.copy, size: 18),
-                          tooltip: 'Copy last update time',
-                          onPressed: () => Clipboard.setData(ClipboardData(text: _lastGitUpdate!)),
-                          style: IconButton.styleFrom(
-                            minimumSize: const Size(32, 32),
-                            padding: EdgeInsets.zero,
-                          ),
-                        ),
-                      ],
+                  ),
+                  IconButton(
+                    icon: const Icon(ZalmanimIcons.copy, size: 18),
+                    tooltip: 'Copy last update time',
+                    onPressed: () => Clipboard.setData(ClipboardData(text: _lastGitUpdate!)),
+                    style: IconButton.styleFrom(
+                      minimumSize: const Size(32, 32),
+                      padding: EdgeInsets.zero,
                     ),
+                  ),
                 ],
               ),
             ),
