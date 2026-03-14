@@ -884,6 +884,41 @@ class ApiClient {
     return jsonDecode(response.body) as List<dynamic>;
   }
 
+  /// List database table names for Settings > DB.
+  Future<List<dynamic>> fetchDbTables(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/admin/db/tables'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'DB tables failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as List<dynamic>;
+  }
+
+  /// Fetch rows from a table. [limit] 1–500, default 100. [offset] for pagination.
+  Future<Map<String, dynamic>> fetchDbTableContent(
+    String token,
+    String tableName, {
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/admin/db/tables/$tableName').replace(
+        queryParameters: {'limit': limit.toString(), 'offset': offset.toString()},
+      ),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'DB table failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   /// Update mail server settings and demo rejection email template. Returns updated system settings.
   Future<Map<String, dynamic>> updateSystemSettingsMail({
     required String token,

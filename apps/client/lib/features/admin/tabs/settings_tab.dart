@@ -5,11 +5,12 @@ import '../../../core/session_storage.dart';
 import '../../../core/zalmanim_icons.dart';
 import '../admin_dashboard_delegate.dart';
 import '../mail_settings_content.dart';
+import 'db_tab.dart';
 import 'email_templates_tab.dart';
 import 'logs_tab.dart';
 import 'users_tab.dart';
 
-/// Settings tab: contains sub-tabs (Users, Mail settings, Email templates, Logs, General).
+/// Settings tab: contains sub-tabs (Users, Mail settings, Email templates, Logs, DB, General).
 class SettingsTab extends StatelessWidget {
   const SettingsTab({super.key, required this.delegate});
 
@@ -18,7 +19,7 @@ class SettingsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -60,6 +61,14 @@ class SettingsTab extends StatelessWidget {
                 ),
                 Tab(
                   icon: Icon(
+                    Icons.storage_rounded,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  text: 'DB',
+                ),
+                Tab(
+                  icon: Icon(
                     ZalmanimIcons.settings,
                     size: 20,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -76,6 +85,7 @@ class SettingsTab extends StatelessWidget {
                 MailSettingsSubTab(delegate: delegate),
                 EmailTemplatesTab(delegate: delegate),
                 LogsTab(delegate: delegate),
+                DbTab(delegate: delegate),
                 const _GeneralSubTab(),
               ],
             ),

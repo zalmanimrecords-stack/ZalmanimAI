@@ -2739,6 +2739,58 @@ def run_inactivity_check(
     return {"created_tasks": created}
 
 
+# Database browser (Settings > DB) - admin only
+def _db_row_to_dict(row) -> dict:
+    """Convert a result row to a JSON-serializable dict (dates to isoformat)."""
+    out = {}
+    for k, v in row._mapping.items():
+        if hasattr(v, "isoformat"):
+            out[k] = v.isoformat()
+        elif v is None or isinstance(v, (str, int, float, bool)):
+            out[k] = v
+        else:
+            out[k] = str(v)
+    # Redact password-like columns
+    for key in list(out.keys()):
+        if "password" in key.lower() or "secret" in key.lower() or "token" in key.lower():
+            if out[key] is not None and str(out[key]).strip():
+                out[key] = "***"
+    return out
+
+
+@router.get("/admin/db/tables")
+def list_db_tables(
+    user: UserContext = Depends(get_current_user),
+) -> list[dict]:
+    """List database table names for admin Settings > DB."""
+    require_admin(user)
+    return [{"name": name} for name in sorted(Base.metadata.tables.keys())]
+
+
+@router.get("/admin/db/tables/{table_name}")
+def get_db_table_content(
+    table_name: str,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    """Return rows from a table (admin only). Whitelisted table names only."""
+    require_admin(user)
+    if table_name not in Base.metadata.tables:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found")
+    with engine.connect() as conn:
+        # Table name is whitelisted; use bound params for limit/offset
+        result = conn.execute(
+            text(f'SELECT * FROM "{table_name}" LIMIT :lim OFFSET :off'),
+            {"lim": limit, "off": offset},
+        )
+        rows = [_db_row_to_dict(row) for row in result.mappings()]
+        result_count = conn.execute(
+            text(f'SELECT COUNT(*) FROM "{table_name}"'),
+        ).scalar()
+    return {"rows": rows, "total_count": result_count, "limit": limit, "offset": offset}
+
+
 # System logs (Settings > Logs)
 @router.get("/admin/logs", response_model=list[SystemLogOut])
 def list_system_logs(
