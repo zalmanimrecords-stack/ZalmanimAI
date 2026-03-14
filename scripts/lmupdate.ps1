@@ -1,8 +1,9 @@
-# lmupdate: Push all latest changes to GitHub, then update the DEV server.
+# lmupdate: Push all latest changes to GitHub, then update the PROD server.
 # Run from repo root: .\scripts\lmupdate.ps1
-# Uses SSH key so no password is prompted (BatchMode=yes).
+# Git push uses your SSH config (e.g. ~/.ssh/config: github.com -> id_ed25519_github).
+# Deploy to VPS uses LMUPDATE_SSH_KEY (default: ~/.ssh/hostinger_vps).
 # Optional: $env:LMUPDATE_COMMIT_MSG = "Your message"
-# Optional: $env:LMUPDATE_SSH_KEY = "C:\Users\...\.ssh\your_key"  # for both git push and deploy (default: ~/.ssh/hostinger_vps)
+# Optional: $env:LMUPDATE_SSH_KEY = "C:\Users\...\.ssh\your_key"  # for deploy only (VPS)
 # Optional: $env:PROD_REPO_PATH = "/path/on/vps"  (default /root/ZalmanimAI)
 # Optional: $env:LMUPDATE_SKIP_DEPLOY = "1" to push only (no server update)
 
@@ -27,8 +28,8 @@ try {
     }
 
     Write-Host "[lmupdate] Pushing to GitHub..." -ForegroundColor Cyan
-    # Use SSH key and BatchMode=yes so git push never prompts for password
-    $env:GIT_SSH_COMMAND = "ssh -o BatchMode=yes -i `"$sshKey`""
+    # Use default SSH config (e.g. github.com -> id_ed25519_github) so push has write access.
+    # Do not set GIT_SSH_COMMAND here; deploy-prod-remote.ps1 uses hostinger_vps only for the VPS.
     git push
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[lmupdate] Push failed." -ForegroundColor Red
