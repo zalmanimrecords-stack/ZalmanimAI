@@ -2375,10 +2375,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       if (!mounted) return;
       final sent = result['sent'] as int? ?? 0;
       final failed = result['failed'] as int? ?? 0;
-      final errors = result['errors'] as List<dynamic>? ?? [];
+      final errorsRaw = result['errors'];
+      final errors = errorsRaw is List ? List<dynamic>.from(errorsRaw) : <dynamic>[];
       if (failed > 0 && errors.isNotEmpty) {
         final errorText = errors
-            .map((e) => '${e['email']}: ${e['detail']}')
+            .map((e) => '${(e is Map ? e['email'] : '')}: ${(e is Map ? e['detail'] : '')}')
             .join('\n');
         await showDialog<void>(
           context: context,
