@@ -842,6 +842,22 @@ class ApiClient {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  /// Delete a demo submission. Requires admin. Throws on failure.
+  Future<void> deleteDemoSubmission({required String token, required int id}) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/admin/demo-submissions/$id'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 204) {
+      throw Exception(
+        'Delete demo failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+  }
+
+  /// URL for streaming/downloading the demo MP3 file (admin). Use with Authorization header.
+  String demoSubmissionDownloadUrl(int id) => '$baseUrl/admin/demo-submissions/$id/download';
+
   Future<Map<String, dynamic>> fetchSystemSettings(String token) async {
     final response = await http.get(
       Uri.parse('$baseUrl/admin/settings'),

@@ -39,6 +39,7 @@ abstract class AdminDashboardDelegate {
   void showDemoDetailsDialog(Map<String, dynamic> submission);
   void showApproveDemoDialog(Map<String, dynamic> submission);
   void updateDemoStatus(Map<String, dynamic> submission, String status);
+  Future<void> deleteDemoSubmission(Map<String, dynamic> submission);
 
   // Releases + catalog
   List<dynamic> get adminReleasesList;

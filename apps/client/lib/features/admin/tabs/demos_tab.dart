@@ -8,6 +8,38 @@ class DemosTab extends StatelessWidget {
 
   final AdminDashboardDelegate delegate;
 
+  static Future<void> _confirmDeleteDemo(
+    BuildContext context,
+    AdminDashboardDelegate delegate,
+    Map<String, dynamic> item,
+  ) async {
+    final id = item['id'] as int?;
+    final artistName = (item['artist_name'] ?? '').toString();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete demo submission?'),
+        content: Text(
+          'Are you sure you want to delete demo #$id${artistName.isNotEmpty ? ' ($artistName)' : ''}? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await delegate.deleteDemoSubmission(item);
+    }
+  }
+
   Color _statusColor(BuildContext context, String status) {
     switch (status) {
       case 'approved':
@@ -112,6 +144,16 @@ class DemosTab extends StatelessWidget {
                                   ],
                                 ),
                               ),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              onPressed: () => _confirmDeleteDemo(context, delegate, item),
+                              icon: const Icon(Icons.delete_outline),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.red,
+                                side: const BorderSide(color: Colors.red),
+                              ),
+                              label: const Text('Delete'),
                             ),
                           ],
                         ),

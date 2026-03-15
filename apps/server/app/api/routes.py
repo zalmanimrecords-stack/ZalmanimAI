@@ -742,6 +742,11 @@ def _serialize_demo_submission(item: DemoSubmission) -> DemoSubmissionOut:
         fields = json.loads(item.fields_json or "{}") or {}
     except (json.JSONDecodeError, TypeError):
         fields = {}
+    if not isinstance(fields, dict):
+        fields = {}
+    has_demo_file = bool(fields.get("demo_file_path") and os.path.isfile(fields["demo_file_path"]))
+    # Do not expose server path to client
+    out_fields = {k: v for k, v in fields.items() if k != "demo_file_path"}
     return DemoSubmissionOut(
         id=item.id,
         artist_name=item.artist_name,
@@ -754,7 +759,8 @@ def _serialize_demo_submission(item: DemoSubmission) -> DemoSubmissionOut:
         city=item.city,
         message=item.message,
         links=[str(link).strip() for link in links if str(link).strip()],
-        fields=fields if isinstance(fields, dict) else {},
+        fields=out_fields,
+        has_demo_file=has_demo_file,
         source=item.source,
         source_site_url=item.source_site_url,
         status=item.status,
@@ -1697,6 +1703,52 @@ def update_demo_submission(
     db.commit()
     db.refresh(item)
     return _serialize_demo_submission(item)
+
+
+@router.get("/admin/demo-submissions/{submission_id}/download", response_model=None)
+def admin_download_demo_file(
+    submission_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> FileResponse | Response:
+    """Stream or download the attached MP3 for a demo submission (admin only)."""
+    require_admin(user)
+    item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
+    try:
+        fields = json.loads(item.fields_json or "{}")
+        path = fields.get("demo_file_path")
+    except (json.JSONDecodeError, TypeError):
+        path = None
+    if not path or not os.path.isfile(path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No file attached")
+    return FileResponse(path, filename=os.path.basename(path), media_type="audio/mpeg")
+
+
+@router.delete("/admin/demo-submissions/{submission_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_demo_submission(
+    submission_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> None:
+    """Delete a demo submission. Optionally removes the attached file from disk."""
+    require_admin(user)
+    item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
+    try:
+        fields = json.loads(item.fields_json or "{}")
+        path = fields.get("demo_file_path")
+    except (json.JSONDecodeError, TypeError):
+        path = None
+    db.delete(item)
+    db.commit()
+    if path and os.path.isfile(path):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
 
 
 @router.post("/admin/demo-submissions/{submission_id}/approve", response_model=DemoSubmissionOut)

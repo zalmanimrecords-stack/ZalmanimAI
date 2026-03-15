@@ -596,6 +596,7 @@ class DemoSubmissionOut(BaseModel):
     message: str | None
     links: list[str] = []
     fields: dict = {}
+    has_demo_file: bool = False
     source: str
     source_site_url: str | None
     status: str

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -1016,6 +1017,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       _updateDemoStatus(submission, status);
 
   @override
+  Future<void> deleteDemoSubmission(Map<String, dynamic> submission) =>
+      _deleteDemoSubmission(submission);
+
+  @override
   void importCatalogCsv() => _importCatalogCsv();
 
   @override
@@ -1695,6 +1700,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 _demoInfoRow('City', (submission['city'] ?? '').toString()),
                 _demoInfoRow('Status', (submission['status'] ?? '').toString()),
                 _demoInfoRow('Message', (submission['message'] ?? '').toString()),
+                if (submission['has_demo_file'] == true) ...[
+                  const SizedBox(height: 12),
+                  const Text('Demo MP3', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  _DemoMp3PlayerWidget(
+                    downloadUrl: widget.apiClient.demoSubmissionDownloadUrl(id),
+                    token: widget.token,
+                  ),
+                ],
                 const SizedBox(height: 12),
                 const Text('Links', style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 6),
@@ -1764,6 +1778,22 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       _setError(e);
     } finally {
       notesController.dispose();
+    }
+  }
+
+  Future<void> _deleteDemoSubmission(Map<String, dynamic> submission) async {
+    final id = submission['id'] as int?;
+    if (id == null) return;
+    final artistName = (submission['artist_name'] ?? '').toString();
+    try {
+      await widget.apiClient.deleteDemoSubmission(token: widget.token, id: id);
+      await _loadDemoSubmissions(withOverlay: false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Demo #$id${artistName.isNotEmpty ? ' ($artistName)' : ''} deleted.')),
+      );
+    } catch (e) {
+      _setError(e);
     }
   }
 
@@ -5966,6 +5996,129 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
 }
 
 /// Embeds a SoundCloud player for the given track/page URL.
+/// Inline audio player for demo MP3 (streams from admin download URL with auth).
+class _DemoMp3PlayerWidget extends StatefulWidget {
+  const _DemoMp3PlayerWidget({required this.downloadUrl, required this.token});
+
+  final String downloadUrl;
+  final String token;
+
+  @override
+  State<_DemoMp3PlayerWidget> createState() => _DemoMp3PlayerWidgetState();
+}
+
+class _DemoMp3PlayerWidgetState extends State<_DemoMp3PlayerWidget> {
+  final AudioPlayer _player = AudioPlayer();
+
+  @override
+  void initState() {
+    super.initState();
+    _player.setAudioSource(
+      AudioSource.uri(
+        Uri.parse(widget.downloadUrl),
+        headers: {'Authorization': 'Bearer ${widget.token}'},
+      ),
+    ).catchError((Object e) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  icon: Icon(_player.playing ? Icons.pause_circle_filled : Icons.play_circle_filled),
+                  iconSize: 48,
+                  onPressed: () async {
+                    if (_player.playing) {
+                      await _player.pause();
+                    } else {
+                      await _player.play();
+                    }
+                    if (mounted) setState(() {});
+                  },
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: StreamBuilder<Duration>(
+                    stream: _player.positionStream,
+                    builder: (context, snap) {
+                      final position = snap.data ?? Duration.zero;
+                      final duration = _player.duration ?? Duration.zero;
+                      final posSec = position.inSeconds;
+                      final durSec = duration.inSeconds > 0 ? duration.inSeconds : 1;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              trackHeight: 3,
+                              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                            ),
+                            child: Slider(
+                              value: posSec.clamp(0, durSec).toDouble(),
+                              max: durSec.toDouble(),
+                              onChanged: (v) => _player.seek(Duration(seconds: v.toInt())),
+                            ),
+                          ),
+                          Text(
+                            '${_formatDuration(position)} / ${_formatDuration(duration)}',
+                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+            StreamBuilder<PlayerState>(
+              stream: _player.playerStateStream,
+              builder: (context, snap) {
+                final state = snap.data;
+                if (state?.processingState == ProcessingState.failed) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: SelectableText(
+                      'Failed to load audio: ${_player.playerState.processingState}',
+                      style: const TextStyle(fontSize: 12, color: Colors.red),
+                    ),
+                  );
+                }
+                return const SizedBox.shrink();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _formatDuration(Duration d) {
+    final m = d.inMinutes;
+    final s = d.inSeconds.remainder(60);
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+}
+
 class _SoundCloudEmbedWidget extends StatefulWidget {
   const _SoundCloudEmbedWidget({required this.soundCloudUrl});
 
