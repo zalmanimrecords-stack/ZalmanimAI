@@ -1528,6 +1528,20 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     );
   }
 
+  /// Formats a demo submission date (ISO string or null) for display. Returns null if missing/invalid.
+  static String? _formatDemoDate(dynamic value) {
+    if (value == null) return null;
+    final s = value.toString().trim();
+    if (s.isEmpty) return null;
+    try {
+      final dt = DateTime.parse(s);
+      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
+          '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return s;
+    }
+  }
+
   /// Collects SoundCloud URLs from demo submission links, fields, and message text.
   static List<String> _getSoundCloudUrls(Map<String, dynamic> submission) {
     final urls = <String>{};
@@ -1717,6 +1731,23 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       : 'New artist (not in system)',
                 ),
                 _demoInfoRow('Message', (submission['message'] ?? '').toString()),
+                _demoInfoRow(
+                  'Email consent',
+                  submission['consent_to_emails'] == true
+                      ? 'Yes${_formatDemoDate(submission['consent_at']) != null ? ' (${_formatDemoDate(submission['consent_at'])})' : ''}'
+                      : 'No',
+                ),
+                _demoInfoRow('Source', (submission['source'] ?? '').toString()),
+                if ((submission['source_site_url'] ?? '').toString().isNotEmpty)
+                  _demoInfoRow('Source URL', (submission['source_site_url'] ?? '').toString()),
+                if (_formatDemoDate(submission['created_at']) != null)
+                  _demoInfoRow('Submitted at', _formatDemoDate(submission['created_at'])!),
+                if (_formatDemoDate(submission['updated_at']) != null)
+                  _demoInfoRow('Last updated', _formatDemoDate(submission['updated_at'])!),
+                if (_formatDemoDate(submission['approval_email_sent_at']) != null)
+                  _demoInfoRow('Approval email sent', _formatDemoDate(submission['approval_email_sent_at'])!),
+                if (_formatDemoDate(submission['rejection_email_sent_at']) != null)
+                  _demoInfoRow('Rejection email sent', _formatDemoDate(submission['rejection_email_sent_at'])!),
                 if (submission['has_demo_file'] == true) ...[
                   const SizedBox(height: 12),
                   const Text('Demo MP3', style: TextStyle(fontWeight: FontWeight.w600)),
