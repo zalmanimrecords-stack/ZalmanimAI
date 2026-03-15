@@ -22,7 +22,7 @@ class _ArtistsTabState extends State<ArtistsTab> {
 
   static const double _rowHeight = 56;
   static const double _headerHeight = 48;
-  static const double _minTableWidth = 1180;
+  static const double _minTableWidth = 1280;
 
   AdminDashboardDelegate get delegate => widget.delegate;
 
@@ -101,6 +101,10 @@ class _ArtistsTabState extends State<ArtistsTab> {
           va = ar.lastProfileUpdatedDisplay.toLowerCase();
           vb = br.lastProfileUpdatedDisplay.toLowerCase();
           break;
+        case 5:
+          va = ar.lastEmailSentDisplay.toLowerCase();
+          vb = br.lastEmailSentDisplay.toLowerCase();
+          break;
         default:
           va = '';
           vb = '';
@@ -115,11 +119,12 @@ class _ArtistsTabState extends State<ArtistsTab> {
         final width = constraints.maxWidth * 0.95;
         final height = constraints.maxHeight * 0.9;
         final tableWidth = math.max(width - (sideMargin * 2), _minTableWidth);
-        final brandWidth = tableWidth * 0.16;
-        final nameWidth = tableWidth * 0.16;
-        final emailWidth = tableWidth * 0.22;
-        final releaseWidth = tableWidth * 0.20;
-        final profileUpdatedWidth = tableWidth * 0.12;
+        final brandWidth = tableWidth * 0.14;
+        final nameWidth = tableWidth * 0.14;
+        final emailWidth = tableWidth * 0.20;
+        final releaseWidth = tableWidth * 0.18;
+        final profileUpdatedWidth = tableWidth * 0.10;
+        final lastEmailWidth = tableWidth * 0.10;
         final actionsWidth = tableWidth * 0.14;
 
         return Center(
@@ -168,6 +173,12 @@ class _ArtistsTabState extends State<ArtistsTab> {
                           icon: const Icon(ZalmanimIcons.merge),
                           label: const Text('Merge artists'),
                         ),
+                        const SizedBox(width: 8),
+                        FilledButton.icon(
+                          onPressed: delegate.sendArtistPortalInviteToAll,
+                          icon: const Icon(ZalmanimIcons.campaignRequests),
+                          label: const Text('Send portal invite to all'),
+                        ),
                       ],
                     ),
                   ),
@@ -194,6 +205,7 @@ class _ArtistsTabState extends State<ArtistsTab> {
                                       _headerCell(context, 'Email', 2, emailWidth),
                                       _headerCell(context, 'Last Release', 3, releaseWidth),
                                       _headerCell(context, 'Profile updated', 4, profileUpdatedWidth),
+                                      _headerCell(context, 'Last email sent', 5, lastEmailWidth),
                                       SizedBox(width: actionsWidth),
                                     ],
                                   ),
@@ -227,6 +239,7 @@ class _ArtistsTabState extends State<ArtistsTab> {
                                             _textCell(artist.email, emailWidth),
                                             _textCell(artist.lastReleaseDisplay, releaseWidth),
                                             _textCell(artist.lastProfileUpdatedDisplay, profileUpdatedWidth),
+                                            _textCell(artist.lastEmailSentDisplay, lastEmailWidth),
                                             SizedBox(
                                               width: actionsWidth,
                                               child: SingleChildScrollView(
@@ -261,16 +274,6 @@ class _ArtistsTabState extends State<ArtistsTab> {
                                                       color: Colors.indigo,
                                                       tooltip: 'Send portal access email',
                                                       onPressed: () => delegate.sendArtistPortalInvite(
-                                                        artist.id,
-                                                        artist.displayName,
-                                                        artist.email,
-                                                      ),
-                                                    ),
-                                                    _actionButton(
-                                                      icon: ZalmanimIcons.editNote,
-                                                      color: Colors.deepPurple,
-                                                      tooltip: 'Invite to update profile & see releases',
-                                                      onPressed: () => delegate.sendArtistUpdateProfileInvite(
                                                         artist.id,
                                                         artist.displayName,
                                                         artist.email,

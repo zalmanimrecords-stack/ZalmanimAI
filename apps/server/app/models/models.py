@@ -23,6 +23,8 @@ class MailSettings(Base):
     demo_rejection_body: Mapped[str | None] = mapped_column(Text, nullable=True)
     demo_approval_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     demo_approval_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    portal_invite_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    portal_invite_body: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
 # Many-to-many: a release can have multiple artists (e.g. when sync failed and admin assigns, or collab)

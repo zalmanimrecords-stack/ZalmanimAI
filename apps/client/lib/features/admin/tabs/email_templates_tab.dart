@@ -20,13 +20,17 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
   String? _error;
   bool _savingRejection = false;
   bool _savingApproval = false;
+  bool _savingPortalInvite = false;
   String? _rejectionSaveError;
   String? _approvalSaveError;
+  String? _portalInviteSaveError;
 
   final _rejectionSubjectController = TextEditingController();
   final _rejectionBodyController = TextEditingController();
   final _approvalSubjectController = TextEditingController();
   final _approvalBodyController = TextEditingController();
+  final _portalInviteSubjectController = TextEditingController();
+  final _portalInviteBodyController = TextEditingController();
 
   AdminDashboardDelegate get delegate => widget.delegate;
 
@@ -42,6 +46,8 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
     _rejectionBodyController.dispose();
     _approvalSubjectController.dispose();
     _approvalBodyController.dispose();
+    _portalInviteSubjectController.dispose();
+    _portalInviteBodyController.dispose();
     super.dispose();
   }
 
@@ -65,6 +71,10 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
             (data['demo_approval_subject'] as String? ?? '').toString();
         _approvalBodyController.text =
             (data['demo_approval_body'] as String? ?? '').toString();
+        _portalInviteSubjectController.text =
+            (data['portal_invite_subject'] as String? ?? '').toString();
+        _portalInviteBodyController.text =
+            (data['portal_invite_body'] as String? ?? '').toString();
       });
     } catch (e) {
       if (!mounted) return;
@@ -131,6 +141,34 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
     }
   }
 
+  Future<void> _savePortalInvite() async {
+    setState(() {
+      _savingPortalInvite = true;
+      _portalInviteSaveError = null;
+    });
+    try {
+      await delegate.apiClient.updateSystemSettingsMail(
+        token: delegate.token,
+        portalInviteSubject: _portalInviteSubjectController.text.trim(),
+        portalInviteBody: _portalInviteBodyController.text,
+      );
+      if (!mounted) return;
+      setState(() {
+        _savingPortalInvite = false;
+        _portalInviteSaveError = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Portal invite template saved.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _savingPortalInvite = false;
+        _portalInviteSaveError = e.toString();
+      });
+    }
+  }
+
   Widget _sectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -173,7 +211,7 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
       );
     }
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -205,6 +243,14 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
                   ),
                   text: 'Demo approval',
                 ),
+                Tab(
+                  icon: Icon(
+                    ZalmanimIcons.campaignRequests,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  text: 'Portal invite',
+                ),
               ],
             ),
           ),
@@ -232,6 +278,15 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
                   saveError: _approvalSaveError,
                   onChanged: () => setState(() {}),
                   onSave: _saveApproval,
+                ),
+                _PortalInviteSubTab(
+                  sectionTitle: _sectionTitle,
+                  subjectController: _portalInviteSubjectController,
+                  bodyController: _portalInviteBodyController,
+                  saving: _savingPortalInvite,
+                  saveError: _portalInviteSaveError,
+                  onChanged: () => setState(() {}),
+                  onSave: _savePortalInvite,
                 ),
               ],
             ),
@@ -446,6 +501,93 @@ class _DemoApprovalSubTab extends StatelessWidget {
                 : const Icon(ZalmanimIcons.save, size: 18),
             label: Text(
               saving ? 'Saving...' : 'Save demo approval template',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Sub-tab: Portal invite email template (subject + body + save).
+class _PortalInviteSubTab extends StatelessWidget {
+  const _PortalInviteSubTab({
+    required this.sectionTitle,
+    required this.subjectController,
+    required this.bodyController,
+    required this.saving,
+    required this.saveError,
+    required this.onChanged,
+    required this.onSave,
+  });
+
+  final Widget Function(String) sectionTitle;
+  final TextEditingController subjectController;
+  final TextEditingController bodyController;
+  final bool saving;
+  final String? saveError;
+  final VoidCallback onChanged;
+  final VoidCallback onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          sectionTitle('Portal invite email'),
+          const Text(
+            'Sent when you send an artist portal access (single or “Send portal invite to all”). '
+            'Placeholders: {display_name}, {portal_url}, {username}, {temporary_password}.',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: subjectController,
+            decoration: const InputDecoration(
+              labelText: 'Subject',
+              hintText: 'Your Zalmanim Artists Portal access',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (_) => onChanged(),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: bodyController,
+            decoration: const InputDecoration(
+              labelText: 'Body',
+              hintText: 'Hi {display_name}, ...',
+              alignLabelWithHint: true,
+              border: OutlineInputBorder(),
+            ),
+            maxLines: 8,
+            onChanged: (_) => onChanged(),
+          ),
+          const SizedBox(height: 8),
+          if (saveError != null) ...[
+            SelectableText(
+              saveError!,
+              style: const TextStyle(color: Colors.red),
+            ),
+            IconButton(
+              icon: const Icon(Icons.copy),
+              tooltip: 'Copy error',
+              onPressed: () =>
+                  Clipboard.setData(ClipboardData(text: saveError!)),
+            ),
+          ],
+          FilledButton.icon(
+            onPressed: saving ? null : onSave,
+            icon: saving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(ZalmanimIcons.save, size: 18),
+            label: Text(
+              saving ? 'Saving...' : 'Save portal invite template',
             ),
           ),
         ],

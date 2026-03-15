@@ -6,7 +6,6 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/api_client.dart';
-import 'demo_mp3_player.dart';
 import 'file_download.dart';
 import '../../core/session.dart';
 import '../../core/session_storage.dart';
@@ -998,6 +997,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   @override
   void sendArtistPortalInvite(int artistId, String artistName, String artistEmail) =>
       _sendArtistPortalInvite(artistId, artistName, artistEmail);
+  @override
+  void sendArtistPortalInviteToAll() => _sendArtistPortalInviteToAll();
 
   @override
   void sendArtistUpdateProfileInvite(int artistId, String artistName, String artistEmail) =>
@@ -1757,11 +1758,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     apiClient: widget.apiClient,
                     token: widget.token,
                   ),
-                  const SizedBox(height: 8),
-                  DemoMp3PlayerWidget(
-                    downloadUrl: widget.apiClient.demoSubmissionDownloadUrl(id),
-                    token: widget.token,
-                  ),
                 ],
                 const SizedBox(height: 12),
                 const Text('Links', style: TextStyle(fontWeight: FontWeight.w600)),
@@ -2345,6 +2341,83 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         _showErrorSnackBar('$msg\n\nGo to Settings → Mail to configure SMTP or connect Gmail.');
       } else if (isNetworkFailure) {
         _showErrorSnackBar('$msg\n\nNetwork or timeout. The server may be busy sending the email. Try again; if it persists, check the API is reachable.');
+      } else {
+        _showErrorSnackBar(msg);
+      }
+    }
+  }
+
+  Future<void> _sendArtistPortalInviteToAll() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Send portal invite to all artists'),
+        content: const SelectableText(
+          'Send a portal access email to every active artist that has an email address?\n\n'
+          'Each will receive the portal link, their username, and a new temporary password. '
+          'You can edit the email text in Settings → Email templates → Portal invite.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Send to all')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final emailConfigured = await widget.apiClient.isEmailConfigured(widget.token);
+    if (!mounted) return;
+    if (!emailConfigured) {
+      await _showEmailNotConfiguredDialog(context);
+      return;
+    }
+    try {
+      final result = await widget.apiClient.sendArtistPortalInviteToAll(token: widget.token);
+      if (!mounted) return;
+      final sent = result['sent'] as int? ?? 0;
+      final failed = result['failed'] as int? ?? 0;
+      final errors = result['errors'] as List<dynamic>? ?? [];
+      if (failed > 0 && errors.isNotEmpty) {
+        final errorText = errors
+            .map((e) => '${e['email']}: ${e['detail']}')
+            .join('\n');
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text('Portal invites: $sent sent, $failed failed'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SelectableText(errorText),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: errorText));
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Errors copied to clipboard')));
+                    },
+                    icon: const Icon(Icons.copy),
+                    label: const Text('Copy errors'),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+            ],
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Portal invite sent to $sent artist(s).${failed > 0 ? ' $failed failed.' : ''}')),
+        );
+      }
+      loadArtists();
+    } catch (e) {
+      final msg = e.toString();
+      final isNotConfigured = msg.contains('not configured') || msg.contains('Email is not configured');
+      if (isNotConfigured) {
+        _showErrorSnackBar('$msg\n\nGo to Settings → Mail to configure SMTP or connect Gmail.');
       } else {
         _showErrorSnackBar(msg);
       }

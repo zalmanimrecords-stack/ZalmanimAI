@@ -9,6 +9,7 @@ class Artist {
     this.extra = const {},
     this.lastRelease,
     this.lastProfileUpdatedAt,
+    this.lastEmailSentAt,
   });
 
   final int id;
@@ -19,6 +20,8 @@ class Artist {
   final Map<String, dynamic> extra;
   final Map<String, dynamic>? lastRelease;
   final DateTime? lastProfileUpdatedAt;
+  /// When the last system email was sent to this artist (portal invite, update profile, reminder).
+  final DateTime? lastEmailSentAt;
 
   String get brand =>
       (extra['artist_brand']?.toString().trim() ?? name).trim();
@@ -49,6 +52,13 @@ class Artist {
     return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
   }
 
+  /// Last system email sent to artist: short date or "—".
+  String get lastEmailSentDisplay {
+    if (lastEmailSentAt == null) return '—';
+    final d = lastEmailSentAt!;
+    return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  }
+
   /// Last release display: "Title" or "Title (date)" or "—".
   String get lastReleaseDisplay {
     final lr = lastRelease;
@@ -76,6 +86,15 @@ class Artist {
         } catch (_) {}
       }
     }
+    DateTime? lastEmailSentAt;
+    final les = json['last_email_sent_at'];
+    if (les != null) {
+      if (les is String) {
+        try {
+          lastEmailSentAt = DateTime.parse(les);
+        } catch (_) {}
+      }
+    }
     return Artist(
       id: json['id'] as int,
       name: (json['name'] as String?) ?? '',
@@ -85,6 +104,7 @@ class Artist {
       extra: extra is Map<String, dynamic> ? extra : {},
       lastRelease: json['last_release'] as Map<String, dynamic>?,
       lastProfileUpdatedAt: lastProfileUpdatedAt,
+      lastEmailSentAt: lastEmailSentAt,
     );
   }
 
@@ -98,6 +118,7 @@ class Artist {
       'extra': extra,
       if (lastRelease != null) 'last_release': lastRelease,
       if (lastProfileUpdatedAt != null) 'last_profile_updated_at': lastProfileUpdatedAt!.toIso8601String(),
+      if (lastEmailSentAt != null) 'last_email_sent_at': lastEmailSentAt!.toIso8601String(),
     };
   }
 }

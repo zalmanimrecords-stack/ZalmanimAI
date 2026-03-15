@@ -218,7 +218,16 @@ class ApiClient {
       Uri.parse('$baseUrl/public/linktree/$artistId'),
     );
     if (response.statusCode != 200) {
-      throw Exception('Linktree failed (${response.statusCode})');
+      String detail = response.reasonPhrase ?? 'Unknown error';
+      if (response.body.isNotEmpty) {
+        try {
+          final body = jsonDecode(response.body);
+          if (body is Map && body['detail'] != null) {
+            detail = body['detail'].toString();
+          }
+        } catch (_) {}
+      }
+      throw Exception('Linktree failed (${response.statusCode}): $detail');
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
@@ -236,12 +245,16 @@ class ApiClient {
 
   Future<Map<String, dynamic>> submitArtistDemo(
     String token, {
+    required String trackName,
+    required String musicalStyle,
     String message = '',
     List<int>? fileBytes,
     String filename = 'demo.mp3',
   }) async {
     final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/artist/me/demos'));
     request.headers.addAll(_authHeaders(token));
+    request.fields['track_name'] = trackName;
+    request.fields['musical_style'] = musicalStyle;
     request.fields['message'] = message;
     if (fileBytes != null && fileBytes.isNotEmpty) {
       request.files.add(

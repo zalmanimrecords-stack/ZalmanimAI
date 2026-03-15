@@ -41,15 +41,19 @@ class _LinktreePageState extends State<LinktreePage> {
     });
     try {
       final data = await widget.apiClient.fetchPublicLinktree(widget.artistId);
+      if (!mounted) return;
       final linksList = data['links'];
+      final rawName = data['name'];
+      final list = linksList is List ? linksList : <dynamic>[];
+      final parsedLinks = list
+          .map((e) => e is Map ? Map<String, dynamic>.from(e as Map) : <String, dynamic>{})
+          .where((e) => (e['label'] ?? e['url']) != null && (e['url'] ?? '').toString().trim().isNotEmpty)
+          .toList();
       setState(() {
-        name = data['name']?.toString() ?? 'Artist';
-        final list = linksList is List ? linksList : <dynamic>[];
-        links = list
-            .map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{})
-            .where((e) => (e['label'] ?? e['url']) != null)
-            .toList();
+        name = rawName?.toString().trim() ?? 'Artist';
+        links = parsedLinks;
         loading = false;
+        error = null;
       });
     } catch (e) {
       setState(() {
@@ -97,11 +101,22 @@ class _LinktreePageState extends State<LinktreePage> {
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 8),
-                IconButton(
-                  icon: const Icon(ZalmanimIcons.copy),
-                  tooltip: 'Copy',
-                  onPressed: () => Clipboard.setData(ClipboardData(text: error!)),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      icon: const Icon(ZalmanimIcons.copy),
+                      tooltip: 'Copy',
+                      onPressed: () => Clipboard.setData(ClipboardData(text: error!)),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      onPressed: _load,
+                      icon: const Icon(Icons.refresh, size: 20),
+                      label: const Text('Retry'),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -120,7 +135,7 @@ class _LinktreePageState extends State<LinktreePage> {
               const SizedBox(height: 24),
               CircleAvatar(
                 radius: 48,
-                backgroundColor: primary.withValues(alpha: 0.2),
+                backgroundColor: primary.withOpacity(0.2),
                 child: Text(
                   (name ?? '?').isNotEmpty ? (name!.substring(0, 1).toUpperCase()) : '?',
                   style: TextStyle(

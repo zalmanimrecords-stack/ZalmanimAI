@@ -10,7 +10,6 @@ A **separate**, label-branded Flutter app for artists. Deploy it at **artists.za
 - **My profile** – update display name, full name, website, notes
 - **Send demo** – submit a demo with optional message and file
 - **My demos** – list of your demo submissions and status
-- **Upload new music** – upload a release (track title + file)
 - **My releases** – list of your releases and status
 - **My media** – personal media folder (upload, download, delete)
 - **Tasks** – system tasks related to your account

@@ -27,6 +27,7 @@ abstract class AdminDashboardDelegate {
   void showEditArtistDialog(int id);
   void showSetArtistPasswordDialog(int artistId, String artistName);
   void sendArtistPortalInvite(int artistId, String artistName, String artistEmail);
+  void sendArtistPortalInviteToAll();
   void sendArtistUpdateProfileInvite(int artistId, String artistName, String artistEmail);
   void showArtistDetailsDialog(int id);
   void removeArtist(int id, String name);

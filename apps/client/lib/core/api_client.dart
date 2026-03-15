@@ -999,7 +999,7 @@ class ApiClient {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
-  /// Update mail server settings and demo rejection email template. Returns updated system settings.
+  /// Update mail server settings and email templates. Returns updated system settings.
   Future<Map<String, dynamic>> updateSystemSettingsMail({
     required String token,
     String? smtpHost,
@@ -1014,6 +1014,8 @@ class ApiClient {
     String? demoRejectionBody,
     String? demoApprovalSubject,
     String? demoApprovalBody,
+    String? portalInviteSubject,
+    String? portalInviteBody,
   }) async {
     final body = <String, dynamic>{};
     if (smtpHost != null) body['smtp_host'] = smtpHost;
@@ -1028,6 +1030,8 @@ class ApiClient {
     if (demoRejectionBody != null) body['demo_rejection_body'] = demoRejectionBody;
     if (demoApprovalSubject != null) body['demo_approval_subject'] = demoApprovalSubject;
     if (demoApprovalBody != null) body['demo_approval_body'] = demoApprovalBody;
+    if (portalInviteSubject != null) body['portal_invite_subject'] = portalInviteSubject;
+    if (portalInviteBody != null) body['portal_invite_body'] = portalInviteBody;
 
     final response = await http.patch(
       Uri.parse('$baseUrl/admin/settings/mail'),
@@ -1042,6 +1046,20 @@ class ApiClient {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  /// Send portal access email to all active artists that have an email. Returns sent count, failed count, and errors.
+  Future<Map<String, dynamic>> sendArtistPortalInviteToAll({required String token}) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/admin/artists/send-portal-invite-all'),
+      headers: _authHeaders(token),
+    ).timeout(_portalInviteTimeout * 10);
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(response.body);
+      throw Exception(
+        'Send portal invite to all failed (${response.statusCode}): ${detail.isNotEmpty ? detail : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
 
   Future<Map<String, dynamic>> testSystemSettingsMail({
     required String token,

@@ -54,6 +54,8 @@ def get_effective_mail_config_for_api():
         "demo_rejection_body": (getattr(row, "demo_rejection_body", None) if row else None) or "",
         "demo_approval_subject": (getattr(row, "demo_approval_subject", None) if row else None) or "",
         "demo_approval_body": (getattr(row, "demo_approval_body", None) if row else None) or "",
+        "portal_invite_subject": (getattr(row, "portal_invite_subject", None) if row else None) or "",
+        "portal_invite_body": (getattr(row, "portal_invite_body", None) if row else None) or "",
     }
 
 
@@ -70,6 +72,8 @@ def save_mail_settings(
     demo_rejection_body: str | None = None,
     demo_approval_subject: str | None = None,
     demo_approval_body: str | None = None,
+    portal_invite_subject: str | None = None,
+    portal_invite_body: str | None = None,
 ) -> None:
     """Upsert the single mail settings row (id=1). None means do not change; empty string clears override."""
     with SessionLocal() as db:
@@ -101,6 +105,10 @@ def save_mail_settings(
             row.demo_approval_subject = demo_approval_subject.strip() or None
         if demo_approval_body is not None:
             row.demo_approval_body = demo_approval_body.strip() or None
+        if portal_invite_subject is not None:
+            row.portal_invite_subject = portal_invite_subject.strip() or None
+        if portal_invite_body is not None:
+            row.portal_invite_body = portal_invite_body.strip() or None
         db.commit()
 
 def build_mail_config(

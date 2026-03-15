@@ -94,11 +94,12 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
         ),
       );
     }
-    // Public linktree route: /l/{artistId}
-    if (pathSegments.length >= 2 &&
-        pathSegments[0].toLowerCase() == 'l' &&
-        int.tryParse(pathSegments[1]) != null) {
-      final artistId = int.parse(pathSegments[1]);
+    // Public linktree route: /l/{artistId} (e.g. /l/5)
+    final segments = pathSegments.where((s) => s.isNotEmpty).toList();
+    if (segments.length >= 2 &&
+        segments[0].toLowerCase() == 'l' &&
+        int.tryParse(segments[1]) != null) {
+      final artistId = int.parse(segments[1]);
       return MaterialApp(
         title: AppConfig.labelName,
         theme: ThemeData(

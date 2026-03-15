@@ -79,6 +79,8 @@ from app.schemas.schemas import (
     ForgotPasswordRequest,
     ArtistChangePasswordRequest,
     ArtistLoginRequest,
+    ArtistPortalInviteBulkError,
+    ArtistPortalInviteBulkResponse,
     ArtistPortalInviteResponse,
     LoginActivityOut,
     ArtistSetPasswordRequest,
@@ -588,6 +590,52 @@ def _get_demo_approval_subject_and_body(artist_name: str) -> tuple[str, str]:
     return subject, body
 
 
+def _default_portal_invite_subject() -> str:
+    return "Your Zalmanim Artists Portal access"
+
+
+def _default_portal_invite_body(display_name: str, portal_url: str, username: str, temporary_password: str) -> str:
+    return (
+        f"Hi {display_name},\n\n"
+        "Your access to the Zalmanim Artists Portal is ready.\n\n"
+        "Inside the portal you can update your profile, upload media, upload releases, submit demos, "
+        "and change your password.\n\n"
+        f"Portal link: {portal_url}\n"
+        f"Username: {username}\n"
+        f"Temporary password: {temporary_password}\n\n"
+        "Please sign in and change your password after your first login.\n\n"
+        "If you have any questions, reply to this email.\n"
+    )
+
+
+def _get_portal_invite_subject_and_body(
+    display_name: str, portal_url: str, username: str, temporary_password: str
+) -> tuple[str, str]:
+    """Resolve portal invite subject and body from settings or defaults. Placeholders: {display_name}, {portal_url}, {username}, {temporary_password}."""
+    mail = get_effective_mail_config_for_api()
+    subject = (mail.get("portal_invite_subject") or "").strip()
+    body = (mail.get("portal_invite_body") or "").strip()
+    if not subject:
+        subject = _default_portal_invite_subject()
+    else:
+        subject = (
+            subject.replace("{display_name}", display_name)
+            .replace("{portal_url}", portal_url)
+            .replace("{username}", username)
+            .replace("{temporary_password}", temporary_password)
+        )
+    if not body:
+        body = _default_portal_invite_body(display_name, portal_url, username, temporary_password)
+    else:
+        body = (
+            body.replace("{display_name}", display_name)
+            .replace("{portal_url}", portal_url)
+            .replace("{username}", username)
+            .replace("{temporary_password}", temporary_password)
+        )
+    return subject, body
+
+
 def _get_demo_rejection_subject_and_body(item: DemoSubmission) -> tuple[str, str]:
     """Resolve rejection email subject and body from settings or defaults; replace placeholders."""
     mail = get_effective_mail_config_for_api()
@@ -830,6 +878,8 @@ def init_db() -> None:
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_rejection_body TEXT"))
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_approval_subject VARCHAR(255)"))
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_approval_body TEXT"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS portal_invite_subject VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS portal_invite_body TEXT"))
             conn.commit()
     except Exception as e:
         logging.getLogger(__name__).warning("DB migration (auth/users): %s", e)
@@ -1575,6 +1625,24 @@ def update_user(
     return _serialize_user(target)
 
 
+def _last_email_sent_map(db: Session, artist_ids: list[int]) -> dict[int, datetime]:
+    """Return map artist_id -> max(created_at) for activity types that send email."""
+    if not artist_ids:
+        return {}
+    rows = (
+        db.query(ArtistActivityLog.artist_id, func.max(ArtistActivityLog.created_at).label("last_at"))
+        .filter(
+            ArtistActivityLog.artist_id.in_(artist_ids),
+            ArtistActivityLog.activity_type.in_(
+                ("portal_invite_email", "update_profile_invite_email", "reminder_email")
+            ),
+        )
+        .group_by(ArtistActivityLog.artist_id)
+        .all()
+    )
+    return {aid: last_at for aid, last_at in rows}
+
+
 @router.get("/artists", response_model=list[ArtistOut])
 def list_artists(
     include_inactive: bool = Query(False, description="Include inactive artists"),
@@ -1588,6 +1656,8 @@ def list_artists(
     if not include_inactive:
         q = q.filter(Artist.is_active.is_(True))
     artists = q.offset(offset).limit(limit).all()
+    artist_ids = [a.id for a in artists]
+    last_email_map = _last_email_sent_map(db, artist_ids)
     out = []
     for a in artists:
         latest = (
@@ -1602,7 +1672,13 @@ def list_artists(
                 "title": latest.title,
                 "created_at": latest.created_at.isoformat() if latest.created_at else None,
             }
-        out.append(ArtistOut.from_artist(a, last_release=last_release))
+        out.append(
+            ArtistOut.from_artist(
+                a,
+                last_release=last_release,
+                last_email_sent_at=last_email_map.get(a.id),
+            )
+        )
     return out
 
 
@@ -1933,28 +2009,15 @@ def admin_send_artist_portal_invite(
     )
     portal_url = _artist_portal_url()
     temporary_password = _generate_temporary_password()
-    subject = "Your Zalmanim Artists Portal access"
-    body_text = (
-        f"Hi {display_name},\n\n"
-        "Your access to the Zalmanim Artists Portal is ready.\n\n"
-        "Inside the portal you can update your profile, upload media, upload releases, submit demos, "
-        "and change your password.\n\n"
-        f"Portal link: {portal_url}\n"
-        f"Username: {username}\n"
-        f"Temporary password: {temporary_password}\n\n"
-        "Please sign in and change your password after your first login.\n\n"
-        "If you have any questions, reply to this email.\n"
+    subject, body_text = _get_portal_invite_subject_and_body(
+        display_name, portal_url, username, temporary_password
     )
-    body_html = (
-        f"<p>Hi {html.escape(display_name)},</p>"
-        "<p>Your access to the Zalmanim Artists Portal is ready.</p>"
-        "<p>Inside the portal you can update your profile, upload media, upload releases, submit demos, "
-        "and change your password.</p>"
-        f"<p><strong>Portal link:</strong> <a href=\"{html.escape(portal_url)}\">{html.escape(portal_url)}</a><br>"
-        f"<strong>Username:</strong> {html.escape(username)}<br>"
-        f"<strong>Temporary password:</strong> {html.escape(temporary_password)}</p>"
-        "<p>Please sign in and change your password after your first login.</p>"
-        "<p>If you have any questions, reply to this email.</p>"
+    # Build HTML from plain body: escape and turn paragraphs into <p>, newlines into <br>
+    body_html = "<p>" + html.escape(body_text).replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
+    # Make portal URL clickable if it appears as plain text
+    body_html = body_html.replace(
+        html.escape(portal_url),
+        f'<a href="{html.escape(portal_url)}">{html.escape(portal_url)}</a>',
     )
 
     artist.password_hash = hash_password(temporary_password)
@@ -1982,6 +2045,70 @@ def admin_send_artist_portal_invite(
         message="Artist portal invitation sent.",
         portal_url=portal_url,
         username=username,
+    )
+
+
+@router.post("/admin/artists/send-portal-invite-all", response_model=ArtistPortalInviteBulkResponse)
+def admin_send_portal_invite_all(
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> ArtistPortalInviteBulkResponse:
+    """Send portal access email to all active artists that have an email address."""
+    require_admin(user)
+    artists = (
+        db.query(Artist)
+        .filter(Artist.is_active.is_(True))
+        .filter(Artist.email.isnot(None), Artist.email != "")
+        .order_by(Artist.id)
+        .all()
+    )
+    sent = 0
+    errors: list[dict] = []
+    for artist in artists:
+        username = (artist.email or "").strip().lower()
+        if not username:
+            continue
+        extra = _artist_extra_from_model(artist)
+        display_name = (
+            str(extra.get("full_name") or "").strip()
+            or str(extra.get("artist_brand") or "").strip()
+            or (artist.name or "").strip()
+            or username
+        )
+        portal_url = _artist_portal_url()
+        temporary_password = _generate_temporary_password()
+        subject, body_text = _get_portal_invite_subject_and_body(
+            display_name, portal_url, username, temporary_password
+        )
+        body_html = "<p>" + html.escape(body_text).replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
+        body_html = body_html.replace(
+            html.escape(portal_url),
+            f'<a href="{html.escape(portal_url)}">{html.escape(portal_url)}</a>',
+        )
+        artist.password_hash = hash_password(temporary_password)
+        success, message = send_email_service(
+            to_email=username,
+            subject=subject,
+            body_text=body_text,
+            body_html=body_html,
+        )
+        if not success:
+            errors.append({"artist_id": artist.id, "email": username, "detail": message})
+            db.rollback()
+            continue
+        db.add(
+            ArtistActivityLog(
+                artist_id=artist.id,
+                activity_type="portal_invite_email",
+                details=f"Portal invite sent to {username}",
+            )
+        )
+        db.commit()
+        sent += 1
+    return ArtistPortalInviteBulkResponse(
+        sent=sent,
+        failed=len(errors),
+        errors=[ArtistPortalInviteBulkError(**e) for e in errors],
     )
 
 
@@ -2313,13 +2440,22 @@ def artist_list_my_demos(
 
 @router.post("/artist/me/demos", response_model=DemoSubmissionOut)
 def artist_submit_demo(
+    track_name: str = Form(""),
+    musical_style: str = Form(""),
     message: str = Form(""),
     file: UploadFile | None = File(None),
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> DemoSubmissionOut:
-    """Submit a demo from the artist portal (message + optional file)."""
+    """Submit a demo from the artist portal (track name, musical style, optional message + optional file)."""
     require_artist(user)
+    track_name_clean = track_name.strip()
+    musical_style_clean = musical_style.strip()
+    if not track_name_clean:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Track name is required")
+    if not musical_style_clean:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Musical style is required")
+
     artist = db.query(Artist).filter(Artist.id == user.artist_id).first()
     if not artist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
@@ -2336,7 +2472,7 @@ def artist_submit_demo(
             out.write(file.file.read())
         demo_file_path = path
 
-    fields = {}
+    fields = {"track_name": track_name_clean, "musical_style": musical_style_clean}
     if demo_file_path:
         fields["demo_file_path"] = demo_file_path
     item = DemoSubmission(
@@ -3016,6 +3152,8 @@ def get_system_settings(
         demo_rejection_body=mail.get("demo_rejection_body", "") or "",
         demo_approval_subject=mail.get("demo_approval_subject", "") or "",
         demo_approval_body=mail.get("demo_approval_body", "") or "",
+        portal_invite_subject=mail.get("portal_invite_subject", "") or "",
+        portal_invite_body=mail.get("portal_invite_body", "") or "",
         oauth_redirect_base=settings.oauth_redirect_base or "",
         google_oauth_configured=bool(settings.google_client_id and settings.google_client_secret),
         gmail_connected=gmail_connected,
@@ -3047,6 +3185,8 @@ def update_system_settings_mail(
         demo_rejection_body=payload.demo_rejection_body,
         demo_approval_subject=payload.demo_approval_subject,
         demo_approval_body=payload.demo_approval_body,
+        portal_invite_subject=payload.portal_invite_subject,
+        portal_invite_body=payload.portal_invite_body,
     )
     mail = get_effective_mail_config_for_api()
     gmail_connected, gmail_email = _gmail_connection_status(db)
@@ -3063,6 +3203,8 @@ def update_system_settings_mail(
         demo_rejection_body=mail.get("demo_rejection_body", "") or "",
         demo_approval_subject=mail.get("demo_approval_subject", "") or "",
         demo_approval_body=mail.get("demo_approval_body", "") or "",
+        portal_invite_subject=mail.get("portal_invite_subject", "") or "",
+        portal_invite_body=mail.get("portal_invite_body", "") or "",
         oauth_redirect_base=settings.oauth_redirect_base or "",
         google_oauth_configured=bool(settings.google_client_id and settings.google_client_secret),
         gmail_connected=gmail_connected,

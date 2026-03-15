@@ -26,6 +26,18 @@ class ArtistPortalInviteResponse(BaseModel):
     username: str
 
 
+class ArtistPortalInviteBulkError(BaseModel):
+    artist_id: int
+    email: str
+    detail: str
+
+
+class ArtistPortalInviteBulkResponse(BaseModel):
+    sent: int
+    failed: int
+    errors: list[ArtistPortalInviteBulkError] = []
+
+
 class ArtistChangePasswordRequest(BaseModel):
     """Artist changes own password (current + new)."""
     current_password: str
@@ -259,6 +271,7 @@ class ArtistOut(BaseModel):
     extra: dict = {}  # CSV-style fields (artist_brand, full_name, website, ...)
     last_release: dict | None = None  # {"title": str, "created_at": str} for list display
     last_reminder_sent_at: datetime | None = None  # When last reminder email was sent (reports)
+    last_email_sent_at: datetime | None = None  # When last system email was sent (portal invite, update profile, reminder)
     last_login_at: datetime | None = None
     last_profile_updated_at: datetime | None = None  # When artist last updated their portal profile
 
@@ -272,8 +285,9 @@ class ArtistOut(BaseModel):
         *,
         last_release: dict | None = None,
         last_reminder_sent_at: datetime | None = None,
+        last_email_sent_at: datetime | None = None,
     ) -> "ArtistOut":
-        """Build ArtistOut from ORM Artist (extra from extra_json). Optionally include last_release, last_reminder_sent_at."""
+        """Build ArtistOut from ORM Artist (extra from extra_json). Optionally include last_release, last_reminder_sent_at, last_email_sent_at."""
         extra = {}
         if getattr(artist, "extra_json", None):
             try:
@@ -289,6 +303,7 @@ class ArtistOut(BaseModel):
             extra=extra,
             last_release=last_release,
             last_reminder_sent_at=last_reminder_sent_at,
+            last_email_sent_at=last_email_sent_at,
             last_login_at=getattr(artist, "last_login_at", None),
             last_profile_updated_at=getattr(artist, "last_profile_updated_at", None),
         )
@@ -874,6 +889,8 @@ class SystemSettingsOut(BaseModel):
     demo_rejection_body: str = ""
     demo_approval_subject: str = ""
     demo_approval_body: str = ""
+    portal_invite_subject: str = ""
+    portal_invite_body: str = ""
     # OAuth / redirects
     oauth_redirect_base: str = ""
     oauth_success_redirect: str = ""
@@ -915,6 +932,8 @@ class SystemSettingsMailUpdate(BaseModel):
     demo_rejection_body: str | None = None
     demo_approval_subject: str | None = None
     demo_approval_body: str | None = None
+    portal_invite_subject: str | None = None
+    portal_invite_body: str | None = None
 
 
 

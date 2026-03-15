@@ -40,7 +40,8 @@ const List<MapEntry<String, String>> _socialKeys = [
 ];
 
 class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
-  final titleController = TextEditingController();
+  final demoTrackNameController = TextEditingController();
+  final demoMusicalStyleController = TextEditingController();
   final demoMessageController = TextEditingController();
   final profileNameController = TextEditingController();
   final profileNotesController = TextEditingController();
@@ -49,7 +50,6 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
   final Map<String, TextEditingController> socialControllers = {};
 
   bool loading = true;
-  bool uploading = false;
   bool savingProfile = false;
   bool changingPassword = false;
   bool submittingDemo = false;
@@ -78,7 +78,8 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
 
   @override
   void dispose() {
-    titleController.dispose();
+    demoTrackNameController.dispose();
+    demoMusicalStyleController.dispose();
     demoMessageController.dispose();
     profileNameController.dispose();
     profileNotesController.dispose();
@@ -233,45 +234,10 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
     }
   }
 
-  Future<void> _pickAndUploadRelease() async {
-    if (titleController.text.trim().isEmpty) {
-      setState(() => error = 'Please enter track title first');
-      return;
-    }
-    final result = await FilePicker.platform.pickFiles(withData: true);
-    if (result == null || result.files.isEmpty) return;
-    final f = result.files.single;
-    if (f.bytes == null || f.bytes!.isEmpty) {
-      setState(() => error = 'Could not read file. Please try again.');
-      return;
-    }
-    setState(() {
-      uploading = true;
-      error = null;
-    });
-    try {
-      await widget.apiClient.uploadRelease(
-        token: widget.token,
-        title: titleController.text.trim(),
-        fileBytes: f.bytes!,
-        filename: f.name,
-      );
-      titleController.clear();
-      await _load();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Uploaded')));
-      }
-    } catch (e) {
-      setState(() => error = e.toString().replaceFirst('Exception: ', ''));
-    } finally {
-      if (mounted) setState(() => uploading = false);
-    }
-  }
-
   Future<void> _requestCampaign() async {
     final releases = (dashboard?['releases'] as List<dynamic>? ?? []);
     if (releases.isEmpty) {
-      setState(() => error = 'You have no releases yet. Upload music first.');
+      setState(() => error = 'You have no releases yet.');
       return;
     }
     int? selectedReleaseId = releases.isNotEmpty ? (releases.first as Map<String, dynamic>)['id'] as int? : null;
@@ -354,6 +320,16 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
   }
 
   Future<void> _submitDemo() async {
+    final trackName = demoTrackNameController.text.trim();
+    final musicalStyle = demoMusicalStyleController.text.trim();
+    if (trackName.isEmpty) {
+      setState(() => error = 'Track name is required');
+      return;
+    }
+    if (musicalStyle.isEmpty) {
+      setState(() => error = 'Musical style is required');
+      return;
+    }
     setState(() {
       submittingDemo = true;
       error = null;
@@ -371,10 +347,14 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
       }
       await widget.apiClient.submitArtistDemo(
         widget.token,
+        trackName: trackName,
+        musicalStyle: musicalStyle,
         message: demoMessageController.text.trim(),
         fileBytes: bytes,
         filename: filename,
       );
+      demoTrackNameController.clear();
+      demoMusicalStyleController.clear();
       demoMessageController.clear();
       await _load();
       if (mounted) {
@@ -733,8 +713,26 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Your name and email are taken from your profile. Add only a message and/or file below.',
+                              'Your name and email are taken from your profile. Enter track name and musical style (required), then add a message and/or file below.',
                               style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: demoTrackNameController,
+                              decoration: const InputDecoration(
+                                labelText: 'Track name',
+                                hintText: 'Name of the track',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: demoMusicalStyleController,
+                              decoration: const InputDecoration(
+                                labelText: 'Musical style',
+                                hintText: 'e.g. Pop, Rock, Electronic',
+                                border: OutlineInputBorder(),
+                              ),
                             ),
                             const SizedBox(height: 12),
                             TextField(
@@ -772,26 +770,6 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                             subtitle: Text('Status: ${item['status']}'),
                           );
                         }),
-                      const SizedBox(height: 24),
-                      _sectionTitle(context, 'Upload new music', primary),
-                      _card(
-                        context,
-                        primary,
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            TextField(
-                              controller: titleController,
-                              decoration: const InputDecoration(labelText: 'Track title', border: OutlineInputBorder()),
-                            ),
-                            const SizedBox(height: 12),
-                            FilledButton(
-                              onPressed: uploading ? null : _pickAndUploadRelease,
-                              child: Text(uploading ? 'Uploading...' : 'Select file and upload'),
-                            ),
-                          ],
-                        ),
-                      ),
                       const SizedBox(height: 24),
                       _sectionTitle(context, 'My releases', primary),
                       if (releases.isEmpty)
