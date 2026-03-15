@@ -1752,14 +1752,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   const SizedBox(height: 12),
                   const Text('Demo MP3', style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 6),
-                  DemoMp3PlayerWidget(
-                    downloadUrl: widget.apiClient.demoSubmissionDownloadUrl(id),
-                    token: widget.token,
-                  ),
-                  const SizedBox(height: 8),
                   _DemoDownloadMp3Link(
                     demoId: id,
                     apiClient: widget.apiClient,
+                    token: widget.token,
+                  ),
+                  const SizedBox(height: 8),
+                  DemoMp3PlayerWidget(
+                    downloadUrl: widget.apiClient.demoSubmissionDownloadUrl(id),
                     token: widget.token,
                   ),
                 ],
@@ -6095,15 +6095,18 @@ class _DemoDownloadMp3LinkState extends State<_DemoDownloadMp3Link> {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(top: 4),
-      child: TextButton.icon(
+      child: FilledButton.icon(
         onPressed: _downloading ? null : _download,
         icon: _downloading
-            ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
+            ? SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Theme.of(context).colorScheme.onPrimary,
+                ),
               )
-            : const Icon(Icons.download),
+            : const Icon(Icons.download, size: 20),
         label: Text(_downloading ? 'Downloading...' : 'Download MP3'),
       ),
     );

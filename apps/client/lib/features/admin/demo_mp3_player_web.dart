@@ -47,12 +47,15 @@ class _DemoMp3PlayerWidgetWebState extends State<DemoMp3PlayerWidget> {
       final response = await http.get(
         Uri.parse(widget.downloadUrl),
         headers: {'Authorization': 'Bearer ${widget.token}'},
+      ).timeout(
+        const Duration(seconds: 20),
+        onTimeout: () => throw Exception('Load timed out. Use "Download MP3" below to get the file.'),
       );
       if (!mounted) return;
       if (response.statusCode != 200) {
         setState(() {
           _loading = false;
-          _error = 'Failed to load audio (${response.statusCode})';
+          _error = 'Failed to load audio (${response.statusCode}). Use "Download MP3" above to get the file.';
         });
         return;
       }
@@ -65,6 +68,11 @@ class _DemoMp3PlayerWidgetWebState extends State<DemoMp3PlayerWidget> {
         setState(() {
           _loading = false;
           _error = null;
+        });
+      } else if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'Player not ready. Use "Download MP3" above to get the file.';
         });
       }
     } catch (e) {
