@@ -86,6 +86,51 @@ def get_current_user(
 
 
 
+# Reject artist tokens on LM-only routes (same message as routes.LM_FORBIDDEN_ARTIST_DETAIL).
+LM_FORBIDDEN_ARTIST_DETAIL = "Artists cannot access the LM system. Use the artist portal."
+
+
+def get_current_lm_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+) -> UserContext:
+    """
+    Same as get_current_user but rejects artist portal tokens with 403.
+    Use for all LM (label management) routes; only users from the users table are allowed.
+    """
+    try:
+        payload = decode_token(credentials.credentials)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token") from exc
+    sub = payload.get("sub")
+    if isinstance(sub, str) and sub.startswith("artist:"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=LM_FORBIDDEN_ARTIST_DETAIL,
+        )
+    try:
+        user_id = int(payload["sub"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    user = (
+        db.query(User)
+        .options(joinedload(User.artist), joinedload(User.identities))
+        .filter(User.id == user_id)
+        .first()
+    )
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is inactive or missing")
+    return UserContext(
+        user_id=user.id,
+        role=user.role,
+        email=user.email,
+        full_name=user.full_name,
+        permissions=permissions_for_role(user.role),
+        artist_id=user.artist_id,
+        is_active=user.is_active,
+    )
+
+
 def require_admin(user: UserContext) -> None:
     if user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
@@ -239,7 +284,7 @@ def _list_out(db: Session, mailing_list: MailingList) -> MailingListOut:
 @router.get("/admin/audiences", response_model=list[MailingListOut])
 def list_audiences(
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> list[MailingListOut]:
     require_admin(user)
     lists = db.query(MailingList).order_by(MailingList.created_at.desc(), MailingList.id.desc()).all()
@@ -250,7 +295,7 @@ def list_audiences(
 def create_audience(
     payload: MailingListCreate,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> MailingListOut:
     require_admin(user)
     mailing_list = MailingList(
@@ -273,7 +318,7 @@ def update_audience(
     list_id: int,
     payload: MailingListUpdate,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> MailingListOut:
     require_admin(user)
     mailing_list = db.get(MailingList, list_id)
@@ -306,7 +351,7 @@ async def import_mailchimp_audience(
     existing_list_id: int | None = Form(None),
     list_name: str | None = Form(None),
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> dict:
     require_admin(user)
     if not (file.filename or "").lower().endswith(".csv"):
@@ -389,7 +434,7 @@ def list_audience_subscribers(
     list_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> list[MailingSubscriberOut]:
     require_admin(user)
     mailing_list = db.get(MailingList, list_id)
@@ -410,7 +455,7 @@ def create_audience_subscriber(
     payload: MailingSubscriberCreate,
     request: Request,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> MailingSubscriberOut:
     require_admin(user)
     mailing_list = db.get(MailingList, list_id)
@@ -445,7 +490,7 @@ def update_audience_subscriber(
     payload: MailingSubscriberUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> MailingSubscriberOut:
     require_admin(user)
     subscriber = db.get(MailingSubscriber, subscriber_id)

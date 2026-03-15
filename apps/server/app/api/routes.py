@@ -1029,6 +1029,50 @@ def get_current_user(
 
 
 
+# 403 detail when artist token is used on LM-only routes (client can show copyable message).
+LM_FORBIDDEN_ARTIST_DETAIL = "Artists cannot access the LM system. Use the artist portal."
+
+
+def get_current_lm_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+) -> UserContext:
+    """
+    Same as get_current_user but rejects artist portal tokens with 403.
+    Use for all LM (label management) routes; only users from the users table are allowed.
+    """
+    try:
+        payload = decode_token(credentials.credentials)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+
+    sub = payload.get("sub")
+    if isinstance(sub, str) and sub.startswith("artist:"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=LM_FORBIDDEN_ARTIST_DETAIL,
+        )
+
+    # Admin/manager token (users table only)
+    user = (
+        db.query(User)
+        .options(joinedload(User.artist), joinedload(User.identities))
+        .filter(User.id == int(payload["sub"]))
+        .first()
+    )
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is inactive or missing")
+    return UserContext(
+        user_id=user.id,
+        role=user.role,
+        email=user.email,
+        full_name=user.full_name,
+        permissions=permissions_for_role(user.role),
+        artist_id=user.artist_id,
+        is_active=user.is_active,
+    )
+
+
 def require_admin(user: UserContext) -> None:
     if user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
@@ -1366,7 +1410,7 @@ def public_linktree(
 @router.get("/auth/me", response_model=UserOut)
 def get_me(
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> UserOut:
     current_user = (
         db.query(User)
@@ -1389,7 +1433,7 @@ def start_provider_login(provider: str, request: Request, redirect_uri: str) -> 
 def start_google_mail_connect(
     request: Request,
     redirect_uri: str,
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> dict:
     require_admin(user)
     state = _build_oauth_state(provider="google", purpose="connect_gmail", app_redirect=redirect_uri, user_id=user.user_id)
@@ -1459,7 +1503,7 @@ def oauth_callback(
 @router.get("/admin/users", response_model=list[UserOut])
 def list_users(
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> list[UserOut]:
     require_admin(user)
     users = db.query(User).options(joinedload(User.artist), joinedload(User.identities)).order_by(User.created_at.desc(), User.id.desc()).all()
@@ -1469,7 +1513,7 @@ def list_users(
 @router.get("/admin/dashboard/login-stats", response_model=LoginStatsOut)
 def get_login_stats(
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> LoginStatsOut:
     require_admin(user)
     threshold = datetime.now(timezone.utc) - timedelta(days=30)
@@ -1552,7 +1596,7 @@ def get_login_stats(
 @router.get("/admin/dashboard/stats", response_model=AdminDashboardStatsOut)
 def get_admin_dashboard_stats(
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> AdminDashboardStatsOut:
     """Return counts for the admin dashboard header: active artists and total releases."""
     require_admin(user)
@@ -1565,7 +1609,7 @@ def get_admin_dashboard_stats(
 def create_user(
     payload: UserCreate,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> UserOut:
     require_admin(user)
     email = payload.email.lower()
@@ -1593,7 +1637,7 @@ def update_user(
     target_user_id: int,
     payload: UserUpdate,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> UserOut:
     require_admin(user)
     target = db.query(User).options(joinedload(User.artist), joinedload(User.identities)).filter(User.id == target_user_id).first()
@@ -1649,7 +1693,7 @@ def list_artists(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> list[ArtistOut]:
     require_admin(user)
     q = db.query(Artist).order_by(Artist.id)
@@ -1688,7 +1732,7 @@ def list_demo_submissions(
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> list[DemoSubmissionOut]:
     require_admin(user)
     q = db.query(DemoSubmission).order_by(desc(DemoSubmission.created_at), desc(DemoSubmission.id))
@@ -1703,7 +1747,7 @@ def list_demo_submissions(
 def get_demo_submission(
     submission_id: int,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> DemoSubmissionOut:
     require_admin(user)
     item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
@@ -1717,7 +1761,7 @@ def update_demo_submission(
     submission_id: int,
     payload: DemoSubmissionUpdate,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> DemoSubmissionOut:
     require_admin(user)
     item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
@@ -1785,7 +1829,7 @@ def update_demo_submission(
 def admin_download_demo_file(
     submission_id: int,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> FileResponse | Response:
     """Stream or download the attached MP3 for a demo submission (admin only)."""
     require_admin(user)
@@ -1806,7 +1850,7 @@ def admin_download_demo_file(
 def delete_demo_submission(
     submission_id: int,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> None:
     """Delete a demo submission. Optionally removes the attached file from disk."""
     require_admin(user)
@@ -1832,7 +1876,7 @@ def approve_demo_submission(
     submission_id: int,
     payload: DemoSubmissionApproveRequest,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> DemoSubmissionOut:
     require_admin(user)
     item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
@@ -1903,7 +1947,7 @@ def approve_demo_submission(
 def get_artist(
     artist_id: int,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> ArtistOut:
     require_admin(user)
     artist = db.query(Artist).filter(Artist.id == artist_id).first()
@@ -1916,7 +1960,7 @@ def get_artist(
 def create_artist(
     payload: ArtistCreate,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> ArtistOut:
     require_admin(user)
     extra = _artist_extra_from_model(payload)
@@ -1937,7 +1981,7 @@ def update_artist(
     artist_id: int,
     payload: ArtistUpdate,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> ArtistOut:
     require_admin(user)
     artist = db.query(Artist).filter(Artist.id == artist_id).first()
@@ -1969,7 +2013,7 @@ def admin_set_artist_password(
     artist_id: int,
     payload: ArtistSetPasswordRequest,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> dict:
     """Set or reset an artist's portal password (artists table). Artist can then log in at artist portal."""
     require_admin(user)
@@ -1987,7 +2031,7 @@ def admin_set_artist_password(
 def admin_send_artist_portal_invite(
     artist_id: int,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> ArtistPortalInviteResponse:
     """Generate a temporary artist portal password and email portal login instructions."""
     require_admin(user)
@@ -2051,7 +2095,7 @@ def admin_send_artist_portal_invite(
 @router.post("/admin/artists/send-portal-invite-all", response_model=ArtistPortalInviteBulkResponse)
 def admin_send_portal_invite_all(
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> ArtistPortalInviteBulkResponse:
     """Send portal access email to all active artists that have an email address."""
     require_admin(user)
@@ -2116,7 +2160,7 @@ def admin_send_portal_invite_all(
 def admin_send_artist_update_profile_invite(
     artist_id: int,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> ArtistPortalInviteResponse:
     """Email artist inviting them to update their portal page and see their releases (no password change unless not set)."""
     require_admin(user)
@@ -2206,7 +2250,7 @@ def admin_send_artist_update_profile_invite(
 def list_artist_releases(
     artist_id: int,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> list[ReleaseOut]:
     require_admin(user)
     artist = db.query(Artist).filter(Artist.id == artist_id).first()
@@ -2226,7 +2270,7 @@ def list_artist_releases(
 def list_artist_activity(
     artist_id: int,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> list[ArtistActivityLogOut]:
     """List activity log for an artist (reminder emails, etc.) for the Logs tab."""
     require_admin(user)
@@ -2254,7 +2298,7 @@ def list_artist_activity(
 def delete_artist(
     artist_id: int,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> dict:
     require_admin(user)
     artist = db.query(Artist).filter(Artist.id == artist_id).first()
@@ -2724,7 +2768,7 @@ def _campaign_request_out(r: CampaignRequest, artist_name: str, release_title: s
 def admin_list_campaign_requests(
     status_filter: str | None = Query(None, description="pending | approved | rejected"),
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> list[CampaignRequestOut]:
     """List all artist campaign requests for the label."""
     require_admin(user)
@@ -2797,7 +2841,7 @@ def admin_update_campaign_request(
     request_id: int,
     payload: CampaignRequestUpdate,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> CampaignRequestOut:
     """Update campaign request status (approve/reject) and notes. On approve, sends artist an email with form link."""
     require_admin(user)
@@ -2913,7 +2957,7 @@ def admin_list_pending_releases(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> list[PendingReleaseOut]:
     """List pending-for-release items (tracks with full details submitted, waiting for treatment)."""
     require_admin(user)
@@ -2948,7 +2992,7 @@ def list_admin_releases(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> list[ReleaseOut]:
     """List all releases (admin). Use to assign artists when sync did not match."""
     require_admin(user)
@@ -2968,7 +3012,7 @@ def list_admin_releases(
 def report_artists_no_tracks_half_year(
     months: int = 6,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> list[ArtistOut]:
     """
     Artists who have not had any track (catalog_tracks.release_date) in the last N months.
@@ -3006,7 +3050,7 @@ def update_release_artists(
     release_id: int,
     payload: ReleaseUpdateArtists,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> ReleaseOut:
     """Set one or more artists for a release (e.g. when sync did not match)."""
     require_admin(user)
@@ -3028,7 +3072,7 @@ def update_release_artists(
 def run_inactivity_check(
     days: int = 90,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> dict:
     require_admin(user)
     artists = db.query(Artist).all()
@@ -3079,7 +3123,7 @@ def _db_row_to_dict(row) -> dict:
 
 @router.get("/admin/db/tables")
 def list_db_tables(
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> list[dict]:
     """List database table names for admin Settings > DB."""
     require_admin(user)
@@ -3091,7 +3135,7 @@ def get_db_table_content(
     table_name: str,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> dict:
     """Return rows from a table (admin only). Whitelisted table names only."""
     require_admin(user)
@@ -3115,7 +3159,7 @@ def get_db_table_content(
 def list_system_logs(
     limit: int = Query(200, ge=1, le=500),
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> list[SystemLogOut]:
     """List recent system and mail logs for admin Settings > Logs."""
     require_admin(user)
@@ -3132,7 +3176,7 @@ def list_system_logs(
 @router.get("/admin/settings", response_model=SystemSettingsOut)
 def get_system_settings(
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> SystemSettingsOut:
     require_admin(user)
     from app.core.config import settings
@@ -3166,7 +3210,7 @@ def get_system_settings(
 def update_system_settings_mail(
     payload: SystemSettingsMailUpdate,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> SystemSettingsOut:
     """Update mail server settings (stored in DB; overrides env)."""
     require_admin(user)
@@ -3217,7 +3261,7 @@ def update_system_settings_mail(
 @router.post("/admin/settings/mail/test", response_model=SystemSettingsMailTestResponse)
 def test_system_settings_mail(
     payload: SystemSettingsMailTestRequest,
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> SystemSettingsMailTestResponse:
     """Test SMTP connection or send a test email using unsaved mail settings overrides."""
     require_admin(user)
@@ -3258,7 +3302,7 @@ def get_email_rate_limit_status(user: UserContext = Depends(get_current_user)) -
 def send_email(
     payload: SendEmailRequest,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> SendEmailResponse:
     require_admin(user)
     artist = db.query(Artist).filter(Artist.email == payload.to_email).first()
@@ -3295,7 +3339,7 @@ def list_catalog_tracks(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> list[CatalogTrackOut]:
     require_admin(user)
     items = db.query(CatalogTrack).order_by(CatalogTrack.id).offset(offset).limit(limit).all()
@@ -3364,7 +3408,7 @@ def _parse_date(s: str | None) -> date | None:
 async def import_catalog_csv(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> dict:
     require_admin(user)
     if not file.filename or not file.filename.lower().endswith(".csv"):
@@ -3501,7 +3545,7 @@ def _artist_brand(artist: Artist) -> str:
 @router.post("/admin/releases/sync-from-catalog", response_model=dict)
 def sync_releases_from_catalog(
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> dict:
     """
     Match catalog tracks (release_title + original_artists) to artists by name/artist_brand/full_name.
@@ -3608,7 +3652,7 @@ def sync_releases_from_catalog(
 @router.post("/admin/catalog-tracks/sync-original-artists-from-artists", response_model=dict)
 def sync_original_artists_from_artists(
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> dict:
     """
     For each catalog release (by release_title), match to an artist by current original_artists
@@ -3680,7 +3724,7 @@ def _slug_for_email(name: str) -> str:
 @router.post("/admin/catalog-tracks/create-missing-original-artists", response_model=dict)
 def create_missing_original_artists(
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> dict:
     """
     For each distinct Original Artist name in the catalog that does not match any
@@ -3745,7 +3789,7 @@ def create_missing_original_artists(
 def merge_artists(
     payload: dict,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> dict:
     """
     Merge multiple artists into one: add all brands from source artists to the target artist,
@@ -3829,7 +3873,7 @@ def merge_artists(
 @router.get("/admin/campaigns", response_model=list[CampaignOut])
 def list_campaigns(
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
     status: str | None = Query(None),
     limit: int = Query(100, le=200),
     offset: int = Query(0, ge=0),
@@ -3843,7 +3887,7 @@ def list_campaigns(
 def get_campaign_route(
     campaign_id: int,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> CampaignOut:
     require_admin(user)
     campaign = get_campaign(db, campaign_id)
@@ -3856,7 +3900,7 @@ def get_campaign_route(
 def create_campaign_route(
     payload: CampaignCreate,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> CampaignOut:
     require_admin(user)
     targets = [
@@ -3889,7 +3933,7 @@ _CAMPAIGN_MEDIA_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 def upload_campaign_media(
     request: Request,
     file: UploadFile = File(...),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> dict:
     """Upload an image for use as campaign media. Returns public URL for the image."""
     require_admin(user)
@@ -3934,7 +3978,7 @@ def update_campaign_route(
     campaign_id: int,
     payload: CampaignUpdate,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> CampaignOut:
     require_admin(user)
     kwargs = payload.model_dump(exclude_unset=True)
@@ -3948,7 +3992,7 @@ def update_campaign_route(
 def delete_campaign_route(
     campaign_id: int,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> dict:
     require_admin(user)
     if not delete_campaign(db, campaign_id):
@@ -3961,7 +4005,7 @@ def schedule_campaign_route(
     campaign_id: int,
     payload: ScheduleCampaignRequest,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> CampaignOut:
     require_admin(user)
     campaign = get_campaign(db, campaign_id)
@@ -3980,7 +4024,7 @@ def schedule_campaign_route(
 def cancel_campaign_schedule_route(
     campaign_id: int,
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> CampaignOut:
     require_admin(user)
     campaign = cancel_schedule(db, campaign_id)
@@ -4008,7 +4052,7 @@ def get_agent_registry_route(user: UserContext = Depends(get_current_user)) -> l
 @router.post("/admin/agents/plan", response_model=AgentPlanOut)
 def plan_agent_delegation(
     payload: AgentPlanRequest,
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> AgentPlanOut:
     require_admin(user)
     plan = build_agent_plan(payload.text, max_agents=payload.max_agents)
@@ -4021,7 +4065,7 @@ def plan_agent_delegation(
 @router.get("/admin/backup")
 def download_backup(
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ):
     """Export all DB data as a JSON backup file. Use on another system to restore via POST /admin/restore."""
     require_admin(user)
@@ -4039,7 +4083,7 @@ def download_backup(
 def upload_restore(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_lm_user),
 ) -> dict:
     """Replace all DB data with the uploaded backup file (from GET /admin/backup). Use with caution."""
     require_admin(user)

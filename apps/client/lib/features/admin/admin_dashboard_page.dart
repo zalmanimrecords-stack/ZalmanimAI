@@ -895,6 +895,23 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       widget.onLogout();
       return;
     }
+    // Artist token used in LM: backend returns 403 with "Artists cannot access the LM system..."
+    if (msg.contains('403') && msg.contains('Artists cannot access')) {
+      const text = 'Artists cannot access the LM system. Use the artist portal.';
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: SelectableText(text),
+            action: SnackBarAction(
+              label: 'Copy',
+              onPressed: () => Clipboard.setData(ClipboardData(text: text)),
+            ),
+          ),
+        );
+      }
+      widget.onLogout();
+      return;
+    }
     final isConnectionError = msg.contains('Failed to fetch') ||
         msg.contains('Connection refused') ||
         msg.contains('SocketException') ||

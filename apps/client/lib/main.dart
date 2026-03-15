@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'core/api_client.dart';
 import 'core/app_config.dart';
@@ -6,10 +7,13 @@ import 'core/consent_storage.dart';
 import 'core/session.dart';
 import 'core/session_storage.dart';
 import 'features/admin/admin_dashboard_page.dart';
-import 'features/artist/artist_dashboard_page.dart';
 import 'features/auth/login_page.dart';
 import 'features/auth/reset_password_page.dart';
 import 'features/legal/cookie_consent_page.dart';
+
+/// Message shown when an artist token is used in the LM app (artists use the artist portal only).
+const String kLmArtistForbiddenMessage =
+    'Artists cannot access the LM system. Use the artist portal.';
 
 void main() {
   runApp(const LabelOpsApp());
@@ -157,16 +161,68 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
           onLogout: _handleLogout,
         );
       }
-      return ArtistDashboardPage(
-        apiClient: _apiClient,
-        session: session,
-        onLogout: _handleLogout,
-      );
+      // Artists must use the artist portal; do not allow them into the LM app.
+      return _ArtistForbiddenPage(onLogout: _handleLogout);
     }
     return LoginPage(
       apiClient: _apiClient,
       initialError: _authError,
       onLoginSuccess: _handleLoginSuccess,
+    );
+  }
+}
+
+/// Shown when the user has an artist token in the LM app. Artists must use the artist portal only.
+class _ArtistForbiddenPage extends StatelessWidget {
+  const _ArtistForbiddenPage({required this.onLogout});
+
+  final VoidCallback onLogout;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('LabelOps')),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.block, size: 64, color: Colors.red),
+              const SizedBox(height: 24),
+              const Text(
+                'Access not allowed',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              SelectableText(
+                kLmArtistForbiddenMessage,
+                style: const TextStyle(fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.copy),
+                    onPressed: () => Clipboard.setData(
+                      ClipboardData(text: kLmArtistForbiddenMessage),
+                    ),
+                    tooltip: 'Copy message',
+                  ),
+                  const SizedBox(width: 16),
+                  FilledButton.icon(
+                    onPressed: onLogout,
+                    icon: const Icon(Icons.logout),
+                    label: const Text('Sign out'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

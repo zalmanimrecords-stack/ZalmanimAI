@@ -280,15 +280,6 @@ class _ArtistsTabState extends State<ArtistsTab> {
                                                       ),
                                                     ),
                                                     _actionButton(
-                                                      icon: ZalmanimIcons.lock,
-                                                      color: Colors.teal,
-                                                      tooltip: 'Set portal password',
-                                                      onPressed: () => delegate.showSetArtistPasswordDialog(
-                                                        artist.id,
-                                                        artist.displayName,
-                                                      ),
-                                                    ),
-                                                    _actionButton(
                                                       icon: ZalmanimIcons.delete,
                                                       color: Colors.red,
                                                       tooltip: 'Remove',
