@@ -7,6 +7,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/api_client.dart';
 import 'demo_mp3_player.dart';
+import 'file_download.dart';
 import '../../core/session.dart';
 import '../../core/session_storage.dart';
 import '../../core/zalmanim_icons.dart';
@@ -885,6 +886,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   void _setError(Object e) {
     final msg = e.toString();
+    // Treat 401 / invalid or expired token as session expired: logout so user can sign in again.
+    if (msg.contains('401') || msg.contains('Invalid or expired token') || msg.contains('expired token')) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Session expired. Please sign in again.')),
+        );
+      }
+      widget.onLogout();
+      return;
+    }
     final isConnectionError = msg.contains('Failed to fetch') ||
         msg.contains('Connection refused') ||
         msg.contains('SocketException') ||
@@ -1699,6 +1710,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 _demoInfoRow('Genre', (submission['genre'] ?? '').toString()),
                 _demoInfoRow('City', (submission['city'] ?? '').toString()),
                 _demoInfoRow('Status', (submission['status'] ?? '').toString()),
+                _demoInfoRow(
+                  'Artist in system',
+                  submission['artist_id'] != null
+                      ? 'Existing artist (ID: ${submission['artist_id']})'
+                      : 'New artist (not in system)',
+                ),
                 _demoInfoRow('Message', (submission['message'] ?? '').toString()),
                 if (submission['has_demo_file'] == true) ...[
                   const SizedBox(height: 12),
@@ -1706,6 +1723,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   const SizedBox(height: 6),
                   DemoMp3PlayerWidget(
                     downloadUrl: widget.apiClient.demoSubmissionDownloadUrl(id),
+                    token: widget.token,
+                  ),
+                  const SizedBox(height: 8),
+                  _DemoDownloadMp3Link(
+                    demoId: id,
+                    apiClient: widget.apiClient,
                     token: widget.token,
                   ),
                 ],
@@ -5991,6 +6014,67 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
           ),
         );
       },
+    );
+  }
+}
+
+/// Link to download the demo MP3 file (fetches with auth, then triggers browser download).
+class _DemoDownloadMp3Link extends StatefulWidget {
+  const _DemoDownloadMp3Link({
+    required this.demoId,
+    required this.apiClient,
+    required this.token,
+  });
+
+  final int demoId;
+  final ApiClient apiClient;
+  final String token;
+
+  @override
+  State<_DemoDownloadMp3Link> createState() => _DemoDownloadMp3LinkState();
+}
+
+class _DemoDownloadMp3LinkState extends State<_DemoDownloadMp3Link> {
+  bool _downloading = false;
+
+  Future<void> _download() async {
+    if (_downloading) return;
+    setState(() => _downloading = true);
+    try {
+      final bytes = await widget.apiClient.downloadDemoSubmissionFile(
+        token: widget.token,
+        id: widget.demoId,
+      );
+      if (!mounted) return;
+      triggerBrowserDownload(bytes, 'demo_${widget.demoId}.mp3');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Download started.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: SelectableText(e.toString())),
+      );
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: TextButton.icon(
+        onPressed: _downloading ? null : _download,
+        icon: _downloading
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.download),
+        label: Text(_downloading ? 'Downloading...' : 'Download MP3'),
+      ),
     );
   }
 }

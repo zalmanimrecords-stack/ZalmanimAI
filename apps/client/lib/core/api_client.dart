@@ -858,6 +858,20 @@ class ApiClient {
   /// URL for streaming/downloading the demo MP3 file (admin). Use with Authorization header.
   String demoSubmissionDownloadUrl(int id) => '$baseUrl/admin/demo-submissions/$id/download';
 
+  /// Download demo MP3 file as bytes (admin). Use for "Download MP3" link.
+  Future<List<int>> downloadDemoSubmissionFile({required String token, required int id}) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/admin/demo-submissions/$id/download'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Download failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return response.bodyBytes;
+  }
+
   Future<Map<String, dynamic>> fetchSystemSettings(String token) async {
     final response = await http.get(
       Uri.parse('$baseUrl/admin/settings'),
