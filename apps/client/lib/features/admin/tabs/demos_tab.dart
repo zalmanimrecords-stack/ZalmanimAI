@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/api_client.dart';
 import '../../../core/zalmanim_icons.dart';
 import '../admin_dashboard_delegate.dart';
+import '../file_download.dart';
 
 class DemosTab extends StatelessWidget {
   const DemosTab({super.key, required this.delegate});
@@ -53,6 +55,20 @@ class DemosTab extends StatelessWidget {
     }
   }
 
+  /// Formats submission date (ISO string or null) for display.
+  static String? _formatSubmittedAt(dynamic value) {
+    if (value == null) return null;
+    final s = value.toString().trim();
+    if (s.isEmpty) return null;
+    try {
+      final dt = DateTime.parse(s);
+      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
+          '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return s;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final demos = delegate.demoSubmissionsList;
@@ -71,12 +87,15 @@ class DemosTab extends StatelessWidget {
               separatorBuilder: (_, __) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
                 final item = demos[index] as Map<String, dynamic>;
+                final id = item['id'] as int?;
                 final artistName = (item['artist_name'] ?? '').toString();
                 final email = (item['email'] ?? '').toString();
                 final genre = (item['genre'] ?? '').toString();
                 final city = (item['city'] ?? '').toString();
                 final status = (item['status'] ?? 'demo').toString();
                 final sentAt = (item['approval_email_sent_at'] ?? '').toString();
+                final hasDemoFile = item['has_demo_file'] == true;
+                final submittedAt = _formatSubmittedAt(item['created_at']);
                 return Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -84,6 +103,7 @@ class DemosTab extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
                               child: Text(
@@ -91,10 +111,26 @@ class DemosTab extends StatelessWidget {
                                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                               ),
                             ),
-                            Chip(
-                              label: Text(status),
-                              labelStyle: const TextStyle(color: Colors.white),
-                              backgroundColor: _statusColor(context, status),
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Chip(
+                                  label: Text(status),
+                                  labelStyle: const TextStyle(color: Colors.white),
+                                  backgroundColor: _statusColor(context, status),
+                                ),
+                                const SizedBox(height: 8),
+                                OutlinedButton.icon(
+                                  onPressed: () => _confirmDeleteDemo(context, delegate, item),
+                                  icon: const Icon(Icons.delete_outline, size: 18),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.red,
+                                    side: const BorderSide(color: Colors.red),
+                                  ),
+                                  label: const Text('Delete'),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -107,6 +143,13 @@ class DemosTab extends StatelessWidget {
                             if (genre.isNotEmpty) Text('Genre: $genre'),
                             if (city.isNotEmpty) Text('City: $city'),
                             if (sentAt.isNotEmpty) Text('Approval sent: $sentAt'),
+                            if (submittedAt != null) Text('Submitted: $submittedAt'),
+                            if (hasDemoFile && id != null)
+                              _DemoMp3DownloadLink(
+                                demoId: id,
+                                apiClient: delegate.apiClient,
+                                token: delegate.token,
+                              ),
                           ],
                         ),
                         const SizedBox(height: 12),
@@ -145,16 +188,6 @@ class DemosTab extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            OutlinedButton.icon(
-                              onPressed: () => _confirmDeleteDemo(context, delegate, item),
-                              icon: const Icon(Icons.delete_outline),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.red,
-                                side: const BorderSide(color: Colors.red),
-                              ),
-                              label: const Text('Delete'),
-                            ),
                           ],
                         ),
                       ],
@@ -162,6 +195,70 @@ class DemosTab extends StatelessWidget {
                   ),
                 );
               },
+            ),
+    );
+  }
+}
+
+/// Inline download link for demo MP3 in the list. Fetches with auth then triggers browser download.
+class _DemoMp3DownloadLink extends StatefulWidget {
+  const _DemoMp3DownloadLink({
+    required this.demoId,
+    required this.apiClient,
+    required this.token,
+  });
+
+  final int demoId;
+  final ApiClient apiClient;
+  final String token;
+
+  @override
+  State<_DemoMp3DownloadLink> createState() => _DemoMp3DownloadLinkState();
+}
+
+class _DemoMp3DownloadLinkState extends State<_DemoMp3DownloadLink> {
+  bool _downloading = false;
+
+  Future<void> _download() async {
+    if (_downloading) return;
+    setState(() => _downloading = true);
+    try {
+      final bytes = await widget.apiClient.downloadDemoSubmissionFile(
+        token: widget.token,
+        id: widget.demoId,
+      );
+      if (!mounted) return;
+      triggerBrowserDownload(bytes, 'demo_${widget.demoId}.mp3');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Download started.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: SelectableText(e.toString())),
+      );
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: _downloading
+          ? SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            )
+          : TextButton.icon(
+              onPressed: _download,
+              icon: const Icon(Icons.download, size: 18),
+              label: const Text('Download MP3'),
             ),
     );
   }
