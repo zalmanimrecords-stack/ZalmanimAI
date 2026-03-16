@@ -661,6 +661,30 @@ class PendingReleaseFormInfo(BaseModel):
     release_title: str
 
 
+# Demo confirmation (artist confirms/complete details after demo approved)
+class DemoConfirmFormInfo(BaseModel):
+    """Public: prefilled form data when artist opens demo confirmation link."""
+    artist_name: str
+    contact_name: str | None = None
+    email: str
+    phone: str | None = None
+    genre: str | None = None
+    city: str | None = None
+    message: str | None = None
+    links: list[str] = []
+    release_title: str = "Your release"
+
+
+class DemoConfirmSubmit(BaseModel):
+    """Public: submit confirmed details; creates PendingRelease and sets demo status to pending_release."""
+    token: str
+    artist_name: str
+    artist_email: EmailStr
+    artist_data: dict = {}
+    release_title: str
+    release_data: dict = {}
+
+
 class PendingReleaseSubmit(BaseModel):
     """Public: submit artist + track details after track approval."""
     token: str
@@ -675,6 +699,7 @@ class PendingReleaseOut(BaseModel):
     """Admin: one row in Pending for release tab."""
     id: int
     campaign_request_id: int | None
+    demo_submission_id: int | None = None
     artist_id: int | None
     artist_name: str
     artist_email: str

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/api_client.dart';
 import '../../../core/zalmanim_icons.dart';
@@ -69,6 +70,59 @@ class DemosTab extends StatelessWidget {
     }
   }
 
+  /// Track name from submission fields (e.g. artist portal submission).
+  static String? _getTrackName(Map<String, dynamic> item) {
+    final fields = item['fields'];
+    if (fields is! Map<String, dynamic>) return null;
+    final name = fields['track_name']?.toString().trim();
+    return name != null && name.isNotEmpty ? name : null;
+  }
+
+  static bool _isSoundCloudUrl(String s) {
+    final lower = s.toLowerCase().trim();
+    return (lower.contains('soundcloud.com') ||
+            lower.contains('on.soundcloud.com') ||
+            lower.contains('soundcloud.app.goo.gl')) &&
+        (lower.startsWith('http://') || lower.startsWith('https://'));
+  }
+
+  static bool _isYouTubeUrl(String s) {
+    final lower = s.toLowerCase().trim();
+    return (lower.contains('youtube.com') || lower.contains('youtu.be')) &&
+        (lower.startsWith('http://') || lower.startsWith('https://'));
+  }
+
+  static List<String> _getMediaUrls(Map<String, dynamic> submission, bool Function(String) isMatch) {
+    final urls = <String>{};
+    void addIfMatch(String s) {
+      final t = s.trim();
+      if (t.isEmpty) return;
+      if (isMatch(t)) urls.add(t);
+    }
+    for (final link in (submission['links'] as List<dynamic>? ?? const [])) {
+      addIfMatch(link.toString());
+    }
+    final fields = submission['fields'];
+    if (fields is Map<String, dynamic>) {
+      for (final entry in fields.entries) {
+        final val = entry.value;
+        if (val is! String) continue;
+        addIfMatch(val);
+      }
+    }
+    final message = (submission['message'] ?? '').toString();
+    if (message.isNotEmpty) {
+      final uriPattern = RegExp(
+        r'https?://[^\s<>"{}|\\^`\[\]]+',
+        caseSensitive: false,
+      );
+      for (final match in uriPattern.allMatches(message)) {
+        addIfMatch(match.group(0)!);
+      }
+    }
+    return urls.toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final demos = delegate.demoSubmissionsList;
@@ -96,6 +150,9 @@ class DemosTab extends StatelessWidget {
                 final sentAt = (item['approval_email_sent_at'] ?? '').toString();
                 final hasDemoFile = item['has_demo_file'] == true;
                 final submittedAt = _formatSubmittedAt(item['created_at']);
+                final trackName = _getTrackName(item);
+                final soundCloudUrls = _getMediaUrls(item, _isSoundCloudUrl);
+                final youtubeUrls = _getMediaUrls(item, _isYouTubeUrl);
                 return Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -106,9 +163,24 @@ class DemosTab extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                              child: Text(
-                                artistName.isEmpty ? email : artistName,
-                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    artistName.isEmpty ? email : artistName,
+                                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                                  ),
+                                  if (trackName != null && trackName.isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      trackName,
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
                             Column(
@@ -150,6 +222,8 @@ class DemosTab extends StatelessWidget {
                                 apiClient: delegate.apiClient,
                                 token: delegate.token,
                               ),
+                            ...soundCloudUrls.map((url) => _MediaLinkChip(label: 'SoundCloud', url: url)),
+                            ...youtubeUrls.map((url) => _MediaLinkChip(label: 'YouTube', url: url)),
                           ],
                         ),
                         const SizedBox(height: 12),
@@ -174,6 +248,8 @@ class DemosTab extends StatelessWidget {
                               itemBuilder: (_) => const [
                                 PopupMenuItem(value: 'demo', child: Text('Mark as demo')),
                                 PopupMenuItem(value: 'in_review', child: Text('Mark in review')),
+                                PopupMenuItem(value: 'approved', child: Text('Mark approved')),
+                                PopupMenuItem(value: 'pending_release', child: Text('Mark pending release')),
                                 PopupMenuItem(value: 'rejected', child: Text('Mark rejected')),
                               ],
                               child: const Padding(
@@ -260,6 +336,38 @@ class _DemoMp3DownloadLinkState extends State<_DemoMp3DownloadLink> {
               icon: const Icon(Icons.download, size: 18),
               label: const Text('Download MP3'),
             ),
+    );
+  }
+}
+
+/// Clickable chip that opens a YouTube or SoundCloud link in the browser.
+class _MediaLinkChip extends StatelessWidget {
+  const _MediaLinkChip({required this.label, required this.url});
+
+  final String label;
+  final String url;
+
+  Future<void> _openUrl() async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: ActionChip(
+        label: Text(label),
+        avatar: Icon(
+          label == 'YouTube' ? Icons.play_circle_outline : Icons.headphones,
+          size: 18,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        onPressed: _openUrl,
+      ),
     );
   }
 }

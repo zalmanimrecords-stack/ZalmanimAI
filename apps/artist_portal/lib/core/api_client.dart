@@ -330,6 +330,48 @@ class ApiClient {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  /// Public: validate demo confirmation token and get prefilled form data from demo submission (no auth).
+  Future<Map<String, dynamic>> fetchDemoConfirmFormInfo(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/public/demo-confirm-form').replace(
+        queryParameters: {'token': token},
+      ),
+    );
+    if (response.statusCode != 200) {
+      final detail = _detailFromErrorBody(response.body);
+      throw Exception(detail.isNotEmpty ? detail : 'Invalid or expired link');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  /// Public: submit confirmed demo details; creates pending release and moves demo to PENDING RELEASE (no auth).
+  Future<Map<String, dynamic>> submitDemoConfirm({
+    required String token,
+    required String artistName,
+    required String artistEmail,
+    required Map<String, dynamic> artistData,
+    required String releaseTitle,
+    required Map<String, dynamic> releaseData,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/public/demo-confirm-submit'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'token': token,
+        'artist_name': artistName.trim(),
+        'artist_email': artistEmail.trim().toLowerCase(),
+        'artist_data': artistData,
+        'release_title': releaseTitle.trim(),
+        'release_data': releaseData,
+      }),
+    );
+    if (response.statusCode != 200) {
+      final detail = _detailFromErrorBody(response.body);
+      throw Exception(detail.isNotEmpty ? detail : 'Submission failed');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   /// Public: submit artist + track details for pending release (no auth).
   Future<Map<String, dynamic>> submitPendingRelease({
     required String token,

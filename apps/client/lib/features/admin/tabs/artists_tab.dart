@@ -59,22 +59,10 @@ class _ArtistsTabState extends State<ArtistsTab> {
 
   @override
   Widget build(BuildContext context) {
-    final query = delegate.artistSearchController.text.trim().toLowerCase();
-    final filtered = query.isEmpty
-        ? delegate.artistsList
-        : delegate.artistsList.where((a) {
-            final artist = Artist.fromJson(a as Map<String, dynamic>);
-            final brand = artist.brand.toLowerCase();
-            final fullName = artist.fullName.toLowerCase();
-            final email = artist.email.toLowerCase();
-            final brands = artist.artistBrands.join(' ').toLowerCase();
-            return brand.contains(query) ||
-                fullName.contains(query) ||
-                email.contains(query) ||
-                brands.contains(query);
-          }).toList();
+    // Server-side search is used when the user types; artistsList is already filtered by the API.
+    final listToShow = delegate.artistsList;
 
-    final sorted = List<dynamic>.from(filtered);
+    final sorted = List<dynamic>.from(listToShow);
     sorted.sort((a, b) {
       final ar = Artist.fromJson(a as Map<String, dynamic>);
       final br = Artist.fromJson(b as Map<String, dynamic>);

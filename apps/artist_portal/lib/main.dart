@@ -12,6 +12,7 @@ import 'features/dashboard/artist_dashboard_page.dart';
 import 'features/legal/cookie_consent_page.dart';
 import 'features/public/landing_page.dart';
 import 'features/public/linktree_page.dart';
+import 'features/public/demo_confirm_form_page.dart';
 import 'features/public/pending_release_form_page.dart';
 
 void main() {
@@ -71,28 +72,45 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
   @override
   Widget build(BuildContext context) {
     final primary = _primaryColor();
-    // Public pending-release form: /pending-release?token=xxx
+    // Public forms with token: /pending-release?token=xxx or /demo-confirm?token=xxx
     final pathSegments = Uri.base.pathSegments;
     final token = Uri.base.queryParameters['token'];
-    if (pathSegments.isNotEmpty &&
-        pathSegments[0].toLowerCase() == 'pending-release' &&
-        token != null &&
-        token.trim().isNotEmpty) {
-      return MaterialApp(
-        title: AppConfig.labelName,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: primary,
-            primary: primary,
-            brightness: Brightness.light,
+    if (pathSegments.isNotEmpty && token != null && token.trim().isNotEmpty) {
+      final segment = pathSegments[0].toLowerCase();
+      if (segment == 'pending-release') {
+        return MaterialApp(
+          title: AppConfig.labelName,
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: primary,
+              primary: primary,
+              brightness: Brightness.light,
+            ),
+            useMaterial3: true,
           ),
-          useMaterial3: true,
-        ),
-        home: PendingReleaseFormPage(
-          apiClient: ApiClient(baseUrl: _apiBaseUrl),
-          token: token.trim(),
-        ),
-      );
+          home: PendingReleaseFormPage(
+            apiClient: ApiClient(baseUrl: _apiBaseUrl),
+            token: token.trim(),
+          ),
+        );
+      }
+      if (segment == 'demo-confirm') {
+        return MaterialApp(
+          title: AppConfig.labelName,
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: primary,
+              primary: primary,
+              brightness: Brightness.light,
+            ),
+            useMaterial3: true,
+          ),
+          home: DemoConfirmFormPage(
+            apiClient: ApiClient(baseUrl: _apiBaseUrl),
+            token: token.trim(),
+          ),
+        );
+      }
     }
     // Public linktree route: /l/{artistId} (e.g. /l/5)
     final segments = pathSegments.where((s) => s.isNotEmpty).toList();

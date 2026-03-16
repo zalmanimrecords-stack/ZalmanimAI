@@ -30,6 +30,7 @@ from app.models.models import (
     Campaign,
     CampaignRequest,
     CatalogTrack,
+    DemoConfirmationToken,
     DemoSubmission,
     HubConnector,
     MailingList,
@@ -65,6 +66,8 @@ from app.schemas.schemas import (
     CampaignOut,
     CampaignUpdate,
     CatalogTrackOut,
+    DemoConfirmFormInfo,
+    DemoConfirmSubmit,
     DemoSubmissionApproveRequest,
     DemoSubmissionCreate,
     DemoSubmissionOut,
@@ -147,7 +150,7 @@ def _generate_temporary_password(length: int = 12) -> str:
 
 _FACEBOOK_AUTH_SCOPES = ["email", "public_profile"]
 _ALLOWED_USER_ROLES = {"admin", "manager", "artist"}
-_ALLOWED_DEMO_STATUSES = {"demo", "in_review", "approved", "rejected"}
+_ALLOWED_DEMO_STATUSES = {"demo", "in_review", "approved", "rejected", "pending_release"}
 _DEMO_MAILING_LIST_NAME = "Artists Demo Intake"
 
 
@@ -880,6 +883,10 @@ def init_db() -> None:
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_approval_body TEXT"))
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS portal_invite_subject VARCHAR(255)"))
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS portal_invite_body TEXT"))
+            conn.execute(text(
+                "ALTER TABLE pending_releases ADD COLUMN IF NOT EXISTS demo_submission_id INTEGER "
+                "REFERENCES demo_submissions(id) ON DELETE SET NULL"
+            ))
             conn.commit()
     except Exception as e:
         logging.getLogger(__name__).warning("DB migration (auth/users): %s", e)
@@ -1687,9 +1694,31 @@ def _last_email_sent_map(db: Session, artist_ids: list[int]) -> dict[int, dateti
     return {aid: last_at for aid, last_at in rows}
 
 
+def _artist_search_filter(q, search_term: str, db: Session):
+    """Apply server-side search filter for artists (brand, name, email, artist_brands)."""
+    pattern = f"%{search_term}%"
+    dialect = db.get_bind().dialect.name
+    if dialect == "postgresql":
+        return q.filter(
+            or_(
+                Artist.email.ilike(pattern),
+                Artist.name.ilike(pattern),
+                text("coalesce(extra_json::jsonb->>'artist_brand','') ILIKE :pat").bindparams(pat=pattern),
+                text("coalesce(extra_json::jsonb->>'full_name','') ILIKE :pat").bindparams(pat=pattern),
+                text(
+                    "EXISTS (SELECT 1 FROM jsonb_array_elements_text("
+                    "coalesce(extra_json::jsonb->'artist_brands','[]'::jsonb)) AS t WHERE t ILIKE :pat)"
+                ).bindparams(pat=pattern),
+            )
+        )
+    # SQLite / other: search name and email only (no JSON operators in all dialects)
+    return q.filter(or_(Artist.email.ilike(pattern), Artist.name.ilike(pattern)))
+
+
 @router.get("/artists", response_model=list[ArtistOut])
 def list_artists(
     include_inactive: bool = Query(False, description="Include inactive artists"),
+    search: str | None = Query(None, description="Search by brand, name, email, or artist brands"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -1699,6 +1728,9 @@ def list_artists(
     q = db.query(Artist).order_by(Artist.id)
     if not include_inactive:
         q = q.filter(Artist.is_active.is_(True))
+    search_term = (search or "").strip()
+    if search_term:
+        q = _artist_search_filter(q, search_term, db)
     artists = q.offset(offset).limit(limit).all()
     artist_ids = [a.id for a in artists]
     last_email_map = _last_email_sent_map(db, artist_ids)
@@ -1917,11 +1949,34 @@ def approve_demo_submission(
             db.flush()
         item.artist_id = artist.id
 
+    # Create one-time token for artist to confirm details (form link in approval email).
+    demo_confirm_form_link: str | None = None
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    portal_url = (_artist_portal_url()).rstrip("/")
+    demo_confirm_form_link = f"{portal_url}/demo-confirm?token={raw_token}"
+    expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+    demo_confirm_token_row = DemoConfirmationToken(
+        demo_submission_id=item.id,
+        token_hash=token_hash,
+        expires_at=expires_at,
+    )
+    db.add(demo_confirm_token_row)
+    db.flush()
+
     if payload.send_email:
+        body_text = (item.approval_body or "").strip()
+        if body_text:
+            body_text += "\n\n"
+        body_text += (
+            "Please confirm your details and complete any missing fields here:\n"
+            f"{demo_confirm_form_link}\n\n"
+            "Once you submit the form, your track will move to PENDING RELEASE until we release it."
+        )
         success, message = send_email_service(
             to_email=item.email,
             subject=item.approval_subject,
-            body_text=item.approval_body or "",
+            body_text=body_text,
         )
         if not success:
             if "limit" in message.lower():
@@ -2973,6 +3028,7 @@ def admin_list_pending_releases(
             PendingReleaseOut(
                 id=pr.id,
                 campaign_request_id=pr.campaign_request_id,
+                demo_submission_id=getattr(pr, "demo_submission_id", None),
                 artist_id=pr.artist_id,
                 artist_name=pr.artist_name,
                 artist_email=pr.artist_email,
@@ -2985,6 +3041,102 @@ def admin_list_pending_releases(
             )
         )
     return out
+
+
+@router.get("/public/demo-confirm-form", response_model=DemoConfirmFormInfo)
+def public_demo_confirm_form_validate(
+    token: str = Query(..., description="One-time token from demo approval email"),
+    db: Session = Depends(get_db),
+) -> DemoConfirmFormInfo:
+    """Validate token and return prefilled form data from the demo submission (no auth)."""
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    row = (
+        db.query(DemoConfirmationToken)
+        .filter(
+            DemoConfirmationToken.token_hash == token_hash,
+            DemoConfirmationToken.used_at.is_(None),
+            DemoConfirmationToken.expires_at > datetime.now(timezone.utc),
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid or expired token")
+    item = db.query(DemoSubmission).filter(DemoSubmission.id == row.demo_submission_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
+    links = _safe_json_list(item.links_json)
+    return DemoConfirmFormInfo(
+        artist_name=item.artist_name or "",
+        contact_name=item.contact_name,
+        email=item.email or "",
+        phone=item.phone,
+        genre=item.genre,
+        city=item.city,
+        message=item.message,
+        links=[str(link).strip() for link in links if str(link).strip()],
+        release_title="Your release",
+    )
+
+
+@router.post("/public/demo-confirm-submit", response_model=PendingReleaseOut)
+def public_demo_confirm_submit(
+    payload: DemoConfirmSubmit,
+    db: Session = Depends(get_db),
+) -> PendingReleaseOut:
+    """Submit confirmed details; creates PendingRelease, sets demo status to pending_release."""
+    token_hash = hashlib.sha256(payload.token.encode()).hexdigest()
+    row = (
+        db.query(DemoConfirmationToken)
+        .filter(
+            DemoConfirmationToken.token_hash == token_hash,
+            DemoConfirmationToken.used_at.is_(None),
+            DemoConfirmationToken.expires_at > datetime.now(timezone.utc),
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid or expired token")
+    item = db.query(DemoSubmission).filter(DemoSubmission.id == row.demo_submission_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
+    if item.status == "pending_release":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This demo was already confirmed and is in PENDING RELEASE.",
+        )
+    row.used_at = datetime.now(timezone.utc)
+    artist_id = item.artist_id
+    pr = PendingRelease(
+        campaign_request_id=None,
+        demo_submission_id=item.id,
+        artist_id=artist_id,
+        artist_name=(payload.artist_name or "").strip() or "Artist",
+        artist_email=payload.artist_email.strip().lower(),
+        artist_data_json=json.dumps(payload.artist_data if isinstance(payload.artist_data, dict) else {}),
+        release_title=(payload.release_title or "").strip() or "Untitled",
+        release_data_json=json.dumps(payload.release_data if isinstance(payload.release_data, dict) else {}),
+        status="pending",
+    )
+    db.add(pr)
+    item.status = "pending_release"
+    db.commit()
+    db.refresh(pr)
+    artist_data = json.loads(pr.artist_data_json or "{}") if isinstance(pr.artist_data_json, str) else {}
+    release_data = json.loads(pr.release_data_json or "{}") if isinstance(pr.release_data_json, str) else {}
+    return PendingReleaseOut(
+        id=pr.id,
+        campaign_request_id=pr.campaign_request_id,
+        demo_submission_id=pr.demo_submission_id,
+        artist_id=pr.artist_id,
+        artist_name=pr.artist_name,
+        artist_email=pr.artist_email,
+        artist_data=artist_data,
+        release_title=pr.release_title,
+        release_data=release_data,
+        status=pr.status,
+        created_at=pr.created_at,
+        updated_at=pr.updated_at,
+    )
 
 
 @router.get("/admin/releases", response_model=list[ReleaseOut])

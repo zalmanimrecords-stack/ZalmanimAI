@@ -65,13 +65,17 @@ class PendingReleasesTab extends StatelessWidget {
                       final releaseTitle = item['release_title']?.toString() ?? '';
                       final status = item['status']?.toString() ?? 'pending';
                       final createdAt = item['created_at']?.toString() ?? '';
+                      final demoSubmissionId = item['demo_submission_id'];
+                      final fromDemo = demoSubmissionId != null;
                       final artistData = item['artist_data'] is Map ? item['artist_data'] as Map<String, dynamic> : <String, dynamic>{};
                       final releaseData = item['release_data'] is Map ? item['release_data'] as Map<String, dynamic> : <String, dynamic>{};
                       return Card(
                         margin: const EdgeInsets.only(bottom: 8),
                         child: ExpansionTile(
                           title: Text(artistName),
-                          subtitle: Text('$releaseTitle · $status'),
+                          subtitle: Text(fromDemo
+                              ? '$releaseTitle · $status · From demo #$demoSubmissionId'
+                              : '$releaseTitle · $status'),
                           children: [
                             Padding(
                               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),

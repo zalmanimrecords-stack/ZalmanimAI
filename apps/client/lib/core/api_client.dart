@@ -197,6 +197,7 @@ class ApiClient {
   Future<List<dynamic>> fetchArtists(
     String token, {
     bool includeInactive = false,
+    String? search,
     int limit = 50,
     int offset = 0,
   }) async {
@@ -204,6 +205,7 @@ class ApiClient {
       'limit': '$limit',
       'offset': '$offset',
       if (includeInactive) 'include_inactive': 'true',
+      if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
     };
     final uri = Uri.parse('$baseUrl/artists').replace(
       queryParameters: queryParameters,

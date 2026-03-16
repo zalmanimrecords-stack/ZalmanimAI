@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -253,6 +254,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   List<dynamic> _allArtistsForSelection = const [];
   final _artistSearchController = TextEditingController();
   String _artistSearchQuery = '';
+  Timer? _artistSearchDebounce;
   List<dynamic> catalogTracks = const [];
   List<dynamic> adminReleases = const [];
   List<dynamic> campaigns = const [];
@@ -474,6 +476,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     final query = _artistSearchController.text.trim().toLowerCase();
     if (_artistSearchQuery == query) return;
     setState(() => _artistSearchQuery = query);
+    _artistSearchDebounce?.cancel();
+    _artistSearchDebounce = Timer(const Duration(milliseconds: 400), () {
+      if (!mounted) return;
+      loadArtists();
+    });
   }
 
   void _onReleasesSearchChanged() {
@@ -563,6 +570,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       final list = await widget.apiClient.fetchArtists(
         widget.token,
         includeInactive: showInactiveArtists,
+        search: _artistSearchQuery.isEmpty ? null : _artistSearchQuery,
         limit: _pageSize,
         offset: reset ? 0 : artists.length,
       );
@@ -927,6 +935,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   @override
   void dispose() {
+    _artistSearchDebounce?.cancel();
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     _artistSearchController.removeListener(_onArtistSearchChanged);

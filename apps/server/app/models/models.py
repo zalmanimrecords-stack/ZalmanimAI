@@ -109,6 +109,20 @@ class DemoSubmission(Base):
     artist: Mapped["Artist"] = relationship()
 
 
+class DemoConfirmationToken(Base):
+    """One-time token sent to artist when a demo is approved; links to form to confirm details and complete missing fields."""
+    __tablename__ = "demo_confirmation_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    demo_submission_id: Mapped[int] = mapped_column(ForeignKey("demo_submissions.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    expires_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    demo_submission: Mapped["DemoSubmission"] = relationship()
+
+
 class ArtistMedia(Base):
     """Per-artist media folder: files uploaded by the artist for their own use."""
     __tablename__ = "artist_media"
@@ -163,6 +177,7 @@ class PendingRelease(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     campaign_request_id: Mapped[int | None] = mapped_column(ForeignKey("campaign_requests.id", ondelete="SET NULL"), nullable=True, index=True)
+    demo_submission_id: Mapped[int | None] = mapped_column(ForeignKey("demo_submissions.id", ondelete="SET NULL"), nullable=True, index=True)
     artist_id: Mapped[int | None] = mapped_column(ForeignKey("artists.id", ondelete="SET NULL"), nullable=True, index=True)
     artist_name: Mapped[str] = mapped_column(String(200), nullable=False)
     artist_email: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -174,6 +189,7 @@ class PendingRelease(Base):
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     campaign_request: Mapped["CampaignRequest | None"] = relationship()
+    demo_submission: Mapped["DemoSubmission | None"] = relationship()
     artist: Mapped["Artist | None"] = relationship()
 
 
