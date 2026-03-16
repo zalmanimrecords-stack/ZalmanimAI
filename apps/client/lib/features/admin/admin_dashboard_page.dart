@@ -1357,10 +1357,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               const SizedBox(width: 12),
               Tooltip(
                 message: _buildNumber != null
-                    ? 'Build version (from server, increments on each PROD deploy)'
-                    : 'App version',
+                    ? 'App version (from pubspec.yaml). Server build: $_buildNumber'
+                    : 'App version (from pubspec.yaml). Rebuild app after changing version.',
                 child: SelectableText(
-                  _buildNumber ?? _appVersion!,
+                  _buildNumber != null
+                      ? '${_appVersion ?? '—'} · $_buildNumber'
+                      : (_appVersion ?? '—'),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurface,
                     fontWeight: FontWeight.w600,
