@@ -8,6 +8,9 @@ deploy/build_number
 secrets-backup.txt
 .DS_Store
 
+# Avoid committing real DB backups (reports/db_sync often holds prod backup JSONs)
+reports/db_sync/
+
 apps/server/storage/uploads/*
 !apps/server/storage/uploads/.gitkeep
 

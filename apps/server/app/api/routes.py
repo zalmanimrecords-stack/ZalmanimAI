@@ -14,11 +14,18 @@ import httpx
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import desc, func, or_, text, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
 
+from app.api.deps import (
+    LM_FORBIDDEN_ARTIST_DETAIL,
+    get_current_user,
+    get_current_lm_user,
+    require_admin,
+    require_artist,
+    security,
+)
 from app.core.config import settings
 from app.db.session import Base, engine, get_db
 from app.models import models as models_module  # noqa: F401 - register all tables with Base
@@ -114,7 +121,7 @@ from app.schemas.schemas import (
     UserOut,
     UserUpdate,
 )
-from app.services.auth import create_access_token, decode_token, hash_password, permissions_for_role, verify_password
+from app.services.auth import create_access_token, hash_password, permissions_for_role, verify_password
 from app.services.email_service import (
     get_emails_sent_this_hour,
     is_email_configured,
@@ -136,7 +143,6 @@ from app.services.campaign_service import (
 )
 
 router = APIRouter()
-security = HTTPBearer()
 
 _GOOGLE_AUTH_SCOPES = [
     "openid",
@@ -993,112 +999,6 @@ def init_db() -> None:
             if not seed_artist_pw:
                 logging.getLogger(__name__).warning("Seed artist user created without password; set SEED_ARTIST_PASSWORD in .env or set password in UI")
         db.commit()
-
-
-
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Session = Depends(get_db),
-) -> UserContext:
-    try:
-        payload = decode_token(credentials.credentials)
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
-
-    sub = payload.get("sub")
-    if isinstance(sub, str) and sub.startswith("artist:"):
-        # Artist portal token (login via artists table, not users table)
-        try:
-            artist_id = int(sub[7:])
-        except ValueError:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-        artist = db.query(Artist).filter(Artist.id == artist_id).first()
-        if not artist or not artist.is_active:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Artist is inactive or missing")
-        return UserContext(
-            user_id=0,
-            role="artist",
-            email=artist.email,
-            full_name=artist.name,
-            permissions=permissions_for_role("artist"),
-            artist_id=artist.id,
-            is_active=artist.is_active,
-        )
-
-    # Admin/manager token (users table)
-    user = (
-        db.query(User)
-        .options(joinedload(User.artist), joinedload(User.identities))
-        .filter(User.id == int(payload["sub"]))
-        .first()
-    )
-    if not user or not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is inactive or missing")
-    return UserContext(
-        user_id=user.id,
-        role=user.role,
-        email=user.email,
-        full_name=user.full_name,
-        permissions=permissions_for_role(user.role),
-        artist_id=user.artist_id,
-        is_active=user.is_active,
-    )
-
-
-
-# 403 detail when artist token is used on LM-only routes (client can show copyable message).
-LM_FORBIDDEN_ARTIST_DETAIL = "Artists cannot access the LM system. Use the artist portal."
-
-
-def get_current_lm_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Session = Depends(get_db),
-) -> UserContext:
-    """
-    Same as get_current_user but rejects artist portal tokens with 403.
-    Use for all LM (label management) routes; only users from the users table are allowed.
-    """
-    try:
-        payload = decode_token(credentials.credentials)
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
-
-    sub = payload.get("sub")
-    if isinstance(sub, str) and sub.startswith("artist:"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=LM_FORBIDDEN_ARTIST_DETAIL,
-        )
-
-    # Admin/manager token (users table only)
-    user = (
-        db.query(User)
-        .options(joinedload(User.artist), joinedload(User.identities))
-        .filter(User.id == int(payload["sub"]))
-        .first()
-    )
-    if not user or not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is inactive or missing")
-    return UserContext(
-        user_id=user.id,
-        role=user.role,
-        email=user.email,
-        full_name=user.full_name,
-        permissions=permissions_for_role(user.role),
-        artist_id=user.artist_id,
-        is_active=user.is_active,
-    )
-
-
-def require_admin(user: UserContext) -> None:
-    if user.role != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
-
-
-
-def require_artist(user: UserContext) -> None:
-    if user.role != "artist" or not user.artist_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Artist only")
 
 
 @router.post("/auth/login", response_model=TokenResponse)
