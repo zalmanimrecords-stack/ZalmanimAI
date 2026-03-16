@@ -193,6 +193,35 @@ class PendingRelease(Base):
     artist: Mapped["Artist | None"] = relationship()
 
 
+class LabelInboxThread(Base):
+    """One conversation between an artist and the label (inbox)."""
+    __tablename__ = "label_inbox_threads"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    artist: Mapped["Artist"] = relationship()
+    messages: Mapped[list["LabelInboxMessage"]] = relationship(
+        back_populates="thread", order_by="LabelInboxMessage.created_at", cascade="all, delete-orphan"
+    )
+
+
+class LabelInboxMessage(Base):
+    """One message in a label inbox thread (from artist or from label)."""
+    __tablename__ = "label_inbox_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    thread_id: Mapped[int] = mapped_column(ForeignKey("label_inbox_threads.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender: Mapped[str] = mapped_column(String(20), nullable=False, index=True)  # 'artist' | 'label'
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    reply_email_sent_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    thread: Mapped["LabelInboxThread"] = relationship(back_populates="messages")
+
+
 class User(Base):
     __tablename__ = "users"
 

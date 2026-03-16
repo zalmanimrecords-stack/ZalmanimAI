@@ -47,6 +47,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
   final profileNotesController = TextEditingController();
   final profileWebsiteController = TextEditingController();
   final profileFullNameController = TextEditingController();
+  final messageToLabelController = TextEditingController();
   final Map<String, TextEditingController> socialControllers = {};
 
   bool loading = true;
@@ -55,6 +56,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
   bool submittingDemo = false;
   bool uploadingMedia = false;
   bool requestingCampaign = false;
+  bool sendingMessageToLabel = false;
   String? error;
   Map<String, dynamic>? dashboard;
   List<dynamic> demos = [];
@@ -62,6 +64,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
   int mediaUsedBytes = 0;
   int mediaQuotaBytes = 50 * 1024 * 1024;
   List<dynamic> campaignRequests = [];
+  List<dynamic> inboxThreads = [];
   String? appVersion;
 
   @override
@@ -85,6 +88,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
     profileNotesController.dispose();
     profileWebsiteController.dispose();
     profileFullNameController.dispose();
+    messageToLabelController.dispose();
     for (final c in socialControllers.values) {
       c.dispose();
     }
@@ -117,6 +121,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
       final used = mediaData['used_bytes'] is int ? mediaData['used_bytes'] as int : 0;
       final quota = mediaData['quota_bytes'] is int ? mediaData['quota_bytes'] as int : 50 * 1024 * 1024;
       final campaignReqs = await widget.apiClient.fetchCampaignRequests(widget.token);
+      final inbox = await widget.apiClient.fetchMyInboxThreads(widget.token);
       setState(() {
         dashboard = result;
         demos = demosResult;
@@ -124,6 +129,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
         mediaUsedBytes = used;
         mediaQuotaBytes = quota;
         campaignRequests = campaignReqs;
+        inboxThreads = inbox is List ? inbox : [];
         error = null;
         loading = false;
       });
@@ -442,6 +448,97 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
     }
   }
 
+  Future<void> _sendMessageToLabel() async {
+    final body = messageToLabelController.text.trim();
+    if (body.isEmpty) {
+      setState(() => error = 'Please enter a message.');
+      return;
+    }
+    setState(() {
+      sendingMessageToLabel = true;
+      error = null;
+    });
+    try {
+      await widget.apiClient.sendMessageToLabel(widget.token, body);
+      messageToLabelController.clear();
+      await _load();
+      if (mounted) {
+        setState(() => sendingMessageToLabel = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Message sent to the label.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          sendingMessageToLabel = false;
+          error = e.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    }
+  }
+
+  Future<void> _openInboxThread(int threadId) async {
+    try {
+      final thread = await widget.apiClient.fetchInboxThread(widget.token, threadId);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) {
+          final messages = thread['messages'] as List<dynamic>? ?? [];
+          return AlertDialog(
+            title: const Text('Your messages'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final m in messages) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            (m['sender'] ?? '').toString() == 'label' ? 'Label' : 'You',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: (m['sender'] ?? '').toString() == 'label'
+                                  ? Theme.of(ctx).colorScheme.primary
+                                  : Colors.grey[700],
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          SelectableText((m['body'] ?? '').toString()),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: SelectableText(e.toString().replaceFirst('Exception: ', '')),
+            action: SnackBarAction(
+              label: 'Copy',
+              onPressed: () => Clipboard.setData(ClipboardData(text: e.toString())),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
@@ -625,6 +722,69 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                             ],
                           ),
                         ),
+                      ],
+                      const SizedBox(height: 24),
+                      _sectionTitle(context, 'Message the label', primary),
+                      _card(
+                        context,
+                        primary,
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Send a message to the label. You will see replies here and can continue the conversation.',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: messageToLabelController,
+                              decoration: const InputDecoration(
+                                labelText: 'Your message',
+                                hintText: 'Type your message...',
+                                border: OutlineInputBorder(),
+                                alignLabelWithHint: true,
+                              ),
+                              maxLines: 4,
+                            ),
+                            const SizedBox(height: 12),
+                            FilledButton(
+                              onPressed: sendingMessageToLabel ? null : _sendMessageToLabel,
+                              child: sendingMessageToLabel
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                    )
+                                  : const Text('Send message'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (inboxThreads.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        _sectionTitle(context, 'Your messages', primary),
+                        ...inboxThreads.map((t) {
+                          final thread = t as Map<String, dynamic>;
+                          final id = thread['id'] as int? ?? 0;
+                          final preview = (thread['last_message_preview'] ?? '').toString();
+                          final updated = (thread['last_message_at'] ?? thread['updated_at'] ?? '').toString();
+                          final hasReply = thread['has_label_reply'] == true;
+                          return ListTile(
+                            leading: Icon(
+                              hasReply ? Icons.mark_email_read : Icons.mail_outline,
+                              color: primary,
+                            ),
+                            title: Text(
+                              preview.isEmpty ? 'No subject' : preview.length > 60 ? '${preview.substring(0, 60)}...' : preview,
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                            subtitle: Text(
+                              hasReply ? 'Replied · $updated' : updated,
+                              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                            ),
+                            onTap: () => _openInboxThread(id),
+                          );
+                        }),
                       ],
                       const SizedBox(height: 24),
                       _sectionTitle(context, 'My media', primary),

@@ -711,6 +711,52 @@ class PendingReleaseOut(BaseModel):
     updated_at: datetime | None
 
 
+# Label inbox (artist messages to label; admin replies by email)
+class LabelInboxSend(BaseModel):
+    """Artist: send a message to the label."""
+    body: str
+
+
+class LabelInboxMessageOut(BaseModel):
+    id: int
+    sender: str  # 'artist' | 'label'
+    body: str
+    created_at: datetime
+    reply_email_sent_at: datetime | None = None
+
+
+class LabelInboxThreadOut(BaseModel):
+    """List item for inbox threads."""
+    id: int
+    artist_id: int
+    artist_name: str
+    artist_email: str
+    last_message_preview: str
+    last_message_at: datetime
+    created_at: datetime
+    updated_at: datetime | None
+    message_count: int
+    has_label_reply: bool
+
+
+class LabelInboxThreadDetailOut(BaseModel):
+    """Thread with full messages (for thread view)."""
+    id: int
+    artist_id: int
+    artist_name: str
+    artist_email: str
+    created_at: datetime
+    updated_at: datetime | None
+    message_count: int
+    has_label_reply: bool
+    messages: list[LabelInboxMessageOut]
+
+
+class LabelInboxReply(BaseModel):
+    """Admin: reply to a thread (sends email to artist)."""
+    body: str
+
+
 # Campaigns (unified: social + Mailchimp + WordPress)
 class CampaignTargetIn(BaseModel):
     channel_type: str  # social | mailchimp | wordpress

@@ -18,6 +18,7 @@ import 'tabs/artists_tab.dart';
 import 'tabs/audience_tab.dart';
 import 'tabs/campaigns_section_tab.dart';
 import 'tabs/demos_tab.dart';
+import 'tabs/inbox_tab.dart';
 import 'tabs/releases_section_tab.dart';
 import 'tabs/reports_tab.dart';
 import 'tabs/settings_tab.dart';
@@ -260,6 +261,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   List<dynamic> campaigns = const [];
   List<dynamic> campaignRequests = const [];
   List<dynamic> pendingReleases = const [];
+  List<dynamic> inboxThreads = const [];
   List<dynamic> audiences = const [];
   List<dynamic> audienceSubscribers = const [];
   int? _selectedAudienceId;
@@ -271,6 +273,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   late TabController _tabController;
   bool _loadedArtists = false;
   bool _loadedDemos = false;
+  bool _loadedInbox = false;
   bool _loadedReleases = false;
   bool _loadedCampaigns = false;
   bool _loadedCampaignRequests = false;
@@ -432,7 +435,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 7, vsync: this);
+    _tabController = TabController(length: 8, vsync: this);
     _tabController.addListener(_onTabChanged);
     _artistSearchController.addListener(_onArtistSearchChanged);
     _releasesSearchController.addListener(_onReleasesSearchChanged);
@@ -503,17 +506,20 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         if (!_loadedDemos) _loadDemoSubmissions();
         break;
       case 2:
+        if (!_loadedInbox) _loadInbox();
+        break;
+      case 3:
         if (!_loadedReleases) _loadReleases();
         if (!_loadedPendingReleases) _loadPendingReleases();
         break;
-      case 3:
+      case 4:
         if (!_loadedCampaigns) _loadCampaigns();
         if (!_loadedCampaignRequests) _loadCampaignRequests();
         break;
-      case 4:
+      case 5:
         if (!_loadedAudiences) _loadAudiences();
         break;
-      case 6:
+      case 7:
         if (!_loadedUsers) _loadUsers();
         break;
     }
@@ -810,6 +816,28 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
   }
 
+  Future<void> _loadInbox() async {
+    if (mounted) setState(() => loading = true);
+    try {
+      final list = await widget.apiClient.fetchInboxThreads(token: widget.token);
+      if (!mounted) return;
+      setState(() {
+        inboxThreads = list;
+        loading = false;
+        error = null;
+        _loadedInbox = true;
+      });
+    } catch (e) {
+      _setError(e);
+      if (mounted) {
+        setState(() {
+          loading = false;
+          _loadedInbox = true;
+        });
+      }
+    }
+  }
+
   Future<void> _loadAudiences({bool reset = true, bool withOverlay = true}) async {
     final showOverlay = withOverlay && (reset || audiences.isEmpty);
     if (mounted) {
@@ -987,6 +1015,128 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   @override
   Future<void> loadPendingReleases({String? statusFilter}) => _loadPendingReleases(statusFilter: statusFilter);
+
+  @override
+  List<dynamic> get inboxThreadsList => inboxThreads;
+
+  @override
+  Future<void> loadInbox() => _loadInbox();
+
+  @override
+  void showInboxThreadDialog(int threadId) => _showInboxThreadDialog(threadId);
+
+  Future<void> _showInboxThreadDialog(int threadId) async {
+    try {
+      var threadData = await widget.apiClient.fetchInboxThread(token: widget.token, threadId: threadId);
+      if (!mounted) return;
+      final replyController = TextEditingController();
+      bool sending = false;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) {
+          return StatefulBuilder(
+            builder: (ctx, setDialogState) {
+              final messages = threadData['messages'] as List<dynamic>? ?? [];
+              final artistName = (threadData['artist_name'] ?? '').toString();
+              final artistEmail = (threadData['artist_email'] ?? '').toString();
+              return AlertDialog(
+                title: Text('Inbox: $artistName'),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('$artistEmail', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                      const SizedBox(height: 16),
+                      for (final m in messages) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                (m['sender'] ?? '').toString() == 'label' ? 'Label (you)' : 'Artist',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: (m['sender'] ?? '').toString() == 'label'
+                                      ? Theme.of(ctx).colorScheme.primary
+                                      : Colors.grey[700],
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              SelectableText((m['body'] ?? '').toString()),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const Divider(),
+                      const Text('Reply (sends email to artist)', style: TextStyle(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: replyController,
+                        decoration: const InputDecoration(
+                          hintText: 'Type your reply...',
+                          border: OutlineInputBorder(),
+                          alignLabelWithHint: true,
+                        ),
+                        maxLines: 4,
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Close'),
+                  ),
+                  FilledButton(
+                    onPressed: sending
+                        ? null
+                        : () async {
+                            final body = replyController.text.trim();
+                            if (body.isEmpty) return;
+                            setDialogState(() => sending = true);
+                            try {
+                              threadData = await widget.apiClient.replyToInboxThread(
+                                token: widget.token,
+                                threadId: threadId,
+                                body: body,
+                              );
+                              if (!ctx.mounted) return;
+                              setDialogState(() => sending = false);
+                              replyController.clear();
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                const SnackBar(content: Text('Reply sent (email sent to artist).')),
+                              );
+                            } catch (e) {
+                              if (ctx.mounted) {
+                                setDialogState(() => sending = false);
+                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                  SnackBar(
+                                    content: SelectableText(e.toString().replaceFirst('Exception: ', '')),
+                                    action: SnackBarAction(
+                                      label: 'Copy',
+                                      onPressed: () => Clipboard.setData(ClipboardData(text: e.toString())),
+                                    ),
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                    child: sending ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Reply'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+      replyController.dispose();
+      await _loadInbox();
+    } catch (e) {
+      _showErrorSnackBar(e.toString());
+    }
+  }
 
   @override
   Future<void> selectAudience(int id) async {
@@ -1434,6 +1584,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           tabs: [
             Tab(icon: ZalmanimIcons.alienIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Artists'),
             Tab(icon: ZalmanimIcons.jellyfishIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Demos'),
+            Tab(icon: Icon(Icons.inbox, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Inbox'),
             Tab(icon: ZalmanimIcons.squidIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Releases'),
             Tab(icon: ZalmanimIcons.alienIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'CAMPAIGNS'),
             Tab(icon: ZalmanimIcons.squidIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Audience'),
@@ -1449,6 +1600,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
             children: [
               ArtistsTab(delegate: this),
               DemosTab(delegate: this),
+              InboxTab(delegate: this),
               ReleasesSectionTab(delegate: this),
               CampaignsSectionTab(delegate: this),
               AudienceTab(delegate: this),

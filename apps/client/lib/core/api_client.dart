@@ -526,6 +526,53 @@ class ApiClient {
     return jsonDecode(response.body) as List<dynamic>;
   }
 
+  Future<List<dynamic>> fetchInboxThreads({
+    required String token,
+    int? artistId,
+  }) async {
+    final queryParams = <String, String>{};
+    if (artistId != null) queryParams['artist_id'] = artistId.toString();
+    final uri = Uri.parse('$baseUrl/admin/inbox').replace(queryParameters: queryParams.isNotEmpty ? queryParams : null);
+    final response = await http.get(uri, headers: _authHeaders(token));
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(response.body);
+      throw Exception('Inbox failed (${response.statusCode}): $detail');
+    }
+    return jsonDecode(response.body) as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> fetchInboxThread({
+    required String token,
+    required int threadId,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/admin/inbox/threads/$threadId'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(response.body);
+      throw Exception(detail.isNotEmpty ? detail : 'Thread not found');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> replyToInboxThread({
+    required String token,
+    required int threadId,
+    required String body,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/admin/inbox/threads/$threadId/reply'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode({'body': body.trim()}),
+    );
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(response.body);
+      throw Exception(detail.isNotEmpty ? detail : 'Reply failed');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> fetchArtistDashboard(String token) async {
     final response = await http.get(
       Uri.parse('$baseUrl/artist/me/dashboard'),

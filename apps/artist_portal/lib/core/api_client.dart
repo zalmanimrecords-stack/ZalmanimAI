@@ -212,6 +212,45 @@ class ApiClient {
     return jsonDecode(response.body) as List<dynamic>;
   }
 
+  /// Send a message to the label (creates a new thread).
+  Future<Map<String, dynamic>> sendMessageToLabel(String token, String body) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/artist/me/inbox'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode({'body': body.trim()}),
+    );
+    if (response.statusCode != 200) {
+      final detail = _detailFromErrorBody(response.body);
+      throw Exception(detail.isNotEmpty ? detail : 'Failed to send message');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  /// List current artist's inbox threads (messages to the label).
+  Future<List<dynamic>> fetchMyInboxThreads(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/artist/me/inbox'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Inbox failed (${response.statusCode})');
+    }
+    return jsonDecode(response.body) as List<dynamic>;
+  }
+
+  /// Get one inbox thread with messages.
+  Future<Map<String, dynamic>> fetchInboxThread(String token, int threadId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/artist/me/inbox/threads/$threadId'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      final detail = _detailFromErrorBody(response.body);
+      throw Exception(detail.isNotEmpty ? detail : 'Thread not found');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   /// Public linktree data (no auth).
   Future<Map<String, dynamic>> fetchPublicLinktree(int artistId) async {
     final response = await http.get(
