@@ -157,6 +157,29 @@ def _artist_portal_url() -> str:
     return (settings.artist_portal_base_url or "").strip() or "https://artists.zalmanim.com"
 
 
+def _create_pending_release_for_demo(db: Session, item: DemoSubmission) -> PendingRelease:
+    """Create a PendingRelease row for an approved demo so it appears in Pending Release. Idempotent: does nothing if one already exists."""
+    existing = db.query(PendingRelease).filter(PendingRelease.demo_submission_id == item.id).first()
+    if existing:
+        return existing
+    fields = _safe_json_dict(item.fields_json)
+    release_title = (fields.get("track_name") or "").strip() or "Pending artist confirmation"
+    pr = PendingRelease(
+        campaign_request_id=None,
+        demo_submission_id=item.id,
+        artist_id=item.artist_id,
+        artist_name=(item.artist_name or "").strip() or "Artist",
+        artist_email=(item.email or "").strip().lower() or "unknown@example.com",
+        artist_data_json="{}",
+        release_title=release_title[:300],
+        release_data_json="{}",
+        status="pending",
+    )
+    db.add(pr)
+    db.flush()
+    return pr
+
+
 def _generate_temporary_password(length: int = 12) -> str:
     alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@$%*"
     return "".join(secrets.choice(alphabet) for _ in range(length))
@@ -1864,7 +1887,8 @@ def approve_demo_submission(
     raw_token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
     portal_url = (_artist_portal_url()).rstrip("/")
-    demo_confirm_form_link = f"{portal_url}/demo-confirm?token={raw_token}"
+    # Use hash URL so the link works when the server only serves index.html at / (no SPA fallback).
+    demo_confirm_form_link = f"{portal_url}/#/demo-confirm?token={raw_token}"
     expires_at = datetime.now(timezone.utc) + timedelta(days=30)
     demo_confirm_token_row = DemoConfirmationToken(
         demo_submission_id=item.id,
@@ -1903,24 +1927,7 @@ def approve_demo_submission(
             )
 
     item.status = "approved"
-
-    # Create a PendingRelease so the approved demo appears in LM Pending Release tab
-    # (artist can later submit the demo-confirm form to fill in full details).
-    fields = _safe_json_dict(item.fields_json)
-    release_title = (fields.get("track_name") or "").strip() or "Pending artist confirmation"
-    pr = PendingRelease(
-        campaign_request_id=None,
-        demo_submission_id=item.id,
-        artist_id=item.artist_id,
-        artist_name=(item.artist_name or "").strip() or "Artist",
-        artist_email=(item.email or "").strip().lower() or "unknown@example.com",
-        artist_data_json="{}",
-        release_title=release_title[:300],
-        release_data_json="{}",
-        status="pending",
-    )
-    db.add(pr)
-
+    _create_pending_release_for_demo(db, item)
     db.commit()
     db.refresh(item)
     return _serialize_demo_submission(item)
@@ -2911,7 +2918,8 @@ def _create_pending_release_token_and_send_approval_email(
     raw_token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
     portal_url = (_artist_portal_url()).rstrip("/")
-    form_link = f"{portal_url}/pending-release?token={raw_token}"
+    # Use hash URL so the link works when the server only serves index.html at / (no SPA fallback).
+    form_link = f"{portal_url}/#/pending-release?token={raw_token}"
     expires_at = datetime.now(timezone.utc) + timedelta(days=30)
     token_row = PendingReleaseToken(
         token_hash=token_hash,
@@ -3211,6 +3219,21 @@ def admin_list_pending_releases(
 ) -> list[PendingReleaseOut]:
     """List pending-for-release items (tracks with full details submitted, waiting for treatment)."""
     require_admin(user)
+    # Backfill: ensure every approved demo has a PendingRelease (fixes demos approved before we created PendingRelease on approve).
+    existing_demo_ids = {
+        r[0]
+        for r in db.query(PendingRelease.demo_submission_id)
+        .filter(PendingRelease.demo_submission_id.isnot(None))
+        .all()
+    }
+    approved_without_pr = [
+        d for d in db.query(DemoSubmission).filter(DemoSubmission.status == "approved").all()
+        if d.id not in existing_demo_ids
+    ]
+    for item in approved_without_pr:
+        _create_pending_release_for_demo(db, item)
+    if approved_without_pr:
+        db.commit()
     q = db.query(PendingRelease).order_by(desc(PendingRelease.created_at)).offset(offset).limit(limit)
     if status_filter in ("pending", "processed"):
         q = q.filter(PendingRelease.status == status_filter)

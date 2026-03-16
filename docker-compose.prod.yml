@@ -34,6 +34,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       UPLOAD_DIR: /app/storage/uploads
       DEMO_SUBMISSION_TOKEN: ${DEMO_SUBMISSION_TOKEN:-}
+      # Set by deploy script (e.g. deploy-prod-remote.ps1) or export GIT_LAST_UPDATE before 'docker compose up' so admin dashboard shows "Last update"
       GIT_LAST_UPDATE: ${GIT_LAST_UPDATE:-}
       BUILD_NUMBER: ${BUILD_NUMBER:-}
     volumes:

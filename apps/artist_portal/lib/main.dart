@@ -72,11 +72,22 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
   @override
   Widget build(BuildContext context) {
     final primary = _primaryColor();
-    // Public forms with token: /pending-release?token=xxx or /demo-confirm?token=xxx
-    final pathSegments = Uri.base.pathSegments;
-    final token = Uri.base.queryParameters['token'];
-    if (pathSegments.isNotEmpty && token != null && token.trim().isNotEmpty) {
-      final segment = pathSegments[0].toLowerCase();
+    // Public forms: /pending-release?token=xxx, /demo-confirm?token=xxx, or hash URLs /#/pending-release?token=xxx, /#/demo-confirm?token=xxx
+    String? segment;
+    String? token;
+    final pathSegments = Uri.base.pathSegments.where((s) => s.isNotEmpty).toList();
+    final frag = Uri.base.fragment;
+    if (pathSegments.isNotEmpty && Uri.base.queryParameters['token'] != null) {
+      segment = pathSegments[0].toLowerCase();
+      token = Uri.base.queryParameters['token'];
+    } else if (frag.startsWith('/')) {
+      try {
+        final u = Uri.parse('http://h$frag');
+        if (u.pathSegments.isNotEmpty) segment = u.pathSegments[0].toLowerCase();
+        token = u.queryParameters['token'];
+      } catch (_) {}
+    }
+    if (segment != null && token != null && token.trim().isNotEmpty) {
       if (segment == 'pending-release') {
         return MaterialApp(
           title: AppConfig.labelName,

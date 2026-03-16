@@ -467,6 +467,17 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     setState(() {
       _lastGitUpdate = last is String ? last : null;
     });
+    // Retry once after a short delay if server did not return last_git_update (e.g. slow start or timeout).
+    if (_lastGitUpdate == null && mounted) {
+      await Future<void>.delayed(const Duration(seconds: 3));
+      if (!mounted) return;
+      final healthRetry = await widget.apiClient.fetchHealth();
+      if (!mounted) return;
+      final lastRetry = healthRetry?['last_git_update'];
+      if (lastRetry is String) {
+        setState(() => _lastGitUpdate = lastRetry);
+      }
+    }
   }
 
   Future<void> _fetchDashboardStats() async {
@@ -1521,7 +1532,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   ? 'Last system update (from server): $_lastGitUpdate'
                   : 'Last system update (set GIT_LAST_UPDATE on server)',
               child: SelectableText(
-                _lastGitUpdate ?? '—',
+                'Updated: ${_lastGitUpdate ?? '—'}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurface,
                   fontWeight: FontWeight.w600,
