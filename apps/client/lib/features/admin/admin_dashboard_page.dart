@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/api_client.dart';
@@ -299,12 +298,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   int _campaignsSortBy = 0;
   bool _campaignsSortAsc = true;
 
-  /// Last system update from Git (from /health), shown in the app bar.
+  /// Last system update from Git (from /health), shown in the app bar next to the logo.
   String? _lastGitUpdate;
-  /// Build version from /health (increments on each PROD deploy).
-  String? _buildNumber;
-  /// App version from package (pubspec), shown next to logo when server build is not yet loaded.
-  String? _appVersion;
   /// Dashboard header: active artists count and total releases count.
   int? _artistsCount;
   int? _releasesCount;
@@ -459,9 +454,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     _artistSearchController.addListener(_onArtistSearchChanged);
     _releasesSearchController.addListener(_onReleasesSearchChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadTabIfNeeded());
-    PackageInfo.fromPlatform().then((info) {
-      if (mounted) setState(() => _appVersion = 'v${info.version}+${info.buildNumber}');
-    });
     _fetchLastGitUpdate();
     _fetchDashboardStats();
     // Load demos on init so the top bar can show "in review" and "pending" counts.
@@ -472,10 +464,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     final health = await widget.apiClient.fetchHealth();
     if (!mounted) return;
     final last = health?['last_git_update'];
-    final build = health?['build_number'];
     setState(() {
       _lastGitUpdate = last is String ? last : null;
-      _buildNumber = build?.toString();
     });
   }
 
@@ -1525,23 +1515,32 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               height: 32,
               fit: BoxFit.contain,
             ),
-            if (_appVersion != null || _buildNumber != null) ...[
-              const SizedBox(width: 12),
-              Tooltip(
-                message: _buildNumber != null
-                    ? 'App version (from pubspec.yaml). Server build: $_buildNumber'
-                    : 'App version (from pubspec.yaml). Rebuild app after changing version.',
-                child: SelectableText(
-                  _buildNumber != null
-                      ? '${_appVersion ?? '—'} · $_buildNumber'
-                      : (_appVersion ?? '—'),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurface,
-                    fontWeight: FontWeight.w600,
-                  ),
+            const SizedBox(width: 12),
+            Tooltip(
+              message: _lastGitUpdate != null
+                  ? 'Last system update (from server): $_lastGitUpdate'
+                  : 'Last system update (set GIT_LAST_UPDATE on server)',
+              child: SelectableText(
+                _lastGitUpdate ?? '—',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-            ],
+            ),
+            const SizedBox(width: 16),
+            Tooltip(
+              message: 'Demos in review and awaiting treatment',
+              child: SelectableText(
+                _loadedDemos
+                    ? '$_demosInReviewCount in review · $_demosPendingCount pending'
+                    : '— in review · — pending',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
           ],
         ),
         actions: [
@@ -1559,21 +1558,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 ),
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.only(left: 8),
-            child: Tooltip(
-              message: 'Demos in review and awaiting treatment',
-              child: SelectableText(
-                _loadedDemos
-                    ? '$_demosInReviewCount in review · $_demosPendingCount pending'
-                    : '— in review · — pending',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ),
           if (_loadedPendingReleases)
             Padding(
               padding: const EdgeInsets.only(left: 8),
