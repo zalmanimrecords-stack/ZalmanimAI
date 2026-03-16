@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'core/api_client.dart';
+import 'core/redirect_to_hash_stub.dart'
+    if (dart.library.html) 'core/redirect_to_hash_web.dart' as redirect;
 import 'core/app_config.dart';
 import 'core/consent_storage.dart';
 import 'core/zalmanim_icons.dart';
@@ -71,6 +73,7 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
 
   @override
   Widget build(BuildContext context) {
+    redirect.redirectPathToHash();
     final primary = _primaryColor();
     // Public forms: /pending-release?token=xxx, /demo-confirm?token=xxx, or hash URLs /#/pending-release?token=xxx, /#/demo-confirm?token=xxx
     String? segment;

@@ -71,6 +71,7 @@ from app.schemas.schemas import (
     CampaignRequestUpdate,
     LinktreeLink,
     LinktreeOut,
+    LinktreeRelease,
     CampaignCreate,
     CampaignOut,
     CampaignUpdate,
@@ -1363,7 +1364,25 @@ def public_linktree(
         media = db.query(ArtistMedia).filter(ArtistMedia.id == lid, ArtistMedia.artist_id == artist.id).first()
         if media and os.path.isfile(media.stored_path):
             logo_url = _linktree_image_url(request, artist_id, "logo")
-    return LinktreeOut(artist_id=artist.id, name=name, links=links, profile_image_url=profile_image_url, logo_url=logo_url)
+    releases_q = (
+        db.query(Release)
+        .options(joinedload(Release.artists))
+        .filter(or_(Release.artist_id == artist.id, Release.artists.any(Artist.id == artist.id)))
+        .order_by(desc(Release.created_at))
+        .limit(50)
+    )
+    releases = [
+        LinktreeRelease(title=(r.title or "").strip() or "Untitled", url=None)
+        for r in releases_q.all()
+    ]
+    return LinktreeOut(
+        artist_id=artist.id,
+        name=name,
+        links=links,
+        profile_image_url=profile_image_url,
+        logo_url=logo_url,
+        releases=releases,
+    )
 
 
 @router.get("/public/artist/{artist_id}/profile-image", response_class=FileResponse)
