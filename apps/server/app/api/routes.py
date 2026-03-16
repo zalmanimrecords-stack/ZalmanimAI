@@ -2003,6 +2003,24 @@ def approve_demo_submission(
             )
 
     item.status = "approved"
+
+    # Create a PendingRelease so the approved demo appears in LM Pending Release tab
+    # (artist can later submit the demo-confirm form to fill in full details).
+    fields = _safe_json_dict(item.fields_json)
+    release_title = (fields.get("track_name") or "").strip() or "Pending artist confirmation"
+    pr = PendingRelease(
+        campaign_request_id=None,
+        demo_submission_id=item.id,
+        artist_id=item.artist_id,
+        artist_name=(item.artist_name or "").strip() or "Artist",
+        artist_email=(item.email or "").strip().lower() or "unknown@example.com",
+        artist_data_json="{}",
+        release_title=release_title[:300],
+        release_data_json="{}",
+        status="pending",
+    )
+    db.add(pr)
+
     db.commit()
     db.refresh(item)
     return _serialize_demo_submission(item)
@@ -3383,18 +3401,35 @@ def public_demo_confirm_submit(
         )
     row.used_at = datetime.now(timezone.utc)
     artist_id = item.artist_id
-    pr = PendingRelease(
-        campaign_request_id=None,
-        demo_submission_id=item.id,
-        artist_id=artist_id,
-        artist_name=(payload.artist_name or "").strip() or "Artist",
-        artist_email=payload.artist_email.strip().lower(),
-        artist_data_json=json.dumps(payload.artist_data if isinstance(payload.artist_data, dict) else {}),
-        release_title=(payload.release_title or "").strip() or "Untitled",
-        release_data_json=json.dumps(payload.release_data if isinstance(payload.release_data, dict) else {}),
-        status="pending",
-    )
-    db.add(pr)
+    artist_name = (payload.artist_name or "").strip() or "Artist"
+    artist_email = payload.artist_email.strip().lower()
+    release_title = (payload.release_title or "").strip() or "Untitled"
+    artist_data_json = json.dumps(payload.artist_data if isinstance(payload.artist_data, dict) else {})
+    release_data_json = json.dumps(payload.release_data if isinstance(payload.release_data, dict) else {})
+
+    # Update existing PendingRelease created on approve, or create one for legacy approved demos
+    pr = db.query(PendingRelease).filter(PendingRelease.demo_submission_id == item.id).first()
+    if pr:
+        pr.artist_id = artist_id
+        pr.artist_name = artist_name
+        pr.artist_email = artist_email
+        pr.artist_data_json = artist_data_json
+        pr.release_title = release_title[:300]
+        pr.release_data_json = release_data_json
+        pr.status = "pending"
+    else:
+        pr = PendingRelease(
+            campaign_request_id=None,
+            demo_submission_id=item.id,
+            artist_id=artist_id,
+            artist_name=artist_name,
+            artist_email=artist_email,
+            artist_data_json=artist_data_json,
+            release_title=release_title[:300],
+            release_data_json=release_data_json,
+            status="pending",
+        )
+        db.add(pr)
     item.status = "pending_release"
     db.commit()
     db.refresh(pr)
