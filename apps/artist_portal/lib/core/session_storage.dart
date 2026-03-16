@@ -11,10 +11,7 @@ const _keyRememberMe = 'auth_remember_me';
 Future<void> saveSession(AuthSession session, {required bool rememberMe}) async {
   final prefs = await SharedPreferences.getInstance();
   await prefs.setBool(_keyRememberMe, rememberMe);
-  if (!rememberMe) {
-    await clearSession(clearRememberPreference: false);
-    return;
-  }
+  // Always persist session so the user stays logged in after refresh or browser restart.
   await prefs.setString(_keyToken, session.token);
   await prefs.setString(_keyRole, session.role);
   if (session.email != null && session.email!.isNotEmpty) {
@@ -42,11 +39,6 @@ Future<void> clearSession({bool clearRememberPreference = true}) async {
 
 Future<AuthSession?> loadSession() async {
   final prefs = await SharedPreferences.getInstance();
-  final rememberMe = prefs.getBool(_keyRememberMe) ?? false;
-  if (!rememberMe) {
-    await clearSession(clearRememberPreference: false);
-    return null;
-  }
   final token = prefs.getString(_keyToken);
   final role = prefs.getString(_keyRole);
   if (token == null || token.isEmpty || role == null || role.isEmpty) {

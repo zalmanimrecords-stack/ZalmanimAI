@@ -894,6 +894,9 @@ def init_db() -> None:
                 "ALTER TABLE pending_releases ADD COLUMN IF NOT EXISTS demo_submission_id INTEGER "
                 "REFERENCES demo_submissions(id) ON DELETE SET NULL"
             ))
+            conn.execute(text(
+                "UPDATE mail_settings SET emails_per_hour = 10 WHERE id = 1 AND (emails_per_hour IS NULL OR emails_per_hour = 5)"
+            ))
             conn.commit()
     except Exception as e:
         logging.getLogger(__name__).warning("DB migration (auth/users): %s", e)
@@ -2783,7 +2786,7 @@ def artist_create_campaign_request(
     req = CampaignRequest(
         artist_id=user.artist_id,
         release_id=payload.release_id,
-        message=payload.message.strip() or None,
+        message=(payload.message or "").strip() or None,
         status="pending",
     )
     db.add(req)

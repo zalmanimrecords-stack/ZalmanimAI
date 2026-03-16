@@ -953,7 +953,7 @@ class SystemSettingsOut(BaseModel):
     smtp_use_tls: bool = True
     smtp_use_ssl: bool = False
     smtp_user_configured: bool = False  # True if smtp_user is set (password not exposed)
-    emails_per_hour: int = 30
+    emails_per_hour: int = 10
     email_configured: bool = False  # True if SMTP is usable
     # Demo rejection email template (editable in settings)
     demo_rejection_subject: str = ""

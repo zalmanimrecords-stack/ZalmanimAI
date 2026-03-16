@@ -2,7 +2,7 @@ import os
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.audience_routes import router as audience_router
@@ -20,12 +20,22 @@ def _log_category(path: str) -> str:
     return "api"
 
 
+def _is_third_party_asset_404(path: str, status_code: int) -> bool:
+    """True if this is a known third-party path that often 404s (e.g. Cloudflare injecting relative URL)."""
+    if status_code != 404:
+        return False
+    path_lower = (path or "").strip().lower()
+    return path_lower.startswith("/static.cloudflareinsights.com/") or "/beacon.min.js" in path_lower
+
+
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
     """Log every HTTP error (4xx/5xx) to system log so Settings > Logs shows LB and artist portal errors."""
     path = request.url.path or ""
-    category = _log_category(path)
     status_code = exc.status_code
+    if _is_third_party_asset_404(path, status_code):
+        return JSONResponse(status_code=status_code, content={"detail": exc.detail})
+    category = _log_category(path)
     detail = getattr(exc, "detail", None)
     if isinstance(detail, dict):
         detail_str = str(detail)[:400]
@@ -68,6 +78,24 @@ app.add_middleware(
 
 app.include_router(router, prefix="/api")
 app.include_router(audience_router, prefix="/api")
+
+
+ROBOTS_TXT = b"User-agent: *\nDisallow: /\n"
+
+
+@app.get("/robots.txt", response_class=Response)
+def robots_txt() -> Response:
+    """Serve robots.txt so crawlers get 200 instead of 404. API is not for indexing."""
+    return Response(content=ROBOTS_TXT, media_type="text/plain")
+
+
+@app.get("/static.cloudflareinsights.com/{rest:path}", response_class=Response)
+async def cloudflare_beacon_proxy(rest: str) -> Response:
+    """Respond to Cloudflare-injected relative requests so they do not 404.
+    When the site is behind Cloudflare, the beacon script can be requested with a relative
+    path; the browser then asks this origin for /static.cloudflareinsights.com/beacon.min.js.
+    Returning 204 avoids 404 log noise. The real script is at https://static.cloudflareinsights.com/."""
+    return Response(status_code=204)
 
 
 @app.get("/", response_class=HTMLResponse)

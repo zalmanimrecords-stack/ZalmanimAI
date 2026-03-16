@@ -1537,21 +1537,23 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 ),
               ),
             ),
-          if (_lastGitUpdate != null)
-            Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Tooltip(
-                    message: 'Last system update from Git: $_lastGitUpdate',
-                    child: SelectableText(
-                      _lastGitUpdate!,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+          Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Tooltip(
+                  message: _lastGitUpdate != null
+                      ? 'Last system update (from server): $_lastGitUpdate'
+                      : 'Last system update (set GIT_LAST_UPDATE on server)',
+                  child: SelectableText(
+                    'Updated: ${_lastGitUpdate ?? '—'}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
+                ),
+                if (_lastGitUpdate != null)
                   IconButton(
                     icon: const Icon(ZalmanimIcons.copy, size: 18),
                     tooltip: 'Copy last update time',
@@ -1561,9 +1563,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       padding: EdgeInsets.zero,
                     ),
                   ),
-                ],
-              ),
+              ],
             ),
+          ),
           ApiConnectionIndicator(
             apiClient: widget.apiClient,
             onConnectionRestored: load,

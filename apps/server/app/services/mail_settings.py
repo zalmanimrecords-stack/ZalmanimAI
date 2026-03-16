@@ -26,6 +26,9 @@ def get_effective_mail_config():
         return rv if (row and rv is not None) else env_val
     def _bool(rv, env_val):
         return rv if (row and rv is not None) else env_val
+    raw_limit = _int(row.emails_per_hour if row else None, settings.emails_per_hour)
+    # Enforce minimum 10 per hour when a limit is set (avoids 5/hour from old settings).
+    emails_per_hour = max(10, raw_limit) if (raw_limit is not None and raw_limit > 0) else raw_limit
     return type("MailConfig", (), {
         "smtp_host": _str(row.smtp_host if row else None, settings.smtp_host),
         "smtp_port": _int(row.smtp_port if row else None, settings.smtp_port),
@@ -34,7 +37,7 @@ def get_effective_mail_config():
         "smtp_use_ssl": _bool(row.smtp_use_ssl if row else None, settings.smtp_use_ssl),
         "smtp_user": _str(row.smtp_user if row else None, settings.smtp_user),
         "smtp_password": _str(row.smtp_password if row else None, settings.smtp_password),
-        "emails_per_hour": _int(row.emails_per_hour if row else None, settings.emails_per_hour),
+        "emails_per_hour": emails_per_hour,
     })()
 
 

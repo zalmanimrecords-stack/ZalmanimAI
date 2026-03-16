@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = True   # STARTTLS on port 587
     smtp_use_ssl: bool = False  # True for port 465 (implicit SSL); use with smtp_port=465
     smtp_from_email: str = ""  # Default "From" address; fallback to smtp_user if empty
-    emails_per_hour: int = 30  # Max emails per hour; 0 = no limit (not recommended)
+    emails_per_hour: int = 10  # Max emails per hour; 0 = no limit (not recommended)
     redis_url: str = "redis://redis:6379/0"  # Used for rate-limit counter
     demo_submission_token: str = ""  # Set via env DEMO_SUBMISSION_TOKEN; optional shared secret for demo form
     # Base URL for password reset links in email (client app, not API). If empty, routes use https://lm.zalmanim.com
