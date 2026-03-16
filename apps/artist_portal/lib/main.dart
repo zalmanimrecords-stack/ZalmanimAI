@@ -74,6 +74,7 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
 
   @override
   Widget build(BuildContext context) {
+    redirect.redirectPathToHash();
     final primary = _primaryColor();
     // Public forms: /pending-release?token=xxx, /demo-confirm?token=xxx, or hash URLs /#/pending-release?token=xxx, /#/demo-confirm?token=xxx
     String? segment;
