@@ -630,6 +630,69 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                             ),
                       ),
                       const SizedBox(height: 20),
+                      _sectionTitle(context, 'Message the label', primary),
+                      _card(
+                        context,
+                        primary,
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Send a message to the label. You will see replies here and can continue the conversation.',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: messageToLabelController,
+                              decoration: const InputDecoration(
+                                labelText: 'Your message',
+                                hintText: 'Ideas, requests, complaints and any other topic are welcome—you are invited to contact us.',
+                                border: OutlineInputBorder(),
+                                alignLabelWithHint: true,
+                              ),
+                              maxLines: 4,
+                            ),
+                            const SizedBox(height: 12),
+                            FilledButton(
+                              onPressed: sendingMessageToLabel ? null : _sendMessageToLabel,
+                              child: sendingMessageToLabel
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                    )
+                                  : const Text('Send message'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (inboxThreads.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        _sectionTitle(context, 'Your messages', primary),
+                        ...inboxThreads.map((t) {
+                          final thread = t as Map<String, dynamic>;
+                          final id = thread['id'] as int? ?? 0;
+                          final preview = (thread['last_message_preview'] ?? '').toString();
+                          final updated = (thread['last_message_at'] ?? thread['updated_at'] ?? '').toString();
+                          final hasReply = thread['has_label_reply'] == true;
+                          return ListTile(
+                            leading: Icon(
+                              hasReply ? Icons.mark_email_read : Icons.mail_outline,
+                              color: primary,
+                            ),
+                            title: Text(
+                              preview.isEmpty ? 'No subject' : preview.length > 60 ? '${preview.substring(0, 60)}...' : preview,
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                            subtitle: Text(
+                              hasReply ? 'Replied · $updated' : updated,
+                              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                            ),
+                            onTap: () => _openInboxThread(id),
+                          );
+                        }),
+                      ],
+                      const SizedBox(height: 24),
                       _sectionTitle(context, 'My profile', primary),
                       _card(
                         context,
@@ -722,69 +785,6 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                             ],
                           ),
                         ),
-                      ],
-                      const SizedBox(height: 24),
-                      _sectionTitle(context, 'Message the label', primary),
-                      _card(
-                        context,
-                        primary,
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Send a message to the label. You will see replies here and can continue the conversation.',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
-                            ),
-                            const SizedBox(height: 12),
-                            TextField(
-                              controller: messageToLabelController,
-                              decoration: const InputDecoration(
-                                labelText: 'Your message',
-                                hintText: 'Type your message...',
-                                border: OutlineInputBorder(),
-                                alignLabelWithHint: true,
-                              ),
-                              maxLines: 4,
-                            ),
-                            const SizedBox(height: 12),
-                            FilledButton(
-                              onPressed: sendingMessageToLabel ? null : _sendMessageToLabel,
-                              child: sendingMessageToLabel
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                    )
-                                  : const Text('Send message'),
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (inboxThreads.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        _sectionTitle(context, 'Your messages', primary),
-                        ...inboxThreads.map((t) {
-                          final thread = t as Map<String, dynamic>;
-                          final id = thread['id'] as int? ?? 0;
-                          final preview = (thread['last_message_preview'] ?? '').toString();
-                          final updated = (thread['last_message_at'] ?? thread['updated_at'] ?? '').toString();
-                          final hasReply = thread['has_label_reply'] == true;
-                          return ListTile(
-                            leading: Icon(
-                              hasReply ? Icons.mark_email_read : Icons.mail_outline,
-                              color: primary,
-                            ),
-                            title: Text(
-                              preview.isEmpty ? 'No subject' : preview.length > 60 ? '${preview.substring(0, 60)}...' : preview,
-                              style: const TextStyle(fontSize: 14),
-                            ),
-                            subtitle: Text(
-                              hasReply ? 'Replied · $updated' : updated,
-                              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                            ),
-                            onTap: () => _openInboxThread(id),
-                          );
-                        }),
                       ],
                       const SizedBox(height: 24),
                       _sectionTitle(context, 'My media', primary),

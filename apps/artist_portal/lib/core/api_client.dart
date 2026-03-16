@@ -28,7 +28,8 @@ class ApiClient {
 
   /// Artist portal login (artists table credentials at artists.zalmanim.com).
   /// Uses POST /public/artist-login, not the admin /auth/login.
-  Future<AuthSession> login({required String email, required String password}) async {
+  Future<AuthSession> login(
+      {required String email, required String password}) async {
     final response = await http.post(
       Uri.parse('$baseUrl/public/artist-login'),
       headers: {'Content-Type': 'application/json'},
@@ -89,11 +90,13 @@ class ApiClient {
       body: jsonEncode({'email': email.trim().toLowerCase()}),
     );
     if (response.statusCode != 200) {
-      throw Exception(response.body.isNotEmpty ? response.body : 'Request failed');
+      throw Exception(
+          response.body.isNotEmpty ? response.body : 'Request failed');
     }
   }
 
-  Future<void> resetPassword({required String token, required String newPassword}) async {
+  Future<void> resetPassword(
+      {required String token, required String newPassword}) async {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/reset-password'),
       headers: {'Content-Type': 'application/json'},
@@ -125,10 +128,12 @@ class ApiClient {
     required List<int> fileBytes,
     required String filename,
   }) async {
-    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/artist/me/releases/upload'));
+    final request = http.MultipartRequest(
+        'POST', Uri.parse('$baseUrl/artist/me/releases/upload'));
     request.headers.addAll(_authHeaders(token));
     request.fields['title'] = title;
-    request.files.add(http.MultipartFile.fromBytes('file', fileBytes, filename: filename));
+    request.files.add(
+        http.MultipartFile.fromBytes('file', fileBytes, filename: filename));
     final response = await request.send();
     if (response.statusCode != 200) {
       throw Exception('Upload failed (${response.statusCode})');
@@ -191,12 +196,14 @@ class ApiClient {
       headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
       body: jsonEncode({
         if (releaseId != null) 'release_id': releaseId,
-        if (message != null && message.trim().isNotEmpty) 'message': message.trim(),
+        if (message != null && message.trim().isNotEmpty)
+          'message': message.trim(),
       }),
     );
     if (response.statusCode != 200) {
       final detail = _detailFromErrorBody(response.body);
-      throw Exception('Campaign request failed (${response.statusCode}): $detail');
+      throw Exception(
+          'Campaign request failed (${response.statusCode}): $detail');
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
@@ -213,7 +220,8 @@ class ApiClient {
   }
 
   /// Send a message to the label (creates a new thread).
-  Future<Map<String, dynamic>> sendMessageToLabel(String token, String body) async {
+  Future<Map<String, dynamic>> sendMessageToLabel(
+      String token, String body) async {
     final response = await http.post(
       Uri.parse('$baseUrl/artist/me/inbox'),
       headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
@@ -239,7 +247,8 @@ class ApiClient {
   }
 
   /// Get one inbox thread with messages.
-  Future<Map<String, dynamic>> fetchInboxThread(String token, int threadId) async {
+  Future<Map<String, dynamic>> fetchInboxThread(
+      String token, int threadId) async {
     final response = await http.get(
       Uri.parse('$baseUrl/artist/me/inbox/threads/$threadId'),
       headers: _authHeaders(token),
@@ -290,7 +299,8 @@ class ApiClient {
     List<int>? fileBytes,
     String filename = 'demo.mp3',
   }) async {
-    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/artist/me/demos'));
+    final request =
+        http.MultipartRequest('POST', Uri.parse('$baseUrl/artist/me/demos'));
     request.headers.addAll(_authHeaders(token));
     request.fields['track_name'] = trackName;
     request.fields['musical_style'] = musicalStyle;
@@ -320,7 +330,8 @@ class ApiClient {
     required List<int> fileBytes,
     required String filename,
   }) async {
-    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/artist/me/media'));
+    final request =
+        http.MultipartRequest('POST', Uri.parse('$baseUrl/artist/me/media'));
     request.headers.addAll(_authHeaders(token));
     request.files.add(
       http.MultipartFile.fromBytes('file', fileBytes, filename: filename),
@@ -465,7 +476,10 @@ class ApiClient {
         'genre': genre?.trim(),
         'city': city?.trim(),
         'message': message?.trim(),
-        'links': links.where((item) => item.trim().isNotEmpty).map((item) => item.trim()).toList(),
+        'links': links
+            .where((item) => item.trim().isNotEmpty)
+            .map((item) => item.trim())
+            .toList(),
         'fields': fields,
         'consent_to_emails': consentToEmails,
         'source': 'artists_portal_landing',
@@ -474,7 +488,8 @@ class ApiClient {
     );
     if (response.statusCode != 200) {
       final detail = _detailFromErrorBody(response.body);
-      throw Exception('Demo submission failed (${response.statusCode}): $detail');
+      throw Exception(
+          'Demo submission failed (${response.statusCode}): $detail');
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
@@ -496,13 +511,17 @@ class ApiClient {
     String fileFilename = 'demo.mp3',
   }) async {
     final links = <String>[];
-    if (soundCloudOrTrackLink != null && soundCloudOrTrackLink.trim().isNotEmpty) {
+    if (soundCloudOrTrackLink != null &&
+        soundCloudOrTrackLink.trim().isNotEmpty) {
       links.add(soundCloudOrTrackLink.trim());
     }
     if (links.isEmpty && (fileBytes == null || fileBytes.isEmpty)) {
-      throw Exception('Please provide either a SoundCloud track link or an MP3 file.');
+      throw Exception(
+          'Please provide either a SoundCloud track link or an MP3 file.');
     }
-    if (fileBytes != null && fileBytes.isNotEmpty && !fileFilename.toLowerCase().endsWith('.mp3')) {
+    if (fileBytes != null &&
+        fileBytes.isNotEmpty &&
+        !fileFilename.toLowerCase().endsWith('.mp3')) {
       throw Exception('Only MP3 files are allowed.');
     }
 
@@ -535,7 +554,8 @@ class ApiClient {
     final response = await http.Response.fromStream(streamed);
     if (response.statusCode != 200) {
       final detail = _detailFromErrorBody(response.body);
-      throw Exception('Demo submission failed (${response.statusCode}): $detail');
+      throw Exception(
+          'Demo submission failed (${response.statusCode}): $detail');
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }

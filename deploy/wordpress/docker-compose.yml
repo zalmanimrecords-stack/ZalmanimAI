@@ -1,0 +1,53 @@
+# WordPress + MySQL for Zalmanim. Run from repo root:
+#   docker compose -f deploy/wordpress/docker-compose.yml --project-directory . --env-file deploy/wordpress/.env up -d
+#
+# Create deploy/wordpress/.env from deploy/wordpress/.env.example and set passwords.
+# WordPress will be on port 8080. Plugin zalmanim-artists is mounted from wordpress-plugin/zalmanim-artists.
+
+services:
+  wordpress-db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${WORDPRESS_DB_NAME:-wordpress}
+      MYSQL_USER: ${WORDPRESS_DB_USER:-wp}
+      MYSQL_PASSWORD: ${WORDPRESS_DB_PASSWORD:?Set WORDPRESS_DB_PASSWORD in deploy/wordpress/.env}
+      MYSQL_ROOT_PASSWORD: ${WORDPRESS_DB_ROOT_PASSWORD:?Set WORDPRESS_DB_ROOT_PASSWORD in deploy/wordpress/.env}
+    volumes:
+      - wordpress_db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - wp
+
+  wordpress:
+    image: wordpress:6.4-php8.2-apache
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      WORDPRESS_DB_HOST: wordpress-db:3306
+      WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME:-wordpress}
+      WORDPRESS_DB_USER: ${WORDPRESS_DB_USER:-wp}
+      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD:?Set WORDPRESS_DB_PASSWORD in deploy/wordpress/.env}
+      WORDPRESS_CONFIG_EXTRA: |
+        define('WP_HOME', '${WORDPRESS_HOME_URL:-http://localhost:8080}');
+        define('WP_SITEURL', '${WORDPRESS_HOME_URL:-http://localhost:8080}');
+    volumes:
+      # Mount the Zalmanim Artists plugin from the repo (path relative to deploy/wordpress/)
+      - ../../wordpress-plugin/zalmanim-artists:/var/www/html/wp-content/plugins/zalmanim-artists
+    depends_on:
+      wordpress-db:
+        condition: service_healthy
+    networks:
+      - wp
+
+volumes:
+  wordpress_db_data:
+
+networks:
+  wp:
+    driver: bridge

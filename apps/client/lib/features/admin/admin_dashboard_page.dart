@@ -309,6 +309,25 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   int? _artistsCount;
   int? _releasesCount;
 
+  /// Demos that still appear on the Demos tab (exclude approved and pending_release).
+  List<dynamic> get _demosOnScreen => demoSubmissions
+      .where((d) {
+        final s = (d['status'] ?? 'demo').toString();
+        return s != 'approved' && s != 'pending_release';
+      })
+      .toList();
+
+  /// Demo counts for top bar: in review and awaiting treatment (from demos still on screen).
+  int get _demosInReviewCount => _demosOnScreen
+      .where((d) => (d['status'] ?? '').toString() == 'in_review')
+      .length;
+  int get _demosPendingCount => _demosOnScreen
+      .where((d) {
+        final s = (d['status'] ?? 'demo').toString();
+        return s == 'demo' || s.isEmpty;
+      })
+      .length;
+
   @override
   ApiClient get apiClient => widget.apiClient;
 
@@ -352,7 +371,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   List<dynamic> get adminReleasesList => adminReleases;
 
   @override
-  List<dynamic> get demoSubmissionsList => demoSubmissions;
+  List<dynamic> get demoSubmissionsList => _demosOnScreen;
 
   @override
   List<dynamic> get catalogTracksList => catalogTracks;
@@ -445,6 +464,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     });
     _fetchLastGitUpdate();
     _fetchDashboardStats();
+    // Load demos on init so the top bar can show "in review" and "pending" counts.
+    _loadDemoSubmissions(withOverlay: false);
   }
 
   Future<void> _fetchLastGitUpdate() async {
@@ -911,6 +932,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       _loadArtists(reset: true, withOverlay: false),
       _loadDemoSubmissions(withOverlay: false),
       _loadReleases(reset: true, withOverlay: false),
+      _loadPendingReleases(),
       _loadCampaigns(reset: true, withOverlay: false),
       _loadAudiences(reset: true, withOverlay: false),
       _fetchDashboardStats(),
@@ -1530,6 +1552,35 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 message: 'Active artists and total releases',
                 child: SelectableText(
                   '${_artistsCount ?? '—'} artists · ${_releasesCount ?? '—'} releases',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: Tooltip(
+              message: 'Demos in review and awaiting treatment',
+              child: SelectableText(
+                _loadedDemos
+                    ? '$_demosInReviewCount in review · $_demosPendingCount pending'
+                    : '— in review · — pending',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+          if (_loadedPendingReleases)
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: Tooltip(
+                message: 'Releases waiting in Pending Release',
+                child: SelectableText(
+                  '${pendingReleases.length} pending release${pendingReleases.length == 1 ? '' : 's'}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                     fontWeight: FontWeight.w500,
