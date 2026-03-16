@@ -225,6 +225,12 @@ class LinktreeLink(BaseModel):
     url: str
 
 
+class LinktreeRelease(BaseModel):
+    """One release for public linktree page."""
+    title: str
+    url: str | None = None  # Optional link to stream/buy
+
+
 class LinktreeOut(BaseModel):
     """Public linktree page data for an artist."""
     artist_id: int
@@ -232,6 +238,7 @@ class LinktreeOut(BaseModel):
     links: list[LinktreeLink]
     profile_image_url: str | None = None  # Public URL to profile image (if set)
     logo_url: str | None = None  # Public URL to logo image (if set)
+    releases: list[LinktreeRelease] = []  # Artist's releases (title, optional url)
 
 
 class ArtistDemoSubmitRequest(BaseModel):

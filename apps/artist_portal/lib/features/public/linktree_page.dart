@@ -27,6 +27,7 @@ class _LinktreePageState extends State<LinktreePage> {
   String? error;
   String? name;
   List<Map<String, dynamic>> links = [];
+  List<Map<String, dynamic>> releases = [];
   String? profileImageUrl;
   String? logoUrl;
 
@@ -53,9 +54,16 @@ class _LinktreePageState extends State<LinktreePage> {
           .toList();
       final rawProfileUrl = data['profile_image_url'];
       final rawLogoUrl = data['logo_url'];
+      final releasesList = data['releases'];
+      final releasesRaw = releasesList is List ? releasesList : <dynamic>[];
+      final parsedReleases = releasesRaw
+          .map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{})
+          .where((e) => (e['title'] ?? '').toString().trim().isNotEmpty)
+          .toList();
       setState(() {
         name = rawName?.toString().trim() ?? 'Artist';
         links = parsedLinks;
+        releases = parsedReleases;
         profileImageUrl = rawProfileUrl?.toString().trim().isNotEmpty == true ? rawProfileUrl.toString() : null;
         logoUrl = rawLogoUrl?.toString().trim().isNotEmpty == true ? rawLogoUrl.toString() : null;
         loading = false;
@@ -133,13 +141,14 @@ class _LinktreePageState extends State<LinktreePage> {
 
     return Scaffold(
       body: SafeArea(
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-          child: Column(
-            children: [
-              const SizedBox(height: 24),
-              if (profileImageUrl != null)
+        child: SingleChildScrollView(
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+            child: Column(
+              children: [
+                const SizedBox(height: 24),
+                if (profileImageUrl != null)
                 ClipRRect(
                   borderRadius: BorderRadius.circular(48),
                   child: Image.network(
@@ -189,39 +198,74 @@ class _LinktreePageState extends State<LinktreePage> {
                     ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 32),
-              if (links.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    'No links yet.',
-                    style: TextStyle(color: Colors.grey[600]),
-                  ),
-                )
-              else
-                ...links.map((link) {
-                  final label = link['label']?.toString() ?? 'Link';
-                  final url = link['url']?.toString() ?? '';
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          backgroundColor: primary,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        onPressed: url.isEmpty ? null : () => _openUrl(url),
-                        child: Text(label),
-                      ),
+                const SizedBox(height: 32),
+                if (links.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      'No links yet.',
+                      style: TextStyle(color: Colors.grey[600]),
                     ),
-                  );
-                }),
-            ],
+                  )
+                else
+                  ...links.map((link) {
+                    final label = link['label']?.toString() ?? 'Link';
+                    final url = link['url']?.toString() ?? '';
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            backgroundColor: primary,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: url.isEmpty ? null : () => _openUrl(url),
+                          child: Text(label),
+                        ),
+                      ),
+                    );
+                  }),
+                if (releases.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  Text(
+                    'Releases',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? null : Colors.grey[800],
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...releases.map((r) {
+                    final title = r['title']?.toString() ?? '';
+                    final url = r['url']?.toString();
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: url != null && url.isNotEmpty
+                              ? () => _openUrl(url)
+                              : null,
+                          child: Text(title),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+                const SizedBox(height: 32),
+              ],
+            ),
           ),
         ),
       ),
