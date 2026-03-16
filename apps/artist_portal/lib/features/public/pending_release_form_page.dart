@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/api_client.dart';
-import '../../core/app_config.dart';
+import '../../core/loading_error_widgets.dart';
 
 /// Public form for artist to submit full details after their track was approved.
 /// Route: /pending-release?token=xxx (no login).
@@ -165,16 +165,7 @@ class _PendingReleaseFormPageState extends State<PendingReleaseFormPage> {
 
     if (_loading) {
       return Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(color: primary),
-              const SizedBox(height: 16),
-              Text(AppConfig.labelName, style: TextStyle(color: primary, fontWeight: FontWeight.w600)),
-            ],
-          ),
-        ),
+        body: LoadingView(primary: primary),
       );
     }
 

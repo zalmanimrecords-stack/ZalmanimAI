@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'app_config.dart';
+import 'linktree_models.dart';
 import 'session.dart';
 
 class ApiClient {
@@ -265,7 +266,7 @@ class ApiClient {
   }
 
   /// Public linktree data (no auth).
-  Future<Map<String, dynamic>> fetchPublicLinktree(int artistId) async {
+  Future<LinktreeOut> fetchPublicLinktree(int artistId) async {
     final response = await http.get(
       Uri.parse('$baseUrl/public/linktree/$artistId'),
     );
@@ -281,7 +282,8 @@ class ApiClient {
       }
       throw Exception('Linktree failed (${response.statusCode}): $detail');
     }
-    return jsonDecode(response.body) as Map<String, dynamic>;
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return LinktreeOut.fromJson(data);
   }
 
   Future<List<dynamic>> fetchArtistDemos(String token) async {

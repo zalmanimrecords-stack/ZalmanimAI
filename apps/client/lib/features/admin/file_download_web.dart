@@ -1,5 +1,5 @@
 // Web: trigger browser download of a file (e.g. demo MP3).
-
+// ignore: avoid_web_libraries_in_flutter, deprecated_member_use
 import 'dart:html' as html;
 
 /// Triggers a file download in the browser. Safe to call only on web.

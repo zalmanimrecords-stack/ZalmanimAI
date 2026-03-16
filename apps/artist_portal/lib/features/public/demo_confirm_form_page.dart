@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/api_client.dart';
-import '../../core/app_config.dart';
+import '../../core/loading_error_widgets.dart';
 
 /// Public form for artist to confirm and complete details after their demo was approved.
 /// Route: /demo-confirm?token=xxx (no login).
@@ -187,16 +187,7 @@ class _DemoConfirmFormPageState extends State<DemoConfirmFormPage> {
 
     if (_loading) {
       return Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(color: primary),
-              const SizedBox(height: 16),
-              Text(AppConfig.labelName, style: TextStyle(color: primary, fontWeight: FontWeight.w600)),
-            ],
-          ),
-        ),
+        body: LoadingView(primary: primary),
       );
     }
 

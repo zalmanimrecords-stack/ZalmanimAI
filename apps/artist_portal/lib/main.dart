@@ -18,6 +18,7 @@ import 'features/public/demo_confirm_form_page.dart';
 import 'features/public/pending_release_form_page.dart';
 
 void main() {
+  redirect.redirectPathToHash();
   runApp(const ArtistPortalApp());
 }
 
@@ -73,7 +74,6 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
 
   @override
   Widget build(BuildContext context) {
-    redirect.redirectPathToHash();
     final primary = _primaryColor();
     // Public forms: /pending-release?token=xxx, /demo-confirm?token=xxx, or hash URLs /#/pending-release?token=xxx, /#/demo-confirm?token=xxx
     String? segment;
@@ -251,12 +251,14 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
                         onPressed: () async {
                           await clearSession();
                           setState(() {
-                          _initFuture = Future(() async {
-                            final s = await loadSession();
-                            final c = await getCookieConsent();
-                            return (s, c);
+                            _activeSession = null;
+                            _showLogin = false;
+                            _initFuture = Future(() async {
+                              final s = await loadSession();
+                              final c = await getCookieConsent();
+                              return (s, c);
+                            });
                           });
-                        });
                         },
                         child: const Text('Sign out'),
                       ),

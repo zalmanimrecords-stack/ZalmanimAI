@@ -1356,17 +1356,22 @@ def public_linktree(
     logo_url = None
     pid = extra.get("profile_image_media_id")
     lid = extra.get("logo_media_id")
-    if isinstance(pid, int) and pid:
-        media = db.query(ArtistMedia).filter(ArtistMedia.id == pid, ArtistMedia.artist_id == artist.id).first()
-        if media and os.path.isfile(media.stored_path):
-            profile_image_url = _linktree_image_url(request, artist_id, "profile-image")
-    if isinstance(lid, int) and lid:
-        media = db.query(ArtistMedia).filter(ArtistMedia.id == lid, ArtistMedia.artist_id == artist.id).first()
-        if media and os.path.isfile(media.stored_path):
-            logo_url = _linktree_image_url(request, artist_id, "logo")
+    media_ids = [x for x in (pid, lid) if isinstance(x, int) and x]
+    if media_ids:
+        media_list = (
+            db.query(ArtistMedia)
+            .filter(ArtistMedia.artist_id == artist.id, ArtistMedia.id.in_(media_ids))
+            .all()
+        )
+        for media in media_list:
+            if not os.path.isfile(media.stored_path):
+                continue
+            if media.id == pid:
+                profile_image_url = _linktree_image_url(request, artist_id, "profile-image")
+            if media.id == lid:
+                logo_url = _linktree_image_url(request, artist_id, "logo")
     releases_q = (
         db.query(Release)
-        .options(joinedload(Release.artists))
         .filter(or_(Release.artist_id == artist.id, Release.artists.any(Artist.id == artist.id)))
         .order_by(desc(Release.created_at))
         .limit(50)

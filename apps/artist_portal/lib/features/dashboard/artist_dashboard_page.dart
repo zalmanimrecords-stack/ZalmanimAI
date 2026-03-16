@@ -2,9 +2,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api_client.dart';
+import '../../core/url_launcher_util.dart';
 import '../../core/zalmanim_icons.dart';
 
 class ArtistDashboardPage extends StatefulWidget {
@@ -135,7 +135,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
         mediaUsedBytes = used;
         mediaQuotaBytes = quota;
         campaignRequests = campaignReqs;
-        inboxThreads = inbox is List ? inbox : [];
+        inboxThreads = inbox;
         error = null;
         loading = false;
       });
@@ -811,7 +811,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                               InkWell(
                                 onTap: () {
                                   final link = '${Uri.base.origin}/#/l/${artistMap['id']}';
-                                  launchUrl(Uri.parse(link), mode: LaunchMode.platformDefault);
+                                  openUrlOrCopy(context, link);
                                 },
                                 child: Row(
                                   children: [

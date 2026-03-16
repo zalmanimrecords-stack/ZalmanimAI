@@ -1069,7 +1069,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('$artistEmail', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                      Text(artistEmail, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
                       const SizedBox(height: 16),
                       for (final m in messages) ...[
                         Padding(

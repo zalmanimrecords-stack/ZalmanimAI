@@ -50,9 +50,7 @@ class InboxTab extends StatelessWidget {
                       final item = items[index] as Map<String, dynamic>;
                       final threadId = item['id'] as int? ?? 0;
                       final artistName = item['artist_name']?.toString() ?? '-';
-                      final artistEmail = item['artist_email']?.toString() ?? '';
                       final preview = (item['last_message_preview'] ?? '').toString();
-                      final lastAt = (item['last_message_at'] ?? item['updated_at'] ?? '').toString();
                       final hasReply = item['has_label_reply'] == true;
                       return Card(
                         margin: const EdgeInsets.only(bottom: 8),
