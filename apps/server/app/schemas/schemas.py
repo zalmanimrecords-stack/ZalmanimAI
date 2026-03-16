@@ -197,6 +197,8 @@ class ArtistSelfUpdate(BaseModel):
     address: str | None = None
     source_row: str | None = None
     linktree: str | None = None
+    profile_image_media_id: int | None = None  # Artist media ID for Linktree profile image
+    logo_media_id: int | None = None  # Artist media ID for Linktree logo
 
 
 class ArtistMediaOut(BaseModel):
@@ -228,6 +230,8 @@ class LinktreeOut(BaseModel):
     artist_id: int
     name: str
     links: list[LinktreeLink]
+    profile_image_url: str | None = None  # Public URL to profile image (if set)
+    logo_url: str | None = None  # Public URL to logo image (if set)
 
 
 class ArtistDemoSubmitRequest(BaseModel):
@@ -253,7 +257,7 @@ def _artist_extra_from_model(m: BaseModel) -> dict:
         "artist_brand", "full_name", "website", "soundcloud", "facebook",
         "twitter_1", "twitter_2", "youtube", "tiktok", "instagram", "spotify",
         "other_1", "other_2", "other_3", "comments", "apple_music", "address", "source_row",
-        "linktree",
+        "linktree", "profile_image_media_id", "logo_media_id",
     )
     out = {k: getattr(m, k) for k in keys if getattr(m, k) is not None}
     brands = getattr(m, "artist_brands", None)

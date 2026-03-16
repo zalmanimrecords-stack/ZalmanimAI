@@ -1321,12 +1321,19 @@ _LINKTREE_LABELS = {
 }
 
 
+def _linktree_image_url(request: Request, artist_id: int, kind: str) -> str:
+    """Build public URL for artist profile image or logo (no auth)."""
+    base = str(request.base_url).rstrip("/")
+    return f"{base}/public/artist/{artist_id}/{kind}"
+
+
 @router.get("/public/linktree/{artist_id}", response_model=LinktreeOut)
 def public_linktree(
     artist_id: int,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> LinktreeOut:
-    """Public linktree-style page data for an artist (no auth). Returns name and list of links from profile."""
+    """Public linktree-style page data for an artist (no auth). Returns name, links, and optional profile/logo image URLs."""
     artist = db.query(Artist).filter(Artist.id == artist_id, Artist.is_active == True).first()
     if not artist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
@@ -1344,7 +1351,67 @@ def public_linktree(
             links.append(LinktreeLink(label=label, url=val))
         elif val:
             links.append(LinktreeLink(label=label, url=val if "://" in val else f"https://{val}"))
-    return LinktreeOut(artist_id=artist.id, name=name, links=links)
+    profile_image_url = None
+    logo_url = None
+    pid = extra.get("profile_image_media_id")
+    lid = extra.get("logo_media_id")
+    if isinstance(pid, int) and pid:
+        media = db.query(ArtistMedia).filter(ArtistMedia.id == pid, ArtistMedia.artist_id == artist.id).first()
+        if media and os.path.isfile(media.stored_path):
+            profile_image_url = _linktree_image_url(request, artist_id, "profile-image")
+    if isinstance(lid, int) and lid:
+        media = db.query(ArtistMedia).filter(ArtistMedia.id == lid, ArtistMedia.artist_id == artist.id).first()
+        if media and os.path.isfile(media.stored_path):
+            logo_url = _linktree_image_url(request, artist_id, "logo")
+    return LinktreeOut(artist_id=artist.id, name=name, links=links, profile_image_url=profile_image_url, logo_url=logo_url)
+
+
+@router.get("/public/artist/{artist_id}/profile-image", response_class=FileResponse)
+def public_artist_profile_image(
+    artist_id: int,
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    """Serve the artist's Linktree profile image (no auth)."""
+    artist = db.query(Artist).filter(Artist.id == artist_id, Artist.is_active == True).first()
+    if not artist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    extra = {}
+    if getattr(artist, "extra_json", None):
+        try:
+            extra = json.loads(artist.extra_json) or {}
+        except (json.JSONDecodeError, TypeError):
+            pass
+    pid = extra.get("profile_image_media_id")
+    if not isinstance(pid, int) or not pid:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No profile image")
+    media = db.query(ArtistMedia).filter(ArtistMedia.id == pid, ArtistMedia.artist_id == artist.id).first()
+    if not media or not os.path.isfile(media.stored_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    return FileResponse(media.stored_path, filename=media.filename, media_type=media.content_type)
+
+
+@router.get("/public/artist/{artist_id}/logo", response_class=FileResponse)
+def public_artist_logo(
+    artist_id: int,
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    """Serve the artist's Linktree logo (no auth)."""
+    artist = db.query(Artist).filter(Artist.id == artist_id, Artist.is_active == True).first()
+    if not artist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    extra = {}
+    if getattr(artist, "extra_json", None):
+        try:
+            extra = json.loads(artist.extra_json) or {}
+        except (json.JSONDecodeError, TypeError):
+            pass
+    lid = extra.get("logo_media_id")
+    if not isinstance(lid, int) or not lid:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No logo")
+    media = db.query(ArtistMedia).filter(ArtistMedia.id == lid, ArtistMedia.artist_id == artist.id).first()
+    if not media or not os.path.isfile(media.stored_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    return FileResponse(media.stored_path, filename=media.filename, media_type=media.content_type)
 
 
 @router.get("/auth/me", response_model=UserOut)
@@ -2413,6 +2480,20 @@ def artist_patch_me(
         artist.name = payload.name
     if payload.notes is not None:
         artist.notes = payload.notes
+    if payload.profile_image_media_id is not None:
+        media = db.query(ArtistMedia).filter(
+            ArtistMedia.id == payload.profile_image_media_id,
+            ArtistMedia.artist_id == user.artist_id,
+        ).first()
+        if not media:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Profile image: file not found or not yours")
+    if payload.logo_media_id is not None:
+        media = db.query(ArtistMedia).filter(
+            ArtistMedia.id == payload.logo_media_id,
+            ArtistMedia.artist_id == user.artist_id,
+        ).first()
+        if not media:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Logo: file not found or not yours")
     extra = _artist_extra_from_model(payload)
     if extra:
         try:
@@ -3234,10 +3315,10 @@ def admin_list_pending_releases(
         _create_pending_release_for_demo(db, item)
     if approved_without_pr:
         db.commit()
-    q = db.query(PendingRelease).order_by(desc(PendingRelease.created_at)).offset(offset).limit(limit)
+    q = db.query(PendingRelease).order_by(desc(PendingRelease.created_at))
     if status_filter in ("pending", "processed"):
         q = q.filter(PendingRelease.status == status_filter)
-    items = q.all()
+    items = q.offset(offset).limit(limit).all()
     out = []
     for pr in items:
         artist_data = json.loads(pr.artist_data_json or "{}") if isinstance(pr.artist_data_json, str) else {}

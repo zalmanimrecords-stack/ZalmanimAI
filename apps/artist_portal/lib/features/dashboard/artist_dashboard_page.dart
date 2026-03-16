@@ -66,6 +66,8 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
   List<dynamic> campaignRequests = [];
   List<dynamic> inboxThreads = [];
   String? appVersion;
+  int? _profileImageMediaId;
+  int? _logoMediaId;
 
   @override
   void initState() {
@@ -113,6 +115,10 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
           for (final e in _socialKeys) {
             socialControllers[e.key]?.text = extra[e.key]?.toString() ?? '';
           }
+          final pid = extra['profile_image_media_id'];
+          final lid = extra['logo_media_id'];
+          _profileImageMediaId = pid is int ? pid : null;
+          _logoMediaId = lid is int ? lid : null;
         }
       }
       final demosResult = await widget.apiClient.fetchArtistDemos(widget.token);
@@ -178,6 +184,48 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
       setState(() => error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => savingProfile = false);
+    }
+  }
+
+  Future<void> _setProfileImageForLinktree(int mediaId) async {
+    try {
+      await widget.apiClient.updateArtistProfile(
+        widget.token,
+        profileImageMediaId: mediaId,
+      );
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile image set for Linktree')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: SelectableText(e.toString().replaceFirst('Exception: ', ''))),
+        );
+      }
+    }
+  }
+
+  Future<void> _setLogoForLinktree(int mediaId) async {
+    try {
+      await widget.apiClient.updateArtistProfile(
+        widget.token,
+        logoMediaId: mediaId,
+      );
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Logo set for Linktree')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: SelectableText(e.toString().replaceFirst('Exception: ', ''))),
+        );
+      }
     }
   }
 
@@ -762,14 +810,14 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                               const SizedBox(height: 8),
                               InkWell(
                                 onTap: () {
-                                  final link = '${Uri.base.origin}/l/${artistMap['id']}';
+                                  final link = '${Uri.base.origin}/#/l/${artistMap['id']}';
                                   launchUrl(Uri.parse(link), mode: LaunchMode.platformDefault);
                                 },
                                 child: Row(
                                   children: [
                                     Expanded(
                                       child: SelectableText(
-                                        '${Uri.base.origin}/l/${artistMap['id']}',
+                                        '${Uri.base.origin}/#/l/${artistMap['id']}',
                                         style: TextStyle(color: primary, decoration: TextDecoration.underline),
                                       ),
                                     ),
@@ -781,6 +829,25 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                               Text(
                                 'Share this link for a styled page with all your links.',
                                 style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                              ),
+                              const SizedBox(height: 16),
+                              const Text(
+                                'Profile image & logo (shown on your Linktree page)',
+                                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                              ),
+                              const SizedBox(height: 8),
+                              _LinktreeImageRow(
+                                label: 'Profile image',
+                                currentMediaId: _profileImageMediaId,
+                                mediaList: mediaList,
+                                onSet: _setProfileImageForLinktree,
+                              ),
+                              const SizedBox(height: 8),
+                              _LinktreeImageRow(
+                                label: 'Logo',
+                                currentMediaId: _logoMediaId,
+                                mediaList: mediaList,
+                                onSet: _setLogoForLinktree,
                               ),
                             ],
                           ),
@@ -1026,6 +1093,83 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
         padding: const EdgeInsets.all(20),
         child: child,
       ),
+    );
+  }
+}
+
+/// Row for choosing a Linktree profile image or logo from the artist's media.
+class _LinktreeImageRow extends StatelessWidget {
+  const _LinktreeImageRow({
+    required this.label,
+    required this.currentMediaId,
+    required this.mediaList,
+    required this.onSet,
+  });
+
+  final String label;
+  final int? currentMediaId;
+  final List<dynamic> mediaList;
+  final void Function(int mediaId) onSet;
+
+  String? _filenameForId(int? id) {
+    if (id == null) return null;
+    for (final m in mediaList) {
+      if (m is Map && (m['id'] as int?) == id) return m['filename']?.toString();
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentName = _filenameForId(currentMediaId);
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            '$label: ${currentName ?? 'Not set'}',
+            style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+          ),
+        ),
+        TextButton.icon(
+          onPressed: mediaList.isEmpty
+              ? null
+              : () async {
+                  final id = await showDialog<int>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: Text('Set $label'),
+                      content: SizedBox(
+                        width: 320,
+                        child: mediaList.isEmpty
+                            ? const Text('Upload an image in My media first.')
+                            : ListView.builder(
+                                shrinkWrap: true,
+                                itemCount: mediaList.length,
+                                itemBuilder: (_, i) {
+                                  final m = mediaList[i] as Map<String, dynamic>;
+                                  final mid = m['id'] as int?;
+                                  final fn = m['filename']?.toString() ?? 'file';
+                                  return ListTile(
+                                    title: Text(fn),
+                                    onTap: () => Navigator.of(ctx).pop(mid),
+                                  );
+                                },
+                              ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(ctx).pop(),
+                          child: const Text('Cancel'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (id != null) onSet(id);
+                },
+          icon: const Icon(Icons.photo_library_outlined, size: 18),
+          label: const Text('Set from my media'),
+        ),
+      ],
     );
   }
 }

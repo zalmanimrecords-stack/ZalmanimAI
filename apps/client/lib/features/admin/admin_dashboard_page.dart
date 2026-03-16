@@ -1632,7 +1632,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           tabs: [
             Tab(icon: ZalmanimIcons.alienIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Artists'),
             Tab(icon: ZalmanimIcons.jellyfishIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Demos'),
-            Tab(icon: Icon(Icons.inbox, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Inbox'),
+            Tab(icon: Icon(ZalmanimIcons.email, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Inbox'),
             Tab(icon: ZalmanimIcons.squidIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Releases'),
             Tab(icon: ZalmanimIcons.alienIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'CAMPAIGNS'),
             Tab(icon: ZalmanimIcons.squidIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Audience'),

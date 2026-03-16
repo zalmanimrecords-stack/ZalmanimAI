@@ -157,12 +157,16 @@ class ApiClient {
     String? notes,
     Map<String, dynamic>? extra,
     List<String>? artistBrands,
+    int? profileImageMediaId,
+    int? logoMediaId,
   }) async {
     final body = <String, dynamic>{};
     if (name != null) body['name'] = name;
     if (notes != null) body['notes'] = notes;
     if (extra != null) body.addAll(extra);
     if (artistBrands != null) body['artist_brands'] = artistBrands;
+    if (profileImageMediaId != null) body['profile_image_media_id'] = profileImageMediaId;
+    if (logoMediaId != null) body['logo_media_id'] = logoMediaId;
     final response = await http.patch(
       Uri.parse('$baseUrl/artist/me'),
       headers: {..._authHeaders(token), 'Content-Type': 'application/json'},

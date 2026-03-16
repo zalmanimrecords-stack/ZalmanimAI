@@ -123,8 +123,14 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
         );
       }
     }
-    // Public linktree route: /l/{artistId} (e.g. /l/5)
-    final segments = pathSegments.where((s) => s.isNotEmpty).toList();
+    // Public linktree route: /l/{artistId} or hash URL /#/l/{artistId} (e.g. /l/68 or /#/l/68)
+    List<String> segments = pathSegments.where((s) => s.isNotEmpty).toList();
+    if (segments.length < 2 && frag.startsWith('/')) {
+      try {
+        final u = Uri.parse('http://h$frag');
+        segments = u.pathSegments.where((s) => s.isNotEmpty).toList();
+      } catch (_) {}
+    }
     if (segments.length >= 2 &&
         segments[0].toLowerCase() == 'l' &&
         int.tryParse(segments[1]) != null) {

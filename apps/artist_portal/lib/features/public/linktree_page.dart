@@ -27,6 +27,8 @@ class _LinktreePageState extends State<LinktreePage> {
   String? error;
   String? name;
   List<Map<String, dynamic>> links = [];
+  String? profileImageUrl;
+  String? logoUrl;
 
   @override
   void initState() {
@@ -46,12 +48,16 @@ class _LinktreePageState extends State<LinktreePage> {
       final rawName = data['name'];
       final list = linksList is List ? linksList : <dynamic>[];
       final parsedLinks = list
-          .map((e) => e is Map ? Map<String, dynamic>.from(e as Map) : <String, dynamic>{})
+          .map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{})
           .where((e) => (e['label'] ?? e['url']) != null && (e['url'] ?? '').toString().trim().isNotEmpty)
           .toList();
+      final rawProfileUrl = data['profile_image_url'];
+      final rawLogoUrl = data['logo_url'];
       setState(() {
         name = rawName?.toString().trim() ?? 'Artist';
         links = parsedLinks;
+        profileImageUrl = rawProfileUrl?.toString().trim().isNotEmpty == true ? rawProfileUrl.toString() : null;
+        logoUrl = rawLogoUrl?.toString().trim().isNotEmpty == true ? rawLogoUrl.toString() : null;
         loading = false;
         error = null;
       });
@@ -133,19 +139,48 @@ class _LinktreePageState extends State<LinktreePage> {
           child: Column(
             children: [
               const SizedBox(height: 24),
-              CircleAvatar(
-                radius: 48,
-                backgroundColor: primary.withOpacity(0.2),
-                child: Text(
-                  (name ?? '?').isNotEmpty ? (name!.substring(0, 1).toUpperCase()) : '?',
-                  style: TextStyle(
-                    fontSize: 40,
-                    fontWeight: FontWeight.bold,
-                    color: primary,
+              if (profileImageUrl != null)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(48),
+                  child: Image.network(
+                    profileImageUrl!,
+                    width: 96,
+                    height: 96,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => CircleAvatar(
+                      radius: 48,
+                      backgroundColor: primary.withOpacity(0.2),
+                      child: Text(
+                        (name ?? '?').isNotEmpty ? (name!.substring(0, 1).toUpperCase()) : '?',
+                        style: TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: primary),
+                      ),
+                    ),
+                  ),
+                )
+              else
+                CircleAvatar(
+                  radius: 48,
+                  backgroundColor: primary.withOpacity(0.2),
+                  child: Text(
+                    (name ?? '?').isNotEmpty ? (name!.substring(0, 1).toUpperCase()) : '?',
+                    style: TextStyle(
+                      fontSize: 40,
+                      fontWeight: FontWeight.bold,
+                      color: primary,
+                    ),
                   ),
                 ),
-              ),
               const SizedBox(height: 16),
+              if (logoUrl != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Image.network(
+                    logoUrl!,
+                    height: 40,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
               Text(
                 name ?? 'Artist',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
