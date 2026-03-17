@@ -131,6 +131,7 @@ from app.services.email_service import (
     test_smtp_connection,
 )
 from app.services.mail_settings import build_mail_config, get_effective_mail_config_for_api, save_mail_settings
+from app.services.system_log import append_system_log
 from app.services.agent_supervisor import build_agent_plan, get_agent_registry
 from app.services.backup_service import export_database, restore_database
 from app.services.campaign_service import (
@@ -873,7 +874,47 @@ def _validate_demo_ingest_token(request: Request) -> None:
         or ""
     ).strip()
     if provided != expected:
+        append_system_log(
+            "warning",
+            "auth",
+            "Demo token rejected",
+            details=_request_identity_details(request),
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid demo submission token")
+
+
+def _request_source(request: Request) -> str:
+    forwarded_for = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    return forwarded_for or (request.client.host if request.client else "unknown")
+
+
+def _mask_email(email: str | None) -> str:
+    value = (email or "").strip().lower()
+    if not value or "@" not in value:
+        return "unknown"
+    local, domain = value.split("@", 1)
+    if len(local) <= 2:
+        local_masked = local[:1] + "*"
+    else:
+        local_masked = local[:2] + "*" * (len(local) - 2)
+    return f"{local_masked}@{domain}"
+
+
+def _request_identity_details(request: Request, email: str | None = None) -> str:
+    origin = (request.headers.get("origin") or "").strip() or "-"
+    user_agent = (request.headers.get("user-agent") or "").strip()[:180] or "-"
+    masked_email = _mask_email(email)
+    return f"ip={_request_source(request)} origin={origin} email={masked_email} ua={user_agent}"
+
+
+def _log_auth_attempt(
+    request: Request,
+    *,
+    event: str,
+    email: str | None = None,
+    level: str = "info",
+) -> None:
+    append_system_log(level, "auth", event, details=_request_identity_details(request, email))
 
 
 def _safe_json_dict(raw: str | None) -> dict:
@@ -1026,7 +1067,7 @@ def init_db() -> None:
 
 
 @router.post("/auth/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
+def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)) -> TokenResponse:
     """Admin/manager login (users table). For artist portal use POST /public/artist-login."""
     user = (
         db.query(User)
@@ -1035,14 +1076,16 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
         .first()
     )
     if not user or not user.is_active or not verify_password(payload.password, user.password_hash):
+        _log_auth_attempt(request, event="Admin login failed", email=payload.email, level="warning")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     _touch_user_login(db, user)
+    _log_auth_attempt(request, event="Admin login succeeded", email=user.email)
     return _user_token_response(user)
 
 
 @router.post("/public/artist-login", response_model=TokenResponse)
-def artist_login(payload: ArtistLoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
+def artist_login(payload: ArtistLoginRequest, request: Request, db: Session = Depends(get_db)) -> TokenResponse:
     """
     Artist portal login (artists.zalmanim.com). Uses artists table email + password_hash only.
     No users table row is required. Admin must set the artist's password first (admin UI or API).
@@ -1053,17 +1096,22 @@ def artist_login(payload: ArtistLoginRequest, db: Session = Depends(get_db)) -> 
         .first()
     )
     if not artist:
+        _log_auth_attempt(request, event="Artist login failed", email=payload.email, level="warning")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     if not artist.is_active:
+        _log_auth_attempt(request, event="Artist login blocked: inactive", email=payload.email, level="warning")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account is inactive")
     if not artist.password_hash:
+        _log_auth_attempt(request, event="Artist login blocked: password not set", email=payload.email, level="warning")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Password not set. Contact the label to get portal access.",
         )
     if not verify_password(payload.password, artist.password_hash):
+        _log_auth_attempt(request, event="Artist login failed", email=payload.email, level="warning")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     _touch_artist_login(db, artist)
+    _log_auth_attempt(request, event="Artist login succeeded", email=artist.email)
     return _artist_token_response(artist)
 
 
@@ -1084,6 +1132,7 @@ def forgot_password(
     """Send password reset email for admin/manager users and artist portal accounts."""
     email = (payload.email or "").strip().lower()
     if not email:
+        _log_auth_attempt(request, event="Password reset requested with empty email", level="warning")
         return {"message": "If an account exists with this email, you will receive a reset link shortly."}
     user = (
         db.query(User)
@@ -1099,6 +1148,7 @@ def forgot_password(
         if artist:
             user = _ensure_artist_reset_user(db, artist)
     if not user:
+        _log_auth_attempt(request, event="Password reset requested for unknown account", email=email, level="warning")
         return {"message": "If an account exists with this email, you will receive a reset link shortly."}
     raw_token = secrets.token_urlsafe(32)
     token_hash = _password_reset_token_hash(raw_token)
@@ -1118,6 +1168,9 @@ def forgot_password(
     ok, _ = send_email_service(to_email=user.email, subject=subject, body_text=body_text, body_html=body_html)
     if not ok:
         logging.getLogger(__name__).warning("Failed to send password reset email to %s", user.email)
+        _log_auth_attempt(request, event="Password reset email send failed", email=user.email, level="warning")
+    else:
+        _log_auth_attempt(request, event="Password reset email sent", email=user.email)
     return {"message": "If an account exists with this email, you will receive a reset link shortly."}
 
 
@@ -1138,9 +1191,11 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
         .first()
     )
     if not row:
+        append_system_log("warning", "auth", "Password reset rejected", details="reason=invalid_or_expired_token")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link. Request a new one.")
     user = db.query(User).filter(User.id == row.user_id).first()
     if not user or not user.is_active:
+        append_system_log("warning", "auth", "Password reset rejected", details="reason=inactive_or_missing_user")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link. Request a new one.")
     user.password_hash = hash_password(new_password)
     if user.role == "artist" and user.artist_id is not None:
@@ -1150,6 +1205,7 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     db.delete(row)
     db.query(PasswordResetToken).filter(PasswordResetToken.user_id == user.id).delete()
     db.commit()
+    append_system_log("info", "auth", "Password reset succeeded", details=f"email={_mask_email(user.email)}")
     return {"message": "Password has been reset. You can sign in with your new password."}
 
 
@@ -1191,6 +1247,12 @@ def create_demo_submission(
     _upsert_demo_mailing_subscriber(db, item)
     db.commit()
     db.refresh(item)
+    append_system_log(
+        "info",
+        "auth",
+        "Public demo submission created",
+        details=_request_identity_details(request, item.email),
+    )
     if is_email_configured():
         ok, message = send_email_service(
             to_email=item.email,
@@ -1229,6 +1291,17 @@ def create_demo_submission_with_file(
 ) -> DemoSubmissionOut:
     """Public demo submission with optional MP3 file and/or SoundCloud (or other) links. At least one of file or a link is required. Only MP3 files are accepted."""
     _validate_demo_ingest_token(request)
+    if file and file.filename:
+        append_system_log(
+            "warning",
+            "auth",
+            "Public demo file upload blocked",
+            details=_request_identity_details(request, email),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Public demo file uploads are disabled. Please sign in as a registered artist to upload demo files.",
+        )
     consent = _form_bool(consent_to_emails)
     source = (source or "wordpress_demo_form").strip() or "wordpress_demo_form"
     if source == "artists_portal_landing" and not consent:
@@ -1241,29 +1314,12 @@ def create_demo_submission_with_file(
         normalized_links = [str(link).strip() for link in links_list if str(link).strip()]
     except (json.JSONDecodeError, TypeError):
         normalized_links = []
-    demo_file_path: str | None = None
-    if file and file.filename:
-        ext = os.path.splitext(file.filename)[1].lower()
-        if ext not in ALLOWED_DEMO_FILE_EXT:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Only MP3 files are allowed for demo upload.",
-            )
-        demo_uploads_dir = os.path.join(settings.upload_dir, "demo_uploads")
-        os.makedirs(demo_uploads_dir, exist_ok=True)
-        stored_name = f"{uuid.uuid4().hex}{ext}"
-        path = os.path.join(demo_uploads_dir, stored_name)
-        with open(path, "wb") as out:
-            out.write(file.file.read())
-        demo_file_path = path
-    if not normalized_links and not demo_file_path:
+    if not normalized_links:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Please provide either a SoundCloud (or other) track link or upload an MP3 file.",
+            detail="Please provide a SoundCloud (or other) track link. Public demo file uploads are disabled.",
         )
     fields: dict = {}
-    if demo_file_path:
-        fields["demo_file_path"] = demo_file_path
     fields["consent_copy"] = "I agree to join the Zalmanim mailing list and receive marketing and operational emails related to my demo submission."
     default_approval_subj, default_approval_body = _get_demo_approval_subject_and_body(artist_name.strip())
     item = DemoSubmission(
@@ -1289,6 +1345,12 @@ def create_demo_submission_with_file(
     _upsert_demo_mailing_subscriber(db, item)
     db.commit()
     db.refresh(item)
+    append_system_log(
+        "info",
+        "auth",
+        "Public demo submission with file created",
+        details=_request_identity_details(request, item.email),
+    )
     if is_email_configured():
         ok, message_out = send_email_service(
             to_email=item.email,
@@ -1356,7 +1418,6 @@ def public_linktree(
     logo_url = None
     pid = extra.get("profile_image_media_id")
     lid = extra.get("logo_media_id")
-<<<<<<< HEAD
     media_ids = [x for x in (pid, lid) if isinstance(x, int) and x]
     if media_ids:
         media_list = (
@@ -1373,19 +1434,7 @@ def public_linktree(
                 logo_url = _linktree_image_url(request, artist_id, "logo")
     releases_q = (
         db.query(Release)
-=======
-    if isinstance(pid, int) and pid:
-        media = db.query(ArtistMedia).filter(ArtistMedia.id == pid, ArtistMedia.artist_id == artist.id).first()
-        if media and os.path.isfile(media.stored_path):
-            profile_image_url = _linktree_image_url(request, artist_id, "profile-image")
-    if isinstance(lid, int) and lid:
-        media = db.query(ArtistMedia).filter(ArtistMedia.id == lid, ArtistMedia.artist_id == artist.id).first()
-        if media and os.path.isfile(media.stored_path):
-            logo_url = _linktree_image_url(request, artist_id, "logo")
-    releases_q = (
-        db.query(Release)
         .options(joinedload(Release.artists))
->>>>>>> 7e8126d9f0537dd40d0ef22e27ca249b6bc8dfb8
         .filter(or_(Release.artist_id == artist.id, Release.artists.any(Artist.id == artist.id)))
         .order_by(desc(Release.created_at))
         .limit(50)

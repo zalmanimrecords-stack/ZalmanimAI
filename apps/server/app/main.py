@@ -10,7 +10,24 @@ from app.api.routes import router
 from app.core.config import settings
 from app.services.system_log import append_system_log
 
-app = FastAPI(title=settings.app_name)
+
+def _docs_path(path: str) -> str | None:
+    return path if settings.api_docs_enabled else None
+
+
+def _cors_origins() -> list[str]:
+    raw = (settings.cors_allowed_origins or "").strip()
+    if not raw:
+        return ["*"]
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+app = FastAPI(
+    title=settings.app_name,
+    docs_url=_docs_path("/docs"),
+    redoc_url=_docs_path("/redoc"),
+    openapi_url=_docs_path("/openapi.json"),
+)
 
 
 def _log_category(path: str) -> str:
@@ -62,7 +79,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 # Explicit headers help some browsers with preflight for multipart + Authorization.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins(),
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=[
@@ -101,6 +118,7 @@ async def cloudflare_beacon_proxy(rest: str) -> Response:
 @app.get("/", response_class=HTMLResponse)
 def root() -> str:
     """Clarify that this is the API; the login page is the Flutter app (different URL)."""
+    docs_html = '<p>API docs: <a href="/docs">/docs</a> &middot; Health: <a href="/health">/health</a></p>' if settings.api_docs_enabled else '<p>Health: <a href="/health">/health</a></p>'
     return """
     <!DOCTYPE html>
     <html><head><meta charset="utf-8"><title>LabelOps API</title></head>
@@ -109,9 +127,9 @@ def root() -> str:
       <p>This is the backend API. There is no login page here.</p>
       <p><strong>To open the login page:</strong> run the Flutter app (e.g. <code>flutter run -d chrome</code> from <code>apps/client</code>)
          or use the restart script. The app will open in a new window at a URL like <code>http://localhost:XXXXX</code> &mdash; that tab is the login.</p>
-      <p>API docs: <a href="/docs">/docs</a> &middot; Health: <a href="/health">/health</a></p>
+      %s
     </body></html>
-    """
+    """ % docs_html
 
 
 @app.get("/health")

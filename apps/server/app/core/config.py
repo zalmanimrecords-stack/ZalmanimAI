@@ -5,6 +5,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_name: str = "LabelOps API"
+    api_docs_enabled: bool = True
+    cors_allowed_origins: str = ""
     jwt_secret: str = ""  # Set via env (e.g. JWT_SECRET); see secrets-backup.txt for local dev
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 60 * 24

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:file_picker/file_picker.dart';
 
 import '../../core/api_client.dart';
 import '../../core/demo_genre_options.dart';
@@ -36,8 +35,6 @@ class _LandingPageState extends State<LandingPage> {
   String? _feedback;
   bool _success = false;
   String? _selectedGenre;
-  List<int>? _pickedMp3Bytes;
-  String _pickedMp3Name = 'demo.mp3';
 
   @override
   void dispose() {
@@ -53,11 +50,9 @@ class _LandingPageState extends State<LandingPage> {
 
   Future<void> _submit() async {
     final soundCloudLink = _soundCloudLinkController.text.trim();
-    final hasLink = soundCloudLink.isNotEmpty;
-    final hasFile = _pickedMp3Bytes != null && _pickedMp3Bytes!.isNotEmpty;
-    if (!hasLink && !hasFile) {
+    if (soundCloudLink.isEmpty) {
       setState(() {
-        _feedback = 'Please provide either a SoundCloud (or private track) link or upload an MP3 file.';
+        _feedback = 'Please provide a SoundCloud or private track link.';
         _success = false;
       });
       return;
@@ -68,7 +63,7 @@ class _LandingPageState extends State<LandingPage> {
       _feedback = null;
     });
     try {
-      await widget.apiClient.submitPublicDemoWithLinkOrFile(
+      await widget.apiClient.submitPublicDemo(
         artistName: _artistNameController.text,
         email: _emailController.text,
         consentToEmails: _consentToEmails,
@@ -77,9 +72,7 @@ class _LandingPageState extends State<LandingPage> {
         genre: _selectedGenre,
         city: _cityController.text,
         message: _messageController.text,
-        soundCloudOrTrackLink: hasLink ? soundCloudLink : null,
-        fileBytes: _pickedMp3Bytes,
-        fileFilename: _pickedMp3Name,
+        links: [soundCloudLink],
       );
       if (!mounted) return;
       setState(() {
@@ -88,8 +81,6 @@ class _LandingPageState extends State<LandingPage> {
         _submitting = false;
         _consentToEmails = false;
         _selectedGenre = null;
-        _pickedMp3Bytes = null;
-        _pickedMp3Name = 'demo.mp3';
       });
       _formKey.currentState!.reset();
       _artistNameController.clear();
@@ -107,30 +98,6 @@ class _LandingPageState extends State<LandingPage> {
         _submitting = false;
       });
     }
-  }
-
-  Future<void> _pickMp3() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.audio,
-      withData: true,
-      allowMultiple: false,
-    );
-    if (result == null || result.files.isEmpty) return;
-    final f = result.files.single;
-    if (f.bytes == null || f.bytes!.isEmpty) {
-      setState(() => _feedback = 'Could not read the file.');
-      return;
-    }
-    final name = f.name.toLowerCase();
-    if (!name.endsWith('.mp3')) {
-      setState(() => _feedback = 'Only MP3 files are allowed.');
-      return;
-    }
-    setState(() {
-      _pickedMp3Bytes = f.bytes;
-      _pickedMp3Name = f.name;
-      _feedback = null;
-    });
   }
 
   @override
@@ -215,7 +182,7 @@ class _LandingPageState extends State<LandingPage> {
                                 ),
                                 const SizedBox(height: 18),
                                 Text(
-                                  'Send your demo directly to the Zalmanim LM system.',
+                                  'Send your demo link directly to the Zalmanim LM system.',
                                   style: theme.textTheme.displaySmall?.copyWith(
                                     fontWeight: FontWeight.w800,
                                     color: const Color(0xFF1F1712),
@@ -224,7 +191,7 @@ class _LandingPageState extends State<LandingPage> {
                                 ),
                                 const SizedBox(height: 16),
                                 Text(
-                                  'Use this page to submit a new demo. If you already have an artist account, use Sign In to access your portal, uploads, demos, and media.',
+                                  'Use this page to submit a demo link. File uploads are available only for registered artists after Sign In.',
                                   style: theme.textTheme.titleMedium?.copyWith(
                                     color: const Color(0xFF5C4D40),
                                     height: 1.5,
@@ -234,6 +201,11 @@ class _LandingPageState extends State<LandingPage> {
                                 _FeatureCard(
                                   title: 'What happens next',
                                   body: 'Your form enters the LM system with status demo. We also email you a submission summary, then the team reviews it and takes it into treatment.',
+                                ),
+                                const SizedBox(height: 14),
+                                _FeatureCard(
+                                  title: 'File uploads for registered artists',
+                                  body: 'Public demo uploads now accept links only. To upload demo files directly, sign in with a registered artist account.',
                                 ),
                                 const SizedBox(height: 14),
                                 _FeatureCard(
@@ -271,7 +243,7 @@ class _LandingPageState extends State<LandingPage> {
                                   ),
                                   const SizedBox(height: 6),
                                   Text(
-                                    'Fill in the details below and we will route your submission into the system.',
+                                    'Fill in the details below and we will route your demo link into the system.',
                                     style: theme.textTheme.bodyLarge?.copyWith(color: const Color(0xFF6B5D52)),
                                   ),
                                   if (_feedback != null) ...[
@@ -407,7 +379,7 @@ class _LandingPageState extends State<LandingPage> {
                                   ),
                                   const SizedBox(height: 18),
                                   Text(
-                                    'Demo track (provide one or both)',
+                                    'Demo track link',
                                     style: theme.textTheme.titleSmall?.copyWith(
                                       fontWeight: FontWeight.w600,
                                       color: const Color(0xFF231A14),
@@ -420,32 +392,21 @@ class _LandingPageState extends State<LandingPage> {
                                     width: 576,
                                   ),
                                   const SizedBox(height: 10),
-                                  Row(
-                                    children: [
-                                      OutlinedButton.icon(
-                                        onPressed: _submitting ? null : _pickMp3,
-                                        icon: const Icon(Icons.upload_file, size: 20),
-                                        label: Text(_pickedMp3Bytes != null
-                                            ? 'MP3: $_pickedMp3Name'
-                                            : 'Upload MP3 only'),
-                                        style: OutlinedButton.styleFrom(
-                                          foregroundColor: const Color(0xFF1E1A17),
-                                          side: const BorderSide(color: Color(0xFFD9CCBF)),
-                                        ),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFFFBF6),
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(color: const Color(0xFFD9CCBF)),
+                                    ),
+                                    child: Text(
+                                      'MP3 uploads are available only for registered artists inside the portal after Sign In.',
+                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                        color: const Color(0xFF6B5D52),
+                                        height: 1.5,
                                       ),
-                                      if (_pickedMp3Bytes != null) ...[
-                                        const SizedBox(width: 12),
-                                        TextButton(
-                                          onPressed: _submitting
-                                              ? null
-                                              : () => setState(() {
-                                                    _pickedMp3Bytes = null;
-                                                    _pickedMp3Name = 'demo.mp3';
-                                                  }),
-                                          child: const Text('Remove file'),
-                                        ),
-                                      ],
-                                    ],
+                                    ),
                                   ),
                                   const SizedBox(height: 24),
                                   FilledButton(
