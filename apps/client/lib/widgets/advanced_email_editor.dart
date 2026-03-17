@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:html_editor_enhanced/html_editor.dart';
 
 /// Reusable HTML email editor wrapper for admin mail/template screens.
 class AdvancedEmailEditor extends StatefulWidget {
@@ -23,12 +22,13 @@ class AdvancedEmailEditor extends StatefulWidget {
 }
 
 class _AdvancedEmailEditorState extends State<AdvancedEmailEditor> {
-  final HtmlEditorController _controller = HtmlEditorController();
+  late final TextEditingController _controller;
   String _lastAppliedValue = '';
 
   @override
   void initState() {
     super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
     _lastAppliedValue = widget.initialValue;
   }
 
@@ -38,8 +38,17 @@ class _AdvancedEmailEditorState extends State<AdvancedEmailEditor> {
     if (widget.initialValue != oldWidget.initialValue &&
         widget.initialValue != _lastAppliedValue) {
       _lastAppliedValue = widget.initialValue;
-      _controller.setText(widget.initialValue);
+      _controller.value = TextEditingValue(
+        text: widget.initialValue,
+        selection: TextSelection.collapsed(offset: widget.initialValue.length),
+      );
     }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   @override
@@ -57,20 +66,21 @@ class _AdvancedEmailEditorState extends State<AdvancedEmailEditor> {
             border: Border.all(color: Theme.of(context).dividerColor),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: HtmlEditor(
+          child: TextField(
             controller: _controller,
-            hint: widget.hintText,
-            initialText: widget.initialValue,
-            options: HtmlEditorOptions(
-              height: widget.minHeight,
+            minLines: (widget.minHeight / 24).ceil().clamp(8, 40),
+            maxLines: null,
+            decoration: InputDecoration(
+              hintText: widget.hintText,
+              contentPadding: const EdgeInsets.all(16),
+              border: InputBorder.none,
             ),
-            callbacks: Callbacks(
-              onChange: (String? value) {
-                final nextValue = value ?? '';
-                _lastAppliedValue = nextValue;
-                widget.onChanged(nextValue);
-              },
-            ),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.5),
+            keyboardType: TextInputType.multiline,
+            onChanged: (value) {
+              _lastAppliedValue = value;
+              widget.onChanged(value);
+            },
           ),
         ),
       ],
