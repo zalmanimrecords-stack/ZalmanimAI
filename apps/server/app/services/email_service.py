@@ -4,6 +4,7 @@ Prefers a connected Google account with gmail.send permission; falls back to SMT
 """
 
 import base64
+import html
 import smtplib
 import time
 from email.mime.multipart import MIMEMultipart
@@ -23,6 +24,38 @@ _redis_client = None
 REDIS_KEY_PREFIX = "email_rate:"
 KEY_TTL_SECONDS = 7200  # 2 hours so the key expires after the hour window
 _GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send"
+
+
+def _htmlify_plain_text(value: str) -> str:
+    escaped = html.escape(value.strip())
+    if not escaped:
+        return ""
+    return "<p>" + escaped.replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
+
+
+def _apply_global_email_footer(
+    *,
+    body_text: str,
+    body_html: str | None,
+) -> tuple[str, str | None]:
+    footer = (getattr(get_effective_mail_config(), "email_footer", "") or "").strip()
+    if not footer:
+        return body_text, body_html
+
+    final_text = "\n\n".join(part for part in (body_text.strip(), footer) if part)
+    if body_html is None:
+        return final_text, None
+
+    footer_html = _htmlify_plain_text(footer)
+    if not footer_html:
+        return final_text, body_html
+    final_html = (
+        body_html.rstrip()
+        + '<hr><div style="margin-top:16px;color:#666;font-size:13px;">'
+        + footer_html
+        + "</div>"
+    )
+    return final_text, final_html
 
 
 def _get_redis():
@@ -273,6 +306,10 @@ def send_email(
     Send one email via Gmail API or SMTP with rate limiting.
     Returns (success, message). Message is error detail on failure.
     """
+    body_text, body_html = _apply_global_email_footer(
+        body_text=body_text,
+        body_html=body_html,
+    )
     cfg = get_effective_mail_config()
     if not is_email_configured():
         append_system_log("warning", "mail", "Send skipped: email not configured", details=to_email)
@@ -337,5 +374,4 @@ def send_email(
     except Exception as e:
         append_system_log("error", "mail", f"Send failed to {to_email}: {e}", details=subject[:200] if subject else None)
         return False, str(e)
-
 

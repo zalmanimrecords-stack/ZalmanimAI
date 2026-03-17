@@ -98,12 +98,25 @@ app.include_router(audience_router, prefix="/api")
 
 
 ROBOTS_TXT = b"User-agent: *\nDisallow: /\n"
+EMPTY_FAVICON = (
+    b"\x00\x00\x01\x00\x01\x00\x01\x01\x00\x00\x01\x00 \x00"
+    b"\x30\x00\x00\x00\x16\x00\x00\x00"
+    b"\x28\x00\x00\x00\x01\x00\x00\x00\x02\x00\x00\x00\x01\x00 \x00\x00\x00\x00\x00"
+    b"\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    b"\x00\x00\x00\x00\xff\xff\xff\x00\x00\x00\x00\x00"
+)
 
 
 @app.get("/robots.txt", response_class=Response)
 def robots_txt() -> Response:
     """Serve robots.txt so crawlers get 200 instead of 404. API is not for indexing."""
     return Response(content=ROBOTS_TXT, media_type="text/plain")
+
+
+@app.get("/favicon.ico", response_class=Response)
+def favicon() -> Response:
+    """Serve a tiny blank favicon so browsers do not generate 404 log noise."""
+    return Response(content=EMPTY_FAVICON, media_type="image/x-icon")
 
 
 @app.get("/static.cloudflareinsights.com/{rest:path}", response_class=Response)
@@ -115,8 +128,7 @@ async def cloudflare_beacon_proxy(rest: str) -> Response:
     return Response(status_code=204)
 
 
-@app.get("/", response_class=HTMLResponse)
-def root() -> str:
+def _root_html() -> str:
     """Clarify that this is the API; the login page is the Flutter app (different URL)."""
     docs_html = '<p>API docs: <a href="/docs">/docs</a> &middot; Health: <a href="/health">/health</a></p>' if settings.api_docs_enabled else '<p>Health: <a href="/health">/health</a></p>'
     return """
@@ -130,6 +142,17 @@ def root() -> str:
       %s
     </body></html>
     """ % docs_html
+
+
+@app.get("/", response_class=HTMLResponse)
+def root() -> str:
+    return _root_html()
+
+
+@app.head("/", response_class=Response)
+def root_head() -> Response:
+    """Return 200 for load balancer probes that use HEAD on the site root."""
+    return Response(status_code=200)
 
 
 @app.get("/health")

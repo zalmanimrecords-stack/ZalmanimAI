@@ -595,6 +595,32 @@ def _default_demo_approval_body(artist_name: str) -> str:
     )
 
 
+def _default_demo_receipt_subject(artist_name: str) -> str:
+    safe_name = (artist_name or "there").strip()
+    return f"Demo received from {safe_name}"
+
+
+def _default_demo_receipt_body(item: DemoSubmission) -> str:
+    recipient_name = (item.contact_name or item.artist_name or "there").strip()
+    lines = [
+        f"Hi {recipient_name},",
+        "",
+        "We received your demo and it will enter treatment soon.",
+        "",
+        "Submission summary:",
+    ]
+    for label, value in _build_demo_submission_summary(item):
+        lines.append(f"- {label}: {value}")
+    lines.extend([
+        "",
+        "Thanks for sending your music to Zalmanim.",
+        "",
+        "Best regards,",
+        "Zalmanim",
+    ])
+    return "\n".join(lines)
+
+
 def _default_demo_rejection_subject(artist_name: str) -> str:
     safe_name = (artist_name or "there").strip()
     return f"Thank you for your demo submission, {safe_name}"
@@ -628,6 +654,36 @@ def _get_demo_approval_subject_and_body(artist_name: str) -> tuple[str, str]:
         body = _default_demo_approval_body(artist_name)
     else:
         body = body.replace("{artist_name}", (artist_name or "there").strip())
+    return subject, body
+
+
+def _get_demo_receipt_subject_and_body(item: DemoSubmission) -> tuple[str, str]:
+    """Resolve demo receipt subject and body from settings or defaults."""
+    mail = get_effective_mail_config_for_api()
+    subject = (mail.get("demo_receipt_subject") or "").strip()
+    body = (mail.get("demo_receipt_body") or "").strip()
+    replacements = {
+        "{recipient_name}": (item.contact_name or item.artist_name or "there").strip(),
+        "{artist_name}": (item.artist_name or "there").strip(),
+        "{contact_name}": (item.contact_name or "").strip(),
+        "{email}": (item.email or "").strip(),
+        "{phone}": (item.phone or "").strip(),
+        "{genre}": (item.genre or "").strip(),
+        "{city}": (item.city or "").strip(),
+        "{links}": ", ".join(str(link).strip() for link in _safe_json_list(item.links_json) if str(link).strip()),
+        "{message}": (item.message or "").strip(),
+        "{source}": (item.source or "").strip(),
+        "{submission_summary}": "\n".join(
+            f"- {label}: {value}" for label, value in _build_demo_submission_summary(item)
+        ),
+    }
+    if not subject:
+        subject = _default_demo_receipt_subject(item.artist_name)
+    if not body:
+        body = _default_demo_receipt_body(item)
+    for token, value in replacements.items():
+        subject = subject.replace(token, value)
+        body = body.replace(token, value)
     return subject, body
 
 
@@ -674,6 +730,95 @@ def _get_portal_invite_subject_and_body(
             .replace("{username}", username)
             .replace("{temporary_password}", temporary_password)
         )
+    return subject, body
+
+
+def _default_update_profile_invite_subject() -> str:
+    return "Update your artist page and see your releases"
+
+
+def _default_update_profile_invite_body(
+    display_name: str,
+    portal_url: str,
+    username: str,
+    temporary_password: str | None,
+) -> str:
+    password_line = (
+        f"Temporary password: {temporary_password}"
+        if (temporary_password or "").strip()
+        else "Use your existing password."
+    )
+    return (
+        f"Hi {display_name},\n\n"
+        "We'd love you to update your artist page and see your releases on the label.\n\n"
+        f"Portal: {portal_url}\n"
+        f"Username: {username}\n"
+        f"{password_line}\n\n"
+        "Please sign in, change your password if needed, and update your profile and releases.\n\n"
+        "If you have any questions, reply to this email.\n"
+    )
+
+
+def _get_update_profile_invite_subject_and_body(
+    display_name: str,
+    portal_url: str,
+    username: str,
+    temporary_password: str | None,
+) -> tuple[str, str]:
+    """Resolve update-profile invite subject and body from settings or defaults."""
+    mail = get_effective_mail_config_for_api()
+    subject = (mail.get("update_profile_invite_subject") or "").strip()
+    body = (mail.get("update_profile_invite_body") or "").strip()
+    password_line = (
+        f"Temporary password: {temporary_password}"
+        if (temporary_password or "").strip()
+        else "Use your existing password."
+    )
+    replacements = {
+        "{display_name}": display_name,
+        "{portal_url}": portal_url,
+        "{username}": username,
+        "{temporary_password}": (temporary_password or "").strip(),
+        "{password_line}": password_line,
+    }
+    if not subject:
+        subject = _default_update_profile_invite_subject()
+    if not body:
+        body = _default_update_profile_invite_body(display_name, portal_url, username, temporary_password)
+    for token, value in replacements.items():
+        subject = subject.replace(token, value)
+        body = body.replace(token, value)
+    return subject, body
+
+
+def _default_password_reset_subject() -> str:
+    return "Password reset"
+
+
+def _default_password_reset_body(reset_link: str, expiry_minutes: int) -> str:
+    return (
+        f"Use this link to reset your password (valid for {expiry_minutes} minutes):\n\n"
+        f"{reset_link}\n\n"
+        "If you did not request this, ignore this email."
+    )
+
+
+def _get_password_reset_subject_and_body(reset_link: str, expiry_minutes: int) -> tuple[str, str]:
+    """Resolve password-reset subject and body from settings or defaults."""
+    mail = get_effective_mail_config_for_api()
+    subject = (mail.get("password_reset_subject") or "").strip()
+    body = (mail.get("password_reset_body") or "").strip()
+    replacements = {
+        "{reset_link}": reset_link,
+        "{expiry_minutes}": str(expiry_minutes),
+    }
+    if not subject:
+        subject = _default_password_reset_subject()
+    if not body:
+        body = _default_password_reset_body(reset_link, expiry_minutes)
+    for token, value in replacements.items():
+        subject = subject.replace(token, value)
+        body = body.replace(token, value)
     return subject, body
 
 
@@ -959,8 +1104,15 @@ def init_db() -> None:
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_rejection_body TEXT"))
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_approval_subject VARCHAR(255)"))
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_approval_body TEXT"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_receipt_subject VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_receipt_body TEXT"))
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS portal_invite_subject VARCHAR(255)"))
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS portal_invite_body TEXT"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS email_footer TEXT"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS update_profile_invite_subject VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS update_profile_invite_body TEXT"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS password_reset_subject VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS password_reset_body TEXT"))
             conn.execute(text(
                 "ALTER TABLE pending_releases ADD COLUMN IF NOT EXISTS demo_submission_id INTEGER "
                 "REFERENCES demo_submissions(id) ON DELETE SET NULL"
@@ -1158,12 +1310,15 @@ def forgot_password(
     # Use configured client URL; never use request.base_url (API) so the link opens the login app.
     base_url = (settings.password_reset_base_url or "").strip() or "https://lm.zalmanim.com"
     reset_link = f"{base_url.rstrip('/')}?reset_token={raw_token}"
-    subject = "Password reset"
-    body_text = f"Use this link to reset your password (valid for {_PASSWORD_RESET_EXPIRY_MINUTES} minutes):\n\n{reset_link}\n\nIf you did not request this, ignore this email."
+    subject, body_text = _get_password_reset_subject_and_body(reset_link, _PASSWORD_RESET_EXPIRY_MINUTES)
     body_html = (
-        f"<p>Use this link to reset your password (valid for {_PASSWORD_RESET_EXPIRY_MINUTES} minutes):</p>"
-        f'<p><a href="{reset_link}">{reset_link}</a></p>'
-        "<p>If you did not request this, ignore this email.</p>"
+        "<p>"
+        + html.escape(body_text).replace("\n\n", "</p><p>").replace("\n", "<br>")
+        + "</p>"
+    )
+    body_html = body_html.replace(
+        html.escape(reset_link),
+        f'<a href="{html.escape(reset_link)}">{html.escape(reset_link)}</a>',
     )
     ok, _ = send_email_service(to_email=user.email, subject=subject, body_text=body_text, body_html=body_html)
     if not ok:
@@ -1254,11 +1409,15 @@ def create_demo_submission(
         details=_request_identity_details(request, item.email),
     )
     if is_email_configured():
+        subject, body_text = _get_demo_receipt_subject_and_body(item)
+        body_html = _build_demo_receipt_html(item)
+        if (get_effective_mail_config_for_api().get("demo_receipt_body") or "").strip():
+            body_html = "<p>" + html.escape(body_text).replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
         ok, message = send_email_service(
             to_email=item.email,
-            subject=_build_demo_receipt_subject(item.artist_name),
-            body_text=_build_demo_receipt_body(item),
-            body_html=_build_demo_receipt_html(item),
+            subject=subject,
+            body_text=body_text,
+            body_html=body_html,
         )
         if not ok:
             logging.getLogger(__name__).warning("Failed to send demo receipt email to %s: %s", item.email, message)
@@ -1352,11 +1511,15 @@ def create_demo_submission_with_file(
         details=_request_identity_details(request, item.email),
     )
     if is_email_configured():
+        subject, body_text = _get_demo_receipt_subject_and_body(item)
+        body_html = _build_demo_receipt_html(item)
+        if (get_effective_mail_config_for_api().get("demo_receipt_body") or "").strip():
+            body_html = "<p>" + html.escape(body_text).replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
         ok, message_out = send_email_service(
             to_email=item.email,
-            subject=_build_demo_receipt_subject(item.artist_name),
-            body_text=_build_demo_receipt_body(item),
-            body_html=_build_demo_receipt_html(item),
+            subject=subject,
+            body_text=body_text,
+            body_html=body_html,
         )
         if not ok:
             logging.getLogger(__name__).warning(
@@ -2325,45 +2488,21 @@ def admin_send_artist_update_profile_invite(
         or username
     )
     portal_url = _artist_portal_url()
+    temporary_password: str | None = None
     if not artist.password_hash:
         temporary_password = _generate_temporary_password()
         artist.password_hash = hash_password(temporary_password)
-        body_text = (
-            f"Hi {display_name},\n\n"
-            "We'd love you to update your artist page and see your releases on the label.\n\n"
-            f"Portal: {portal_url}\n"
-            f"Username: {username}\n"
-            f"Temporary password: {temporary_password}\n\n"
-            "Please sign in, change your password, and update your profile and check your releases.\n\n"
-            "If you have any questions, reply to this email.\n"
-        )
-        body_html = (
-            f"<p>Hi {html.escape(display_name)},</p>"
-            "<p>We'd love you to update your artist page and see your releases on the label.</p>"
-            f"<p><strong>Portal:</strong> <a href=\"{html.escape(portal_url)}\">{html.escape(portal_url)}</a><br>"
-            f"<strong>Username:</strong> {html.escape(username)}<br>"
-            f"<strong>Temporary password:</strong> {html.escape(temporary_password)}</p>"
-            "<p>Please sign in, change your password, and update your profile and check your releases.</p>"
-            "<p>If you have any questions, reply to this email.</p>"
-        )
-    else:
-        body_text = (
-            f"Hi {display_name},\n\n"
-            "We'd love you to update your artist page and see your releases on the label.\n\n"
-            f"Log in at: {portal_url}\n"
-            f"Username: {username}\n\n"
-            "Use your existing password. Update your profile and check your releases when you're in.\n\n"
-            "If you have any questions, reply to this email.\n"
-        )
-        body_html = (
-            f"<p>Hi {html.escape(display_name)},</p>"
-            "<p>We'd love you to update your artist page and see your releases on the label.</p>"
-            f"<p><strong>Log in at:</strong> <a href=\"{html.escape(portal_url)}\">{html.escape(portal_url)}</a><br>"
-            f"<strong>Username:</strong> {html.escape(username)}</p>"
-            "<p>Use your existing password. Update your profile and check your releases when you're in.</p>"
-            "<p>If you have any questions, reply to this email.</p>"
-        )
-    subject = "Update your artist page and see your releases"
+    subject, body_text = _get_update_profile_invite_subject_and_body(
+        display_name,
+        portal_url,
+        username,
+        temporary_password,
+    )
+    body_html = "<p>" + html.escape(body_text).replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
+    body_html = body_html.replace(
+        html.escape(portal_url),
+        f'<a href="{html.escape(portal_url)}">{html.escape(portal_url)}</a>',
+    )
     success, message = send_email_service(
         to_email=username,
         subject=subject,
@@ -3601,6 +3740,22 @@ def report_artists_no_tracks_half_year(
     ]
 
 
+@router.get("/admin/reports/artists-signed-in", response_model=list[ArtistOut])
+def report_artists_signed_in(
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> list[ArtistOut]:
+    """Artists who have already signed in to the artist portal."""
+    require_admin(user)
+    artists = (
+        db.query(Artist)
+        .filter(Artist.last_login_at.isnot(None))
+        .order_by(desc(Artist.last_login_at), Artist.name)
+        .all()
+    )
+    return [ArtistOut.from_artist(artist) for artist in artists]
+
+
 @router.patch("/admin/releases/{release_id}", response_model=ReleaseOut)
 def update_release_artists(
     release_id: int,
@@ -3748,12 +3903,19 @@ def get_system_settings(
         smtp_user_configured=mail["smtp_user_configured"],
         emails_per_hour=mail["emails_per_hour"],
         email_configured=is_email_configured(),
+        email_footer=mail.get("email_footer", "") or "",
         demo_rejection_subject=mail.get("demo_rejection_subject", "") or "",
         demo_rejection_body=mail.get("demo_rejection_body", "") or "",
         demo_approval_subject=mail.get("demo_approval_subject", "") or "",
         demo_approval_body=mail.get("demo_approval_body", "") or "",
+        demo_receipt_subject=mail.get("demo_receipt_subject", "") or "",
+        demo_receipt_body=mail.get("demo_receipt_body", "") or "",
         portal_invite_subject=mail.get("portal_invite_subject", "") or "",
         portal_invite_body=mail.get("portal_invite_body", "") or "",
+        update_profile_invite_subject=mail.get("update_profile_invite_subject", "") or "",
+        update_profile_invite_body=mail.get("update_profile_invite_body", "") or "",
+        password_reset_subject=mail.get("password_reset_subject", "") or "",
+        password_reset_body=mail.get("password_reset_body", "") or "",
         oauth_redirect_base=settings.oauth_redirect_base or "",
         google_oauth_configured=bool(settings.google_client_id and settings.google_client_secret),
         gmail_connected=gmail_connected,
@@ -3782,12 +3944,19 @@ def update_system_settings_mail(
         smtp_user=payload.smtp_user,
         smtp_password=payload.smtp_password,
         emails_per_hour=payload.emails_per_hour,
+        email_footer=payload.email_footer,
         demo_rejection_subject=payload.demo_rejection_subject,
         demo_rejection_body=payload.demo_rejection_body,
         demo_approval_subject=payload.demo_approval_subject,
         demo_approval_body=payload.demo_approval_body,
+        demo_receipt_subject=payload.demo_receipt_subject,
+        demo_receipt_body=payload.demo_receipt_body,
         portal_invite_subject=payload.portal_invite_subject,
         portal_invite_body=payload.portal_invite_body,
+        update_profile_invite_subject=payload.update_profile_invite_subject,
+        update_profile_invite_body=payload.update_profile_invite_body,
+        password_reset_subject=payload.password_reset_subject,
+        password_reset_body=payload.password_reset_body,
     )
     mail = get_effective_mail_config_for_api()
     gmail_connected, gmail_email = _gmail_connection_status(db)
@@ -3800,12 +3969,19 @@ def update_system_settings_mail(
         smtp_user_configured=mail["smtp_user_configured"],
         emails_per_hour=mail["emails_per_hour"],
         email_configured=is_email_configured(),
+        email_footer=mail.get("email_footer", "") or "",
         demo_rejection_subject=mail.get("demo_rejection_subject", "") or "",
         demo_rejection_body=mail.get("demo_rejection_body", "") or "",
         demo_approval_subject=mail.get("demo_approval_subject", "") or "",
         demo_approval_body=mail.get("demo_approval_body", "") or "",
+        demo_receipt_subject=mail.get("demo_receipt_subject", "") or "",
+        demo_receipt_body=mail.get("demo_receipt_body", "") or "",
         portal_invite_subject=mail.get("portal_invite_subject", "") or "",
         portal_invite_body=mail.get("portal_invite_body", "") or "",
+        update_profile_invite_subject=mail.get("update_profile_invite_subject", "") or "",
+        update_profile_invite_body=mail.get("update_profile_invite_body", "") or "",
+        password_reset_subject=mail.get("password_reset_subject", "") or "",
+        password_reset_body=mail.get("password_reset_body", "") or "",
         oauth_redirect_base=settings.oauth_redirect_base or "",
         google_oauth_configured=bool(settings.google_client_id and settings.google_client_secret),
         gmail_connected=gmail_connected,

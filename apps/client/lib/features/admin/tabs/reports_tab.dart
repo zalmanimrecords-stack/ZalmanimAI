@@ -45,6 +45,17 @@ class ReportsTab extends StatelessWidget {
           const SizedBox(height: 8),
           Card(
             child: ListTile(
+              leading: const Icon(ZalmanimIcons.audience),
+              title: const Text('Artists signed in'),
+              subtitle: const Text(
+                'Artists who have already logged in to the artist portal.',
+              ),
+              onTap: () => delegate.showSignedInArtistsReport(context),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: ListTile(
               leading: const Icon(ZalmanimIcons.reports),
               title: const Text('Artists'),
               subtitle: const Text(

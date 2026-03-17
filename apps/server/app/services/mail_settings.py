@@ -17,7 +17,7 @@ def get_effective_mail_config():
     """
     Return effective mail config: DB row overrides env when set.
     Returns a simple namespace with: smtp_host, smtp_port, smtp_from_email,
-    smtp_use_tls, smtp_use_ssl, smtp_user, smtp_password, emails_per_hour.
+    smtp_use_tls, smtp_use_ssl, smtp_user, smtp_password, emails_per_hour, email_footer.
     """
     row = _get_row()
     def _str(rv, env_val):
@@ -38,6 +38,7 @@ def get_effective_mail_config():
         "smtp_user": _str(row.smtp_user if row else None, settings.smtp_user),
         "smtp_password": _str(row.smtp_password if row else None, settings.smtp_password),
         "emails_per_hour": emails_per_hour,
+        "email_footer": (row.email_footer if row else None) or "",
     })()
 
 
@@ -53,12 +54,19 @@ def get_effective_mail_config_for_api():
         "smtp_use_ssl": c.smtp_use_ssl,
         "smtp_user_configured": bool((c.smtp_user or "").strip()),
         "emails_per_hour": c.emails_per_hour,
+        "email_footer": (getattr(row, "email_footer", None) if row else None) or "",
         "demo_rejection_subject": (getattr(row, "demo_rejection_subject", None) if row else None) or "",
         "demo_rejection_body": (getattr(row, "demo_rejection_body", None) if row else None) or "",
         "demo_approval_subject": (getattr(row, "demo_approval_subject", None) if row else None) or "",
         "demo_approval_body": (getattr(row, "demo_approval_body", None) if row else None) or "",
+        "demo_receipt_subject": (getattr(row, "demo_receipt_subject", None) if row else None) or "",
+        "demo_receipt_body": (getattr(row, "demo_receipt_body", None) if row else None) or "",
         "portal_invite_subject": (getattr(row, "portal_invite_subject", None) if row else None) or "",
         "portal_invite_body": (getattr(row, "portal_invite_body", None) if row else None) or "",
+        "update_profile_invite_subject": (getattr(row, "update_profile_invite_subject", None) if row else None) or "",
+        "update_profile_invite_body": (getattr(row, "update_profile_invite_body", None) if row else None) or "",
+        "password_reset_subject": (getattr(row, "password_reset_subject", None) if row else None) or "",
+        "password_reset_body": (getattr(row, "password_reset_body", None) if row else None) or "",
     }
 
 
@@ -71,12 +79,19 @@ def save_mail_settings(
     smtp_user: str | None = None,
     smtp_password: str | None = None,
     emails_per_hour: int | None = None,
+    email_footer: str | None = None,
     demo_rejection_subject: str | None = None,
     demo_rejection_body: str | None = None,
     demo_approval_subject: str | None = None,
     demo_approval_body: str | None = None,
+    demo_receipt_subject: str | None = None,
+    demo_receipt_body: str | None = None,
     portal_invite_subject: str | None = None,
     portal_invite_body: str | None = None,
+    update_profile_invite_subject: str | None = None,
+    update_profile_invite_body: str | None = None,
+    password_reset_subject: str | None = None,
+    password_reset_body: str | None = None,
 ) -> None:
     """Upsert the single mail settings row (id=1). None means do not change; empty string clears override."""
     with SessionLocal() as db:
@@ -100,6 +115,8 @@ def save_mail_settings(
             row.smtp_password = smtp_password or None
         if emails_per_hour is not None:
             row.emails_per_hour = emails_per_hour
+        if email_footer is not None:
+            row.email_footer = email_footer.strip() or None
         if demo_rejection_subject is not None:
             row.demo_rejection_subject = demo_rejection_subject.strip() or None
         if demo_rejection_body is not None:
@@ -108,10 +125,22 @@ def save_mail_settings(
             row.demo_approval_subject = demo_approval_subject.strip() or None
         if demo_approval_body is not None:
             row.demo_approval_body = demo_approval_body.strip() or None
+        if demo_receipt_subject is not None:
+            row.demo_receipt_subject = demo_receipt_subject.strip() or None
+        if demo_receipt_body is not None:
+            row.demo_receipt_body = demo_receipt_body.strip() or None
         if portal_invite_subject is not None:
             row.portal_invite_subject = portal_invite_subject.strip() or None
         if portal_invite_body is not None:
             row.portal_invite_body = portal_invite_body.strip() or None
+        if update_profile_invite_subject is not None:
+            row.update_profile_invite_subject = update_profile_invite_subject.strip() or None
+        if update_profile_invite_body is not None:
+            row.update_profile_invite_body = update_profile_invite_body.strip() or None
+        if password_reset_subject is not None:
+            row.password_reset_subject = password_reset_subject.strip() or None
+        if password_reset_body is not None:
+            row.password_reset_body = password_reset_body.strip() or None
         db.commit()
 
 def build_mail_config(
@@ -136,4 +165,5 @@ def build_mail_config(
         "smtp_user": base.smtp_user if smtp_user is None else (smtp_user or ""),
         "smtp_password": base.smtp_password if smtp_password is None else (smtp_password or ""),
         "emails_per_hour": base.emails_per_hour if emails_per_hour is None else emails_per_hour,
+        "email_footer": getattr(base, "email_footer", ""),
     })()

@@ -108,6 +108,7 @@ abstract class AdminDashboardDelegate {
   void toggleAudienceSubscriberStatus(Map<String, dynamic> subscriber);
   // Reports
   void showArtistRemindersReport(BuildContext context);
+  void showSignedInArtistsReport(BuildContext context);
   void showSendEmailToReportArtistsDialog(BuildContext context, List<dynamic> reportList, List<int> selectedIndices);
   void showArtistReminderMailSettingsDialog(BuildContext context);
 

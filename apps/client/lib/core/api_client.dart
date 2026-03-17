@@ -985,6 +985,20 @@ class ApiClient {
     return jsonDecode(response.body) as List<dynamic>;
   }
 
+  /// Report: artists who have already signed in to the artist portal.
+  Future<List<dynamic>> fetchArtistsSignedIn(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/admin/reports/artists-signed-in'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Report failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as List<dynamic>;
+  }
+
   /// Fetch activity log for an artist (reminder emails, etc.) for the Logs tab.
   Future<List<dynamic>> fetchArtistActivity(String token, int artistId) async {
     final response = await http.get(
@@ -1059,12 +1073,19 @@ class ApiClient {
     String? smtpUser,
     String? smtpPassword,
     int? emailsPerHour,
+    String? emailFooter,
     String? demoRejectionSubject,
     String? demoRejectionBody,
     String? demoApprovalSubject,
     String? demoApprovalBody,
+    String? demoReceiptSubject,
+    String? demoReceiptBody,
     String? portalInviteSubject,
     String? portalInviteBody,
+    String? updateProfileInviteSubject,
+    String? updateProfileInviteBody,
+    String? passwordResetSubject,
+    String? passwordResetBody,
   }) async {
     final body = <String, dynamic>{};
     if (smtpHost != null) body['smtp_host'] = smtpHost;
@@ -1075,12 +1096,19 @@ class ApiClient {
     if (smtpUser != null) body['smtp_user'] = smtpUser;
     if (smtpPassword != null) body['smtp_password'] = smtpPassword;
     if (emailsPerHour != null) body['emails_per_hour'] = emailsPerHour;
+    if (emailFooter != null) body['email_footer'] = emailFooter;
     if (demoRejectionSubject != null) body['demo_rejection_subject'] = demoRejectionSubject;
     if (demoRejectionBody != null) body['demo_rejection_body'] = demoRejectionBody;
     if (demoApprovalSubject != null) body['demo_approval_subject'] = demoApprovalSubject;
     if (demoApprovalBody != null) body['demo_approval_body'] = demoApprovalBody;
+    if (demoReceiptSubject != null) body['demo_receipt_subject'] = demoReceiptSubject;
+    if (demoReceiptBody != null) body['demo_receipt_body'] = demoReceiptBody;
     if (portalInviteSubject != null) body['portal_invite_subject'] = portalInviteSubject;
     if (portalInviteBody != null) body['portal_invite_body'] = portalInviteBody;
+    if (updateProfileInviteSubject != null) body['update_profile_invite_subject'] = updateProfileInviteSubject;
+    if (updateProfileInviteBody != null) body['update_profile_invite_body'] = updateProfileInviteBody;
+    if (passwordResetSubject != null) body['password_reset_subject'] = passwordResetSubject;
+    if (passwordResetBody != null) body['password_reset_body'] = passwordResetBody;
 
     final response = await http.patch(
       Uri.parse('$baseUrl/admin/settings/mail'),

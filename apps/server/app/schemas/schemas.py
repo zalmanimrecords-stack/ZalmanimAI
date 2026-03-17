@@ -966,13 +966,20 @@ class SystemSettingsOut(BaseModel):
     smtp_user_configured: bool = False  # True if smtp_user is set (password not exposed)
     emails_per_hour: int = 10
     email_configured: bool = False  # True if SMTP is usable
+    email_footer: str = ""
     # Demo rejection email template (editable in settings)
     demo_rejection_subject: str = ""
     demo_rejection_body: str = ""
     demo_approval_subject: str = ""
     demo_approval_body: str = ""
+    demo_receipt_subject: str = ""
+    demo_receipt_body: str = ""
     portal_invite_subject: str = ""
     portal_invite_body: str = ""
+    update_profile_invite_subject: str = ""
+    update_profile_invite_body: str = ""
+    password_reset_subject: str = ""
+    password_reset_body: str = ""
     # OAuth / redirects
     oauth_redirect_base: str = ""
     oauth_success_redirect: str = ""
@@ -1010,12 +1017,19 @@ class SystemSettingsMailUpdate(BaseModel):
     smtp_user: str | None = None
     smtp_password: str | None = None
     emails_per_hour: int | None = None
+    email_footer: str | None = None
     demo_rejection_subject: str | None = None
     demo_rejection_body: str | None = None
     demo_approval_subject: str | None = None
     demo_approval_body: str | None = None
+    demo_receipt_subject: str | None = None
+    demo_receipt_body: str | None = None
     portal_invite_subject: str | None = None
     portal_invite_body: str | None = None
+    update_profile_invite_subject: str | None = None
+    update_profile_invite_body: str | None = None
+    password_reset_subject: str | None = None
+    password_reset_body: str | None = None
 
 
 

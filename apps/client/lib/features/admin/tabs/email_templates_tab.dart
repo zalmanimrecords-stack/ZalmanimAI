@@ -4,8 +4,133 @@ import 'package:flutter/services.dart';
 import '../../../core/zalmanim_icons.dart';
 import '../admin_dashboard_delegate.dart';
 
-/// Settings > Email templates: manage all outgoing email templates in one place.
-/// Each template type is edited in its own sub-tab.
+class _EmailTemplateConfig {
+  const _EmailTemplateConfig({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.subjectKey,
+    required this.bodyKey,
+    required this.subjectHint,
+    required this.bodyHint,
+    required this.previewValues,
+  });
+
+  final String id;
+  final String title;
+  final String description;
+  final String subjectKey;
+  final String bodyKey;
+  final String subjectHint;
+  final String bodyHint;
+  final Map<String, String> previewValues;
+}
+
+const List<_EmailTemplateConfig> _templateConfigs = [
+  _EmailTemplateConfig(
+    id: 'demo_receipt',
+    title: 'Demo receipt',
+    description:
+        'Sent automatically when a public demo is submitted. Placeholders: {recipient_name}, {artist_name}, {contact_name}, {email}, {phone}, {genre}, {city}, {links}, {message}, {source}, {submission_summary}.',
+    subjectKey: 'demo_receipt_subject',
+    bodyKey: 'demo_receipt_body',
+    subjectHint: 'Demo received from {artist_name}',
+    bodyHint: 'Hi {recipient_name},\n\nWe received your demo...',
+    previewValues: {
+      'recipient_name': 'Maya Cohen',
+      'artist_name': 'Maya Waves',
+      'contact_name': 'Maya Cohen',
+      'email': 'maya@example.com',
+      'phone': '+972-50-555-5555',
+      'genre': 'Progressive House',
+      'city': 'Tel Aviv',
+      'links': 'https://soundcloud.com/maya-waves/demo',
+      'message': 'Hope this fits the label direction.',
+      'source': 'artist portal',
+      'submission_summary':
+          '- Artist name: Maya Waves\n- Contact name: Maya Cohen\n- Email: maya@example.com\n- Genre: Progressive House\n- City: Tel Aviv',
+    },
+  ),
+  _EmailTemplateConfig(
+    id: 'demo_rejection',
+    title: 'Demo rejection',
+    description:
+        'Sent when a demo submission is rejected. Placeholders: {artist_name}, {artist_portal_url}, {zalmanim_website}.',
+    subjectKey: 'demo_rejection_subject',
+    bodyKey: 'demo_rejection_body',
+    subjectHint: 'Thank you for your demo submission, {artist_name}',
+    bodyHint: 'Hi {artist_name},\n\nThank you for sending us your music...',
+    previewValues: {
+      'artist_name': 'Maya Waves',
+      'artist_portal_url': 'https://artists.zalmanim.com',
+      'zalmanim_website': 'https://zalmanim.com',
+    },
+  ),
+  _EmailTemplateConfig(
+    id: 'demo_approval',
+    title: 'Demo approval',
+    description:
+        'Default email used when approving a demo. Placeholder: {artist_name}.',
+    subjectKey: 'demo_approval_subject',
+    bodyKey: 'demo_approval_body',
+    subjectHint: 'Your demo was approved, {artist_name}',
+    bodyHint: 'Hi {artist_name},\n\nThanks for sending your demo...',
+    previewValues: {
+      'artist_name': 'Maya Waves',
+    },
+  ),
+  _EmailTemplateConfig(
+    id: 'portal_invite',
+    title: 'Portal invite',
+    description:
+        'Sent when creating artist portal access. Placeholders: {display_name}, {portal_url}, {username}, {temporary_password}.',
+    subjectKey: 'portal_invite_subject',
+    bodyKey: 'portal_invite_body',
+    subjectHint: 'Your Zalmanim Artists Portal access',
+    bodyHint:
+        'Hi {display_name},\n\nYour access to the Zalmanim Artists Portal is ready...',
+    previewValues: {
+      'display_name': 'Maya Cohen',
+      'portal_url': 'https://artists.zalmanim.com',
+      'username': 'maya@example.com',
+      'temporary_password': 'TmpPass123!',
+    },
+  ),
+  _EmailTemplateConfig(
+    id: 'update_profile_invite',
+    title: 'Update profile invite',
+    description:
+        'Sent when asking an artist to update their page and review releases. Placeholders: {display_name}, {portal_url}, {username}, {temporary_password}, {password_line}.',
+    subjectKey: 'update_profile_invite_subject',
+    bodyKey: 'update_profile_invite_body',
+    subjectHint: 'Update your artist page and see your releases',
+    bodyHint:
+        'Hi {display_name},\n\nWe\'d love you to update your artist page...\n\n{password_line}',
+    previewValues: {
+      'display_name': 'Maya Cohen',
+      'portal_url': 'https://artists.zalmanim.com',
+      'username': 'maya@example.com',
+      'temporary_password': 'TmpPass123!',
+      'password_line': 'Temporary password: TmpPass123!',
+    },
+  ),
+  _EmailTemplateConfig(
+    id: 'password_reset',
+    title: 'Password reset',
+    description:
+        'Sent when an admin, manager, or artist requests a password reset. Placeholders: {reset_link}, {expiry_minutes}.',
+    subjectKey: 'password_reset_subject',
+    bodyKey: 'password_reset_body',
+    subjectHint: 'Password reset',
+    bodyHint:
+        'Use this link to reset your password (valid for {expiry_minutes} minutes):\n\n{reset_link}',
+    previewValues: {
+      'reset_link': 'https://lm.zalmanim.com?reset_token=abc123',
+      'expiry_minutes': '60',
+    },
+  ),
+];
+
 class EmailTemplatesTab extends StatefulWidget {
   const EmailTemplatesTab({super.key, required this.delegate});
 
@@ -18,36 +143,33 @@ class EmailTemplatesTab extends StatefulWidget {
 class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
   bool _loading = true;
   String? _error;
-  bool _savingRejection = false;
-  bool _savingApproval = false;
-  bool _savingPortalInvite = false;
-  String? _rejectionSaveError;
-  String? _approvalSaveError;
-  String? _portalInviteSaveError;
-
-  final _rejectionSubjectController = TextEditingController();
-  final _rejectionBodyController = TextEditingController();
-  final _approvalSubjectController = TextEditingController();
-  final _approvalBodyController = TextEditingController();
-  final _portalInviteSubjectController = TextEditingController();
-  final _portalInviteBodyController = TextEditingController();
+  final Map<String, TextEditingController> _subjectControllers = {};
+  final Map<String, TextEditingController> _bodyControllers = {};
+  final Map<String, bool> _saving = {};
+  final Map<String, String?> _saveErrors = {};
 
   AdminDashboardDelegate get delegate => widget.delegate;
 
   @override
   void initState() {
     super.initState();
+    for (final template in _templateConfigs) {
+      _subjectControllers[template.id] = TextEditingController();
+      _bodyControllers[template.id] = TextEditingController();
+      _saving[template.id] = false;
+      _saveErrors[template.id] = null;
+    }
     _load();
   }
 
   @override
   void dispose() {
-    _rejectionSubjectController.dispose();
-    _rejectionBodyController.dispose();
-    _approvalSubjectController.dispose();
-    _approvalBodyController.dispose();
-    _portalInviteSubjectController.dispose();
-    _portalInviteBodyController.dispose();
+    for (final controller in _subjectControllers.values) {
+      controller.dispose();
+    }
+    for (final controller in _bodyControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -55,131 +177,90 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
     setState(() {
       _loading = true;
       _error = null;
-      _rejectionSaveError = null;
-      _approvalSaveError = null;
     });
     try {
       final data = await delegate.apiClient.fetchSystemSettings(delegate.token);
       if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _rejectionSubjectController.text =
-            (data['demo_rejection_subject'] as String? ?? '').toString();
-        _rejectionBodyController.text =
-            (data['demo_rejection_body'] as String? ?? '').toString();
-        _approvalSubjectController.text =
-            (data['demo_approval_subject'] as String? ?? '').toString();
-        _approvalBodyController.text =
-            (data['demo_approval_body'] as String? ?? '').toString();
-        _portalInviteSubjectController.text =
-            (data['portal_invite_subject'] as String? ?? '').toString();
-        _portalInviteBodyController.text =
-            (data['portal_invite_body'] as String? ?? '').toString();
-      });
+      for (final template in _templateConfigs) {
+        _subjectControllers[template.id]!.text =
+            (data[template.subjectKey] as String? ?? '').toString();
+        _bodyControllers[template.id]!.text =
+            (data[template.bodyKey] as String? ?? '').toString();
+      }
+      setState(() => _loading = false);
     } catch (e) {
       if (!mounted) return;
       setState(() {
+        _loading = false;
         _error = e.toString();
-        _loading = false;
       });
     }
   }
 
-  Future<void> _saveRejection() async {
+  Future<void> _saveTemplate(_EmailTemplateConfig template) async {
     setState(() {
-      _savingRejection = true;
-      _rejectionSaveError = null;
+      _saving[template.id] = true;
+      _saveErrors[template.id] = null;
     });
     try {
-      await delegate.apiClient.updateSystemSettingsMail(
-        token: delegate.token,
-        demoRejectionSubject: _rejectionSubjectController.text.trim(),
-        demoRejectionBody: _rejectionBodyController.text,
-      );
+      final subject = _subjectControllers[template.id]!.text.trim();
+      final body = _bodyControllers[template.id]!.text;
+      switch (template.id) {
+        case 'demo_receipt':
+          await delegate.apiClient.updateSystemSettingsMail(
+            token: delegate.token,
+            demoReceiptSubject: subject,
+            demoReceiptBody: body,
+          );
+          break;
+        case 'demo_rejection':
+          await delegate.apiClient.updateSystemSettingsMail(
+            token: delegate.token,
+            demoRejectionSubject: subject,
+            demoRejectionBody: body,
+          );
+          break;
+        case 'demo_approval':
+          await delegate.apiClient.updateSystemSettingsMail(
+            token: delegate.token,
+            demoApprovalSubject: subject,
+            demoApprovalBody: body,
+          );
+          break;
+        case 'portal_invite':
+          await delegate.apiClient.updateSystemSettingsMail(
+            token: delegate.token,
+            portalInviteSubject: subject,
+            portalInviteBody: body,
+          );
+          break;
+        case 'update_profile_invite':
+          await delegate.apiClient.updateSystemSettingsMail(
+            token: delegate.token,
+            updateProfileInviteSubject: subject,
+            updateProfileInviteBody: body,
+          );
+          break;
+        case 'password_reset':
+          await delegate.apiClient.updateSystemSettingsMail(
+            token: delegate.token,
+            passwordResetSubject: subject,
+            passwordResetBody: body,
+          );
+          break;
+      }
       if (!mounted) return;
-      setState(() {
-        _savingRejection = false;
-        _rejectionSaveError = null;
-      });
+      setState(() => _saving[template.id] = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Demo rejection template saved.')),
+        SnackBar(content: Text('${template.title} template saved.')),
       );
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _savingRejection = false;
-        _rejectionSaveError = e.toString();
+        _saving[template.id] = false;
+        _saveErrors[template.id] = e.toString();
       });
     }
-  }
-
-  Future<void> _saveApproval() async {
-    setState(() {
-      _savingApproval = true;
-      _approvalSaveError = null;
-    });
-    try {
-      await delegate.apiClient.updateSystemSettingsMail(
-        token: delegate.token,
-        demoApprovalSubject: _approvalSubjectController.text.trim(),
-        demoApprovalBody: _approvalBodyController.text,
-      );
-      if (!mounted) return;
-      setState(() {
-        _savingApproval = false;
-        _approvalSaveError = null;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Demo approval template saved.')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _savingApproval = false;
-        _approvalSaveError = e.toString();
-      });
-    }
-  }
-
-  Future<void> _savePortalInvite() async {
-    setState(() {
-      _savingPortalInvite = true;
-      _portalInviteSaveError = null;
-    });
-    try {
-      await delegate.apiClient.updateSystemSettingsMail(
-        token: delegate.token,
-        portalInviteSubject: _portalInviteSubjectController.text.trim(),
-        portalInviteBody: _portalInviteBodyController.text,
-      );
-      if (!mounted) return;
-      setState(() {
-        _savingPortalInvite = false;
-        _portalInviteSaveError = null;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Portal invite template saved.')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _savingPortalInvite = false;
-        _portalInviteSaveError = e.toString();
-      });
-    }
-  }
-
-  Widget _sectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-      ),
-    );
   }
 
   @override
@@ -200,8 +281,7 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
                 IconButton(
                   icon: const Icon(Icons.copy),
                   tooltip: 'Copy error',
-                  onPressed: () =>
-                      Clipboard.setData(ClipboardData(text: _error!)),
+                  onPressed: () => Clipboard.setData(ClipboardData(text: _error!)),
                 ),
                 FilledButton(onPressed: _load, child: const Text('Retry')),
               ],
@@ -210,210 +290,229 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
         ),
       );
     }
-    return DefaultTabController(
-      length: 4,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Text(
+          'Preview and edit all automatic LM emails in one place.',
+          style: TextStyle(
+            fontSize: 13,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 12),
+        for (final template in _templateConfigs) ...[
+          _EmailTemplateCard(
+            config: template,
+            subjectController: _subjectControllers[template.id]!,
+            bodyController: _bodyControllers[template.id]!,
+            saving: _saving[template.id] ?? false,
+            saveError: _saveErrors[template.id],
+            onChanged: () => setState(() {}),
+            onSave: () => _saveTemplate(template),
+          ),
+          const SizedBox(height: 12),
+        ],
+      ],
+    );
+  }
+}
+
+class _EmailTemplateCard extends StatefulWidget {
+  const _EmailTemplateCard({
+    required this.config,
+    required this.subjectController,
+    required this.bodyController,
+    required this.saving,
+    required this.saveError,
+    required this.onChanged,
+    required this.onSave,
+  });
+
+  final _EmailTemplateConfig config;
+  final TextEditingController subjectController;
+  final TextEditingController bodyController;
+  final bool saving;
+  final String? saveError;
+  final VoidCallback onChanged;
+  final VoidCallback onSave;
+
+  @override
+  State<_EmailTemplateCard> createState() => _EmailTemplateCardState();
+}
+
+class _EmailTemplateCardState extends State<_EmailTemplateCard> {
+  bool _expanded = false;
+  bool _previewMode = true;
+
+  @override
+  Widget build(BuildContext context) {
+    final renderedSubject = _renderTemplate(
+      widget.subjectController.text.trim().isEmpty
+          ? widget.config.subjectHint
+          : widget.subjectController.text,
+      widget.config.previewValues,
+    );
+    final renderedBody = _renderTemplate(
+      widget.bodyController.text.trim().isEmpty
+          ? widget.config.bodyHint
+          : widget.bodyController.text,
+      widget.config.previewValues,
+    );
+
+    return Card(
+      child: ExpansionTile(
+        initiallyExpanded: _expanded,
+        onExpansionChanged: (value) => setState(() => _expanded = value),
+        leading: const Icon(ZalmanimIcons.email),
+        title: Text(widget.config.title),
+        subtitle: Text(
+          renderedSubject.isEmpty ? widget.config.subjectHint : renderedSubject,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
-          Material(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            child: TabBar(
-              tabs: [
-                Tab(
-                  icon: Icon(
-                    ZalmanimIcons.email,
-                    size: 20,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  text: 'Artist reminder',
-                ),
-                Tab(
-                  icon: Icon(
-                    Icons.cancel_rounded,
-                    size: 20,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  text: 'Demo rejection',
-                ),
-                Tab(
-                  icon: Icon(
-                    Icons.check_circle_rounded,
-                    size: 20,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  text: 'Demo approval',
-                ),
-                Tab(
-                  icon: Icon(
-                    ZalmanimIcons.campaignRequests,
-                    size: 20,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  text: 'Portal invite',
-                ),
-              ],
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              widget.config.description,
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
-          Expanded(
-            child: TabBarView(
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              ChoiceChip(
+                label: const Text('Preview'),
+                selected: _previewMode,
+                onSelected: (_) => setState(() => _previewMode = true),
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                label: const Text('Edit'),
+                selected: !_previewMode,
+                onSelected: (_) => setState(() => _previewMode = false),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_previewMode)
+            _TemplatePreview(
+              subject: renderedSubject,
+              body: renderedBody,
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _ArtistReminderSubTab(
-                  delegate: delegate,
-                  sectionTitle: _sectionTitle,
+                TextField(
+                  controller: widget.subjectController,
+                  decoration: InputDecoration(
+                    labelText: 'Subject',
+                    hintText: widget.config.subjectHint,
+                    border: const OutlineInputBorder(),
+                  ),
+                  onChanged: (_) {
+                    widget.onChanged();
+                    setState(() {});
+                  },
                 ),
-                _DemoRejectionSubTab(
-                  sectionTitle: _sectionTitle,
-                  subjectController: _rejectionSubjectController,
-                  bodyController: _rejectionBodyController,
-                  saving: _savingRejection,
-                  saveError: _rejectionSaveError,
-                  onChanged: () => setState(() {}),
-                  onSave: _saveRejection,
+                const SizedBox(height: 8),
+                _PlaceholderWrap(placeholders: widget.config.previewValues.keys.toList()),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: widget.bodyController,
+                  decoration: InputDecoration(
+                    labelText: 'Body',
+                    hintText: widget.config.bodyHint,
+                    border: const OutlineInputBorder(),
+                    alignLabelWithHint: true,
+                  ),
+                  maxLines: 12,
+                  minLines: 8,
+                  onChanged: (_) {
+                    widget.onChanged();
+                    setState(() {});
+                  },
                 ),
-                _DemoApprovalSubTab(
-                  sectionTitle: _sectionTitle,
-                  subjectController: _approvalSubjectController,
-                  bodyController: _approvalBodyController,
-                  saving: _savingApproval,
-                  saveError: _approvalSaveError,
-                  onChanged: () => setState(() {}),
-                  onSave: _saveApproval,
-                ),
-                _PortalInviteSubTab(
-                  sectionTitle: _sectionTitle,
-                  subjectController: _portalInviteSubjectController,
-                  bodyController: _portalInviteBodyController,
-                  saving: _savingPortalInvite,
-                  saveError: _portalInviteSaveError,
-                  onChanged: () => setState(() {}),
-                  onSave: _savePortalInvite,
+                const SizedBox(height: 8),
+                if (widget.saveError != null) ...[
+                  SelectableText(
+                    widget.saveError!,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: IconButton(
+                      icon: const Icon(Icons.copy),
+                      tooltip: 'Copy error',
+                      onPressed: () =>
+                          Clipboard.setData(ClipboardData(text: widget.saveError!)),
+                    ),
+                  ),
+                ],
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: FilledButton.icon(
+                    onPressed: widget.saving ? null : widget.onSave,
+                    icon: widget.saving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(ZalmanimIcons.save, size: 18),
+                    label: Text(widget.saving ? 'Saving...' : 'Save template'),
+                  ),
                 ),
               ],
             ),
-          ),
         ],
       ),
     );
   }
 }
 
-/// Sub-tab: Artist reminder email template (opens dialog).
-class _ArtistReminderSubTab extends StatelessWidget {
-  const _ArtistReminderSubTab({
-    required this.delegate,
-    required this.sectionTitle,
+class _TemplatePreview extends StatelessWidget {
+  const _TemplatePreview({
+    required this.subject,
+    required this.body,
   });
 
-  final AdminDashboardDelegate delegate;
-  final Widget Function(String) sectionTitle;
+  final String subject;
+  final String body;
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          sectionTitle('Artist reminder email'),
-          const Text(
-            'Default subject and body for reminder emails sent from '
-            'Reports > Artist reminders. Supports placeholders like '
-            '{name}, {email}, {artist_brand}.',
-            style: TextStyle(fontSize: 12, color: Colors.grey),
-          ),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: () =>
-                delegate.showArtistReminderMailSettingsDialog(context),
-            icon: const Icon(ZalmanimIcons.edit, size: 18),
-            label: const Text('Edit artist reminder template'),
-          ),
-        ],
+    final htmlPreview = '<p>${body.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('\n\n', '</p><p>').replaceAll('\n', '<br>')}</p>';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).dividerColor),
+        borderRadius: BorderRadius.circular(8),
       ),
-    );
-  }
-}
-
-/// Sub-tab: Demo rejection email template (subject + body + save).
-class _DemoRejectionSubTab extends StatelessWidget {
-  const _DemoRejectionSubTab({
-    required this.sectionTitle,
-    required this.subjectController,
-    required this.bodyController,
-    required this.saving,
-    required this.saveError,
-    required this.onChanged,
-    required this.onSave,
-  });
-
-  final Widget Function(String) sectionTitle;
-  final TextEditingController subjectController;
-  final TextEditingController bodyController;
-  final bool saving;
-  final String? saveError;
-  final VoidCallback onChanged;
-  final VoidCallback onSave;
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          sectionTitle('Demo rejection email'),
-          const Text(
-            'Sent when you reject a demo submission. Placeholders: '
-            '{artist_name}, {artist_portal_url}, {zalmanim_website}.',
-            style: TextStyle(fontSize: 12, color: Colors.grey),
-          ),
+          Text('Subject', style: Theme.of(context).textTheme.labelLarge),
+          const SizedBox(height: 4),
+          SelectableText(subject.isEmpty ? '(empty subject)' : subject),
           const SizedBox(height: 12),
-          TextField(
-            controller: subjectController,
-            decoration: const InputDecoration(
-              labelText: 'Subject',
-              hintText: 'Thank you for your demo submission',
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (_) => onChanged(),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: bodyController,
-            decoration: const InputDecoration(
-              labelText: 'Body',
-              hintText: 'Hi {artist_name}, ...',
-              alignLabelWithHint: true,
-              border: OutlineInputBorder(),
-            ),
-            maxLines: 8,
-            onChanged: (_) => onChanged(),
-          ),
-          const SizedBox(height: 8),
-          if (saveError != null) ...[
-            SelectableText(
-              saveError!,
-              style: const TextStyle(color: Colors.red),
-            ),
-            IconButton(
-              icon: const Icon(Icons.copy),
-              tooltip: 'Copy error',
-              onPressed: () =>
-                  Clipboard.setData(ClipboardData(text: saveError!)),
-            ),
-          ],
-          FilledButton.icon(
-            onPressed: saving ? null : onSave,
-            icon: saving
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(ZalmanimIcons.save, size: 18),
-            label: Text(
-              saving ? 'Saving...' : 'Save demo rejection template',
-            ),
+          Text('Text preview', style: Theme.of(context).textTheme.labelLarge),
+          const SizedBox(height: 4),
+          SelectableText(body.isEmpty ? '(empty body)' : body),
+          const SizedBox(height: 12),
+          Text('HTML source preview', style: Theme.of(context).textTheme.labelLarge),
+          const SizedBox(height: 4),
+          SelectableText(
+            htmlPreview,
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
           ),
         ],
       ),
@@ -421,177 +520,31 @@ class _DemoRejectionSubTab extends StatelessWidget {
   }
 }
 
-/// Sub-tab: Demo approval email template (subject + body + save).
-class _DemoApprovalSubTab extends StatelessWidget {
-  const _DemoApprovalSubTab({
-    required this.sectionTitle,
-    required this.subjectController,
-    required this.bodyController,
-    required this.saving,
-    required this.saveError,
-    required this.onChanged,
-    required this.onSave,
-  });
+class _PlaceholderWrap extends StatelessWidget {
+  const _PlaceholderWrap({required this.placeholders});
 
-  final Widget Function(String) sectionTitle;
-  final TextEditingController subjectController;
-  final TextEditingController bodyController;
-  final bool saving;
-  final String? saveError;
-  final VoidCallback onChanged;
-  final VoidCallback onSave;
+  final List<String> placeholders;
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          sectionTitle('Demo approval email (default)'),
-          const Text(
-            'Default subject and body when approving a demo. Used when '
-            'the approval dialog does not override them. '
-            'Placeholder: {artist_name}.',
-            style: TextStyle(fontSize: 12, color: Colors.grey),
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final placeholder in placeholders)
+          Chip(
+            label: Text('{$placeholder}'),
+            visualDensity: VisualDensity.compact,
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: subjectController,
-            decoration: const InputDecoration(
-              labelText: 'Subject',
-              hintText: 'Your demo was approved, {artist_name}',
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (_) => onChanged(),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: bodyController,
-            decoration: const InputDecoration(
-              labelText: 'Body',
-              hintText: 'Hi {artist_name}, ...',
-              alignLabelWithHint: true,
-              border: OutlineInputBorder(),
-            ),
-            maxLines: 8,
-            onChanged: (_) => onChanged(),
-          ),
-          const SizedBox(height: 8),
-          if (saveError != null) ...[
-            SelectableText(
-              saveError!,
-              style: const TextStyle(color: Colors.red),
-            ),
-            IconButton(
-              icon: const Icon(Icons.copy),
-              tooltip: 'Copy error',
-              onPressed: () =>
-                  Clipboard.setData(ClipboardData(text: saveError!)),
-            ),
-          ],
-          FilledButton.icon(
-            onPressed: saving ? null : onSave,
-            icon: saving
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(ZalmanimIcons.save, size: 18),
-            label: Text(
-              saving ? 'Saving...' : 'Save demo approval template',
-            ),
-          ),
-        ],
-      ),
+      ],
     );
   }
 }
 
-/// Sub-tab: Portal invite email template (subject + body + save).
-class _PortalInviteSubTab extends StatelessWidget {
-  const _PortalInviteSubTab({
-    required this.sectionTitle,
-    required this.subjectController,
-    required this.bodyController,
-    required this.saving,
-    required this.saveError,
-    required this.onChanged,
-    required this.onSave,
+String _renderTemplate(String template, Map<String, String> values) {
+  var output = template;
+  values.forEach((key, value) {
+    output = output.replaceAll('{$key}', value);
   });
-
-  final Widget Function(String) sectionTitle;
-  final TextEditingController subjectController;
-  final TextEditingController bodyController;
-  final bool saving;
-  final String? saveError;
-  final VoidCallback onChanged;
-  final VoidCallback onSave;
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          sectionTitle('Portal invite email'),
-          const Text(
-            'Sent when you send an artist portal access (single or “Send portal invite to all”). '
-            'Placeholders: {display_name}, {portal_url}, {username}, {temporary_password}.',
-            style: TextStyle(fontSize: 12, color: Colors.grey),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: subjectController,
-            decoration: const InputDecoration(
-              labelText: 'Subject',
-              hintText: 'Your Zalmanim Artists Portal access',
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (_) => onChanged(),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: bodyController,
-            decoration: const InputDecoration(
-              labelText: 'Body',
-              hintText: 'Hi {display_name}, ...',
-              alignLabelWithHint: true,
-              border: OutlineInputBorder(),
-            ),
-            maxLines: 8,
-            onChanged: (_) => onChanged(),
-          ),
-          const SizedBox(height: 8),
-          if (saveError != null) ...[
-            SelectableText(
-              saveError!,
-              style: const TextStyle(color: Colors.red),
-            ),
-            IconButton(
-              icon: const Icon(Icons.copy),
-              tooltip: 'Copy error',
-              onPressed: () =>
-                  Clipboard.setData(ClipboardData(text: saveError!)),
-            ),
-          ],
-          FilledButton.icon(
-            onPressed: saving ? null : onSave,
-            icon: saving
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(ZalmanimIcons.save, size: 18),
-            label: Text(
-              saving ? 'Saving...' : 'Save portal invite template',
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  return output;
 }

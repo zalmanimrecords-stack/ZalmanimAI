@@ -41,6 +41,7 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
   final _smtpUserController = TextEditingController();
   final _smtpPasswordController = TextEditingController();
   final _emailsPerHourController = TextEditingController();
+  final _emailFooterController = TextEditingController();
   final _testEmailController = TextEditingController();
   bool _smtpUseTls = true;
   bool _smtpUseSsl = false;
@@ -53,6 +54,7 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
     _smtpUserController.dispose();
     _smtpPasswordController.dispose();
     _emailsPerHourController.dispose();
+    _emailFooterController.dispose();
     _testEmailController.dispose();
     super.dispose();
   }
@@ -101,6 +103,7 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
     _smtpUserController.text = '';
     _smtpPasswordController.text = '';
     _emailsPerHourController.text = (s['emails_per_hour'] as int?)?.toString() ?? '30';
+    _emailFooterController.text = s['email_footer'] as String? ?? '';
     _smtpUseTls = s['smtp_use_tls'] as bool? ?? true;
     _smtpUseSsl = s['smtp_use_ssl'] as bool? ?? false;
   }
@@ -125,6 +128,7 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
         smtpUser: _smtpUserController.text.trim(),
         smtpPassword: _smtpPasswordController.text.trim().isEmpty ? null : _smtpPasswordController.text.trim(),
         emailsPerHour: _emailsPerHour,
+        emailFooter: _emailFooterController.text,
       );
       if (mounted) {
         setState(() {
@@ -373,6 +377,19 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
           ),
           keyboardType: TextInputType.number,
           textInputAction: TextInputAction.done,
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _emailFooterController,
+          decoration: const InputDecoration(
+            labelText: 'Global email footer',
+            hintText: 'Appended automatically to every outgoing email.',
+            border: OutlineInputBorder(),
+            alignLabelWithHint: true,
+          ),
+          maxLines: 5,
+          minLines: 3,
+          textInputAction: TextInputAction.newline,
         ),
         const SizedBox(height: 8),
         Row(

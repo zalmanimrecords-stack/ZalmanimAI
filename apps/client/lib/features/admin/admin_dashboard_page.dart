@@ -21,6 +21,7 @@ import 'tabs/inbox_tab.dart';
 import 'tabs/releases_section_tab.dart';
 import 'tabs/reports_tab.dart';
 import 'tabs/settings_tab.dart';
+import 'tabs/signed_in_artists_report_dialog.dart';
 
 // Default subject/body for artist reminder emails (used by Reports > Artist reminders).
 const String _defaultReminderSubject = 'Checking in - do you have new music for us?';
@@ -465,7 +466,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     if (!mounted) return;
     final last = health?['last_git_update'];
     setState(() {
-      _lastGitUpdate = last is String ? last : null;
+      _lastGitUpdate = _formatLastGitUpdate(last);
     });
     // Retry once after a short delay if server did not return last_git_update (e.g. slow start or timeout).
     if (_lastGitUpdate == null && mounted) {
@@ -474,9 +475,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       final healthRetry = await widget.apiClient.fetchHealth();
       if (!mounted) return;
       final lastRetry = healthRetry?['last_git_update'];
-      if (lastRetry is String) {
-        setState(() => _lastGitUpdate = lastRetry);
-      }
+      setState(() => _lastGitUpdate = _formatLastGitUpdate(lastRetry));
     }
   }
 
@@ -1307,6 +1306,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       _showArtistRemindersReport(context);
 
   @override
+  void showSignedInArtistsReport(BuildContext context) =>
+      _showSignedInArtistsReport(context);
+
+  @override
   void showSendEmailToReportArtistsDialog(BuildContext context,
           List<dynamic> reportList, List<int> selectedIndices) =>
       _showSendEmailToReportArtistsDialog(context, reportList, selectedIndices);
@@ -1526,26 +1529,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               height: 32,
               fit: BoxFit.contain,
             ),
-            const SizedBox(width: 12),
-            Tooltip(
-              message: _lastGitUpdate != null
-                  ? 'Last system update (from server): $_lastGitUpdate'
-                  : 'Last system update (set GIT_LAST_UPDATE on server)',
-              child: SelectableText(
-                'Updated: ${_lastGitUpdate ?? '—'}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
             const SizedBox(width: 16),
             Tooltip(
               message: 'Demos in review and awaiting treatment',
               child: SelectableText(
                 _loadedDemos
-                    ? '$_demosInReviewCount in review · $_demosPendingCount pending'
-                    : '— in review · — pending',
+                    ? '$_demosInReviewCount in review - $_demosPendingCount pending'
+                    : '- in review - - pending',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w500,
@@ -1768,6 +1758,19 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     } catch (_) {
       return s;
+    }
+  }
+  static String? _formatLastGitUpdate(dynamic value) {
+    if (value == null) return null;
+    final raw = value.toString().trim();
+    if (raw.isEmpty) return null;
+
+    try {
+      final dt = DateTime.parse(raw).toLocal();
+      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
+          '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return raw;
     }
   }
 
@@ -3339,6 +3342,19 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           _showSendEmailToReportArtistsDialog(context, reportList, selectedIndices);
         },
         showErrorSnackBar: _showErrorSnackBar,
+      ),
+    );
+  }
+
+  Future<void> _showSignedInArtistsReport(BuildContext context) async {
+    if (!context.mounted) return;
+    final width = MediaQuery.of(context).size.width * 0.95;
+    showDialog<void>(
+      context: context,
+      builder: (_) => SignedInArtistsReportDialog(
+        apiClient: widget.apiClient,
+        token: widget.token,
+        dialogWidth: width,
       ),
     );
   }
@@ -6108,9 +6124,6 @@ class _ArtistLogsTabState extends State<_ArtistLogsTab> {
 
 
 
-
-
-
 class UsersManagementPage extends StatefulWidget {
   const UsersManagementPage({super.key, required this.apiClient, required this.token});
 
@@ -6446,6 +6459,7 @@ class _SoundCloudEmbedWidgetState extends State<_SoundCloudEmbedWidget> {
     );
   }
 }
+
 
 
 
