@@ -979,7 +979,7 @@ class SystemSettingsOut(BaseModel):
     google_oauth_configured: bool = False
     gmail_connected: bool = False
     gmail_connected_email: str = ""
-
+    artist_portal_base_url: str = ""  # Base URL for artist portal (e.g. for pending-release form link)
 
 
 class SystemSettingsMailTestRequest(BaseModel):

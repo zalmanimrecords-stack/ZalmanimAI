@@ -3353,10 +3353,11 @@ def admin_list_pending_releases(
         _create_pending_release_for_demo(db, item)
     if approved_without_pr:
         db.commit()
-    q = db.query(PendingRelease).order_by(desc(PendingRelease.created_at))
+    q = db.query(PendingRelease)
     if status_filter in ("pending", "processed"):
         q = q.filter(PendingRelease.status == status_filter)
-    items = q.offset(offset).limit(limit).all()
+    q = q.order_by(desc(PendingRelease.created_at)).offset(offset).limit(limit)
+    items = q.all()
     out = []
     for pr in items:
         artist_data = json.loads(pr.artist_data_json or "{}") if isinstance(pr.artist_data_json, str) else {}
@@ -3709,6 +3710,7 @@ def get_system_settings(
         gmail_connected=gmail_connected,
         gmail_connected_email=gmail_email,
         oauth_success_redirect=settings.oauth_success_redirect or "",
+        artist_portal_base_url=_artist_portal_url(),
     )
 
 
@@ -3760,6 +3762,7 @@ def update_system_settings_mail(
         gmail_connected=gmail_connected,
         gmail_connected_email=gmail_email,
         oauth_success_redirect=settings.oauth_success_redirect or "",
+        artist_portal_base_url=_artist_portal_url(),
     )
 
 

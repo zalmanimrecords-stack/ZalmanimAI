@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../core/api_client.dart';
+import '../../core/demo_genre_options.dart';
 import '../../core/url_launcher_util.dart';
 import '../../core/zalmanim_icons.dart';
 
@@ -41,7 +42,7 @@ const List<MapEntry<String, String>> _socialKeys = [
 
 class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
   final demoTrackNameController = TextEditingController();
-  final demoMusicalStyleController = TextEditingController();
+  String? _selectedDemoGenre;
   final demoMessageController = TextEditingController();
   final profileNameController = TextEditingController();
   final profileNotesController = TextEditingController();
@@ -84,7 +85,6 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
   @override
   void dispose() {
     demoTrackNameController.dispose();
-    demoMusicalStyleController.dispose();
     demoMessageController.dispose();
     profileNameController.dispose();
     profileNotesController.dispose();
@@ -375,7 +375,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
 
   Future<void> _submitDemo() async {
     final trackName = demoTrackNameController.text.trim();
-    final musicalStyle = demoMusicalStyleController.text.trim();
+    final musicalStyle = _selectedDemoGenre?.trim() ?? '';
     if (trackName.isEmpty) {
       setState(() => error = 'Track name is required');
       return;
@@ -408,7 +408,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
         filename: filename,
       );
       demoTrackNameController.clear();
-      demoMusicalStyleController.clear();
+      setState(() => _selectedDemoGenre = null);
       demoMessageController.clear();
       await _load();
       if (mounted) {
@@ -953,13 +953,32 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                               ),
                             ),
                             const SizedBox(height: 12),
-                            TextField(
-                              controller: demoMusicalStyleController,
+                            DropdownButtonFormField<String>(
+                              value: _selectedDemoGenre,
                               decoration: const InputDecoration(
                                 labelText: 'Musical style',
-                                hintText: 'e.g. Pop, Rock, Electronic',
                                 border: OutlineInputBorder(),
                               ),
+                              hint: const Text('Select style'),
+                              items: [
+                                for (final group in demoGenreGroups)
+                                  ...[
+                                    DropdownMenuItem<String>(
+                                      enabled: false,
+                                      value: '__$group',
+                                      child: Text(
+                                        group,
+                                        style: const TextStyle(fontWeight: FontWeight.w700),
+                                      ),
+                                    ),
+                                    for (final option in demoGenreOptions.where((item) => item.group == group))
+                                      DropdownMenuItem<String>(
+                                        value: option.value,
+                                        child: Text(option.value),
+                                      ),
+                                  ],
+                              ],
+                              onChanged: (value) => setState(() => _selectedDemoGenre = value),
                             ),
                             const SizedBox(height: 12),
                             TextField(

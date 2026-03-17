@@ -2,9 +2,9 @@ name: artist_portal
 description: Label-branded artist portal. Separate from the admin app.
 publish_to: "none"
 <<<<<<< HEAD
-version: 0.1.0+11
+version: 0.1.0+12
 =======
-version: 0.1.0+10
+version: 0.1.0+12
 >>>>>>> 7e8126d9f0537dd40d0ef22e27ca249b6bc8dfb8
 
 environment:

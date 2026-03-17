@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 
 import '../../core/api_client.dart';
+import '../../core/demo_genre_options.dart';
 import '../legal/privacy_policy_page.dart';
 import '../legal/terms_of_use_page.dart';
 
@@ -21,51 +22,6 @@ class LandingPage extends StatefulWidget {
 }
 
 class _LandingPageState extends State<LandingPage> {
-  static const List<_GenreOption> _genreOptions = [
-    _GenreOption('House', 'House'),
-    _GenreOption('House', 'House / Acid'),
-    _GenreOption('House', 'House / Soulful'),
-    _GenreOption('House', 'Jackin House'),
-    _GenreOption('House', 'Organic House'),
-    _GenreOption('House', 'Progressive House'),
-    _GenreOption('House', 'Afro House'),
-    _GenreOption('House', 'Afro House / Afro Latin'),
-    _GenreOption('House', 'Afro House / Afro Melodic'),
-    _GenreOption('House', 'Afro House / 3Step'),
-    _GenreOption('House', 'Tech House'),
-    _GenreOption('House', 'Tech House / Latin Tech'),
-    _GenreOption('House', 'Melodic House & Techno / Melodic House'),
-    _GenreOption('Techno', 'Hard Techno'),
-    _GenreOption('Techno', 'Techno (Peak Time / Driving)'),
-    _GenreOption('Techno', 'Techno / Peak Time'),
-    _GenreOption('Techno', 'Techno / Driving'),
-    _GenreOption('Techno', 'Techno / Psy-Techno'),
-    _GenreOption('Techno', 'Techno (Raw / Deep / Hypnotic)'),
-    _GenreOption('Techno', 'Techno / Raw'),
-    _GenreOption('Techno', 'Techno / Deep / Hypnotic'),
-    _GenreOption('Techno', 'Techno / Dub'),
-    _GenreOption('Techno', 'Techno / EBM'),
-    _GenreOption('Techno', 'Techno / Broken'),
-    _GenreOption('Techno', 'Melodic House & Techno / Melodic Techno'),
-    _GenreOption('Trance', 'Trance (Main Floor)'),
-    _GenreOption('Trance', 'Trance / Progressive Trance'),
-    _GenreOption('Trance', 'Trance / Tech Trance'),
-    _GenreOption('Trance', 'Trance / Uplifting Trance'),
-    _GenreOption('Trance', 'Trance / Vocal Trance'),
-    _GenreOption('Trance', 'Trance / Hard Trance'),
-    _GenreOption('Trance', 'Trance (Raw / Deep / Hypnotic)'),
-    _GenreOption('Trance', 'Trance / Raw Trance'),
-    _GenreOption('Trance', 'Trance / Deep Trance'),
-    _GenreOption('Trance', 'Trance / Hypnotic Trance'),
-    _GenreOption('Trance', 'Psy-Trance'),
-    _GenreOption('Trance', 'Psy-Trance / Full-On'),
-    _GenreOption('Trance', 'Psy-Trance / Progressive Psy'),
-    _GenreOption('Trance', 'Psy-Trance / Psychedelic'),
-    _GenreOption('Trance', 'Psy-Trance / Dark & Forest'),
-    _GenreOption('Trance', 'Psy-Trance / Goa Trance'),
-    _GenreOption('Trance', 'Psy-Trance / Psycore & Hi-Tech'),
-  ];
-
   final _formKey = GlobalKey<FormState>();
   final _artistNameController = TextEditingController();
   final _contactNameController = TextEditingController();
@@ -585,7 +541,7 @@ class _LandingPageState extends State<LandingPage> {
           ),
         ),
         items: [
-          for (final group in {'House', 'Techno', 'Trance'})
+          for (final group in demoGenreGroups)
             ...[
               DropdownMenuItem<String>(
                 enabled: false,
@@ -595,7 +551,7 @@ class _LandingPageState extends State<LandingPage> {
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
-              for (final option in _genreOptions.where((item) => item.group == group))
+              for (final option in demoGenreOptions.where((item) => item.group == group))
                 DropdownMenuItem<String>(
                   value: option.value,
                   child: Text(option.value),
@@ -606,13 +562,6 @@ class _LandingPageState extends State<LandingPage> {
       ),
     );
   }
-}
-
-class _GenreOption {
-  const _GenreOption(this.group, this.value);
-
-  final String group;
-  final String value;
 }
 
 class _FeatureCard extends StatelessWidget {
