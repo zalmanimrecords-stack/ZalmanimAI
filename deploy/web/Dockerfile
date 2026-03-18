@@ -8,7 +8,7 @@ RUN flutter config --enable-web && flutter pub get
 COPY apps/client/ ./
 
 ARG API_BASE_URL=https://lm.zalmanim.com/
-RUN flutter build web --release --dart-define=API_BASE_URL=${API_BASE_URL}
+RUN flutter build web --release --dart-define="API_BASE_URL=${API_BASE_URL}"
 
 FROM ghcr.io/cirruslabs/flutter:stable AS artist_build
 
@@ -24,10 +24,10 @@ ARG ARTIST_LABEL_NAME=Zalmanim\ Artists
 ARG ARTIST_PRIMARY_COLOR=B66A2C
 ARG DEMO_SUBMISSION_TOKEN=TOKEN
 RUN flutter build web --release \
-    --dart-define=API_BASE_URL=${ARTIST_API_BASE_URL} \
-    --dart-define=LABEL_NAME=${ARTIST_LABEL_NAME} \
-    --dart-define=PRIMARY_COLOR=${ARTIST_PRIMARY_COLOR} \
-    --dart-define=DEMO_SUBMISSION_TOKEN=${DEMO_SUBMISSION_TOKEN}
+    --dart-define="API_BASE_URL=${ARTIST_API_BASE_URL}" \
+    --dart-define="LABEL_NAME=${ARTIST_LABEL_NAME}" \
+    --dart-define="PRIMARY_COLOR=${ARTIST_PRIMARY_COLOR}" \
+    --dart-define="DEMO_SUBMISSION_TOKEN=${DEMO_SUBMISSION_TOKEN}"
 
 FROM nginx:1.27-alpine
 
