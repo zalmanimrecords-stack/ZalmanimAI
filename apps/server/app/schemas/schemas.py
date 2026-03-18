@@ -669,7 +669,11 @@ class CampaignRequestOut(BaseModel):
 class PendingReleaseFormInfo(BaseModel):
     """Public: info returned when validating a pending-release form token."""
     artist_name: str
+    artist_email: str = ""
+    artist_data: dict = {}
     release_title: str
+    release_data: dict = {}
+    expires_at: datetime | None = None
 
 
 # Demo confirmation (artist confirms/complete details after demo approved)
@@ -720,6 +724,19 @@ class PendingReleaseOut(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime | None
+    last_reminder_sent_at: datetime | None = None
+
+
+class PendingReleaseReminderResponse(BaseModel):
+    success: bool
+    message: str
+    form_link: str
+    expires_at: datetime
+
+
+class PendingReleaseReferenceUploadOut(BaseModel):
+    url: str
+    filename: str
 
 
 # Label inbox (artist messages to label; admin replies by email)

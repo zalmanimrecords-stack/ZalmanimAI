@@ -837,6 +837,29 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
   }
 
+  Future<void> _sendPendingReleaseReminder(int pendingReleaseId, String artistName) async {
+    try {
+      final result = await widget.apiClient.sendPendingReleaseReminder(
+        token: widget.token,
+        pendingReleaseId: pendingReleaseId,
+      );
+      if (!mounted) return;
+      final expiresAt = (result['expires_at'] ?? '').toString();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            expiresAt.isEmpty
+                ? 'Reminder sent to $artistName.'
+                : 'Reminder sent to $artistName. Link valid until $expiresAt.',
+          ),
+        ),
+      );
+      await _loadPendingReleases();
+    } catch (e) {
+      _showErrorSnackBar(e.toString());
+    }
+  }
+
   Future<void> _loadInbox() async {
     if (mounted) setState(() => loading = true);
     try {
@@ -1037,6 +1060,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   @override
   Future<void> loadPendingReleases({String? statusFilter}) => _loadPendingReleases(statusFilter: statusFilter);
+
+  @override
+  Future<void> sendPendingReleaseReminder(int pendingReleaseId, String artistName) =>
+      _sendPendingReleaseReminder(pendingReleaseId, artistName);
 
   @override
   List<dynamic> get inboxThreadsList => inboxThreads;

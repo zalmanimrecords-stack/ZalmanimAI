@@ -168,14 +168,16 @@ class PendingReleaseToken(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
-    campaign_request_id: Mapped[int] = mapped_column(ForeignKey("campaign_requests.id", ondelete="CASCADE"), nullable=False, index=True)
-    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), nullable=False, index=True)
+    campaign_request_id: Mapped[int | None] = mapped_column(ForeignKey("campaign_requests.id", ondelete="CASCADE"), nullable=True, index=True)
+    pending_release_id: Mapped[int | None] = mapped_column(ForeignKey("pending_releases.id", ondelete="CASCADE"), nullable=True, index=True)
+    artist_id: Mapped[int | None] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), nullable=True, index=True)
     expires_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
     used_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     campaign_request: Mapped["CampaignRequest"] = relationship()
-    artist: Mapped["Artist"] = relationship()
+    pending_release: Mapped["PendingRelease | None"] = relationship()
+    artist: Mapped["Artist | None"] = relationship()
 
 
 class PendingRelease(Base):

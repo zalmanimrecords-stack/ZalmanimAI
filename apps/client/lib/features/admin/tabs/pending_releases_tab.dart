@@ -19,6 +19,7 @@ class PendingReleasesTab extends StatefulWidget {
 class _PendingReleasesTabState extends State<PendingReleasesTab> {
   String? _portalBaseUrl;
   bool _settingsLoaded = false;
+  final Set<int> _sendingReminderIds = <int>{};
 
   @override
   void initState() {
@@ -49,6 +50,22 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
   String _formLink() {
     final base = _portalBaseUrl ?? 'https://artists.zalmanim.com';
     return '$base/#/pending-release';
+  }
+
+  Future<void> _sendReminder(Map<String, dynamic> item) async {
+    final pendingReleaseId = item['id'];
+    if (pendingReleaseId is! int) return;
+    setState(() => _sendingReminderIds.add(pendingReleaseId));
+    try {
+      await widget.delegate.sendPendingReleaseReminder(
+        pendingReleaseId,
+        item['artist_name']?.toString() ?? 'artist',
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _sendingReminderIds.remove(pendingReleaseId));
+      }
+    }
   }
 
   /// Builds a plain-text summary of the release for copying.
@@ -136,6 +153,16 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
                       final artistData = item['artist_data'] is Map ? item['artist_data'] as Map<String, dynamic> : <String, dynamic>{};
                       final releaseData = item['release_data'] is Map ? item['release_data'] as Map<String, dynamic> : <String, dynamic>{};
                       final formLink = _settingsLoaded ? _formLink() : null;
+                      final reminderBusy = item['id'] is int && _sendingReminderIds.contains(item['id']);
+                      final wavLink = releaseData['wav_download_url']?.toString() ?? '';
+                      final musicalStyle =
+                          releaseData['musical_style']?.toString() ?? releaseData['genre']?.toString() ?? '';
+                      final coverImageUrl = releaseData['cover_reference_image_url']?.toString() ?? '';
+                      final marketingText = releaseData['marketing_text']?.toString() ?? '';
+                      final releaseStory = releaseData['release_story']?.toString() ?? '';
+                      final masteringRequired = releaseData['mastering_required'] == true;
+                      final headroomConfirmed = releaseData['mastering_headroom_confirmed'] == true;
+                      final lastReminderSentAt = item['last_reminder_sent_at']?.toString() ?? '';
                       return Card(
                         margin: const EdgeInsets.only(bottom: 8),
                         child: ExpansionTile(
@@ -186,6 +213,59 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
                                   Text('Release title: $releaseTitle', style: const TextStyle(fontSize: 13)),
                                   Text('Status: $status', style: const TextStyle(fontSize: 13)),
                                   Text('Submitted: $createdAt', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                                  if (lastReminderSentAt.isNotEmpty)
+                                    Text('Last reminder: $lastReminderSentAt', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 12,
+                                    runSpacing: 8,
+                                    children: [
+                                      FilledButton.icon(
+                                        onPressed: reminderBusy ? null : () => _sendReminder(item),
+                                        icon: reminderBusy
+                                            ? const SizedBox(
+                                                height: 16,
+                                                width: 16,
+                                                child: CircularProgressIndicator(strokeWidth: 2),
+                                              )
+                                            : const Icon(Icons.mark_email_unread_outlined),
+                                        label: Text(reminderBusy ? 'Sending...' : 'Send reminder'),
+                                      ),
+                                    ],
+                                  ),
+                                  if (wavLink.isNotEmpty ||
+                                      musicalStyle.isNotEmpty ||
+                                      masteringRequired ||
+                                      coverImageUrl.isNotEmpty ||
+                                      marketingText.isNotEmpty ||
+                                      releaseStory.isNotEmpty) ...[
+                                    const SizedBox(height: 12),
+                                    const Text('Release completion details', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                                    if (wavLink.isNotEmpty) SelectableText('WAV link: $wavLink', style: const TextStyle(fontSize: 13)),
+                                    if (musicalStyle.isNotEmpty) Text('Musical style: $musicalStyle', style: const TextStyle(fontSize: 13)),
+                                    Text(
+                                      masteringRequired
+                                          ? 'Mastering: required${headroomConfirmed ? ' (6 dB confirmed)' : ' (6 dB not yet confirmed)'}'
+                                          : 'Mastering: not required',
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                    if (marketingText.isNotEmpty) SelectableText('Marketing text:\n$marketingText', style: const TextStyle(fontSize: 13)),
+                                    if (releaseStory.isNotEmpty) SelectableText('Story / meaning:\n$releaseStory', style: const TextStyle(fontSize: 13)),
+                                    if (coverImageUrl.isNotEmpty) ...[
+                                      const SizedBox(height: 8),
+                                      SelectableText('Cover reference image: $coverImageUrl', style: const TextStyle(fontSize: 13)),
+                                      const SizedBox(height: 8),
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Image.network(
+                                          coverImageUrl,
+                                          height: 180,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                   if (artistData.isNotEmpty) ...[
                                     const SizedBox(height: 8),
                                     const Text('Artist details', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),

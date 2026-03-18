@@ -107,6 +107,8 @@ from app.schemas.schemas import (
     LoginRequest,
     PendingReleaseFormInfo,
     PendingReleaseOut,
+    PendingReleaseReferenceUploadOut,
+    PendingReleaseReminderResponse,
     PendingReleaseSubmit,
     ReleaseOut,
     ResetPasswordRequest,
@@ -190,6 +192,7 @@ _FACEBOOK_AUTH_SCOPES = ["email", "public_profile"]
 _ALLOWED_USER_ROLES = {"admin", "manager", "artist"}
 _ALLOWED_DEMO_STATUSES = {"demo", "in_review", "approved", "rejected", "pending_release"}
 _DEMO_MAILING_LIST_NAME = "Artists Demo Intake"
+_ALLOWED_PENDING_RELEASE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
 
 def _oauth_callback_url(request: Request, provider: str) -> str:
@@ -1077,6 +1080,61 @@ def _safe_json_list(raw: str | None) -> list:
         data = []
     return data if isinstance(data, list) else []
 
+
+def _pending_release_form_link(raw_token: str) -> str:
+    portal_url = (_artist_portal_url()).rstrip("/")
+    return f"{portal_url}/#/pending-release?token={raw_token}"
+
+
+def _serialize_pending_release(
+    pr: PendingRelease,
+    *,
+    last_reminder_sent_at: datetime | None = None,
+) -> PendingReleaseOut:
+    artist_data = _safe_json_dict(pr.artist_data_json)
+    release_data = _safe_json_dict(pr.release_data_json)
+    return PendingReleaseOut(
+        id=pr.id,
+        campaign_request_id=pr.campaign_request_id,
+        demo_submission_id=getattr(pr, "demo_submission_id", None),
+        artist_id=pr.artist_id,
+        artist_name=pr.artist_name,
+        artist_email=pr.artist_email,
+        artist_data=artist_data,
+        release_title=pr.release_title,
+        release_data=release_data,
+        status=pr.status,
+        created_at=pr.created_at,
+        updated_at=pr.updated_at,
+        last_reminder_sent_at=last_reminder_sent_at,
+    )
+
+
+def _resolve_pending_release_from_token(db: Session, row: PendingReleaseToken) -> PendingRelease | None:
+    if getattr(row, "pending_release_id", None):
+        pr = db.query(PendingRelease).filter(PendingRelease.id == row.pending_release_id).first()
+        if pr:
+            return pr
+    if row.campaign_request_id is not None:
+        return db.query(PendingRelease).filter(PendingRelease.campaign_request_id == row.campaign_request_id).first()
+    return None
+
+
+def _get_valid_pending_release_token(db: Session, token: str) -> PendingReleaseToken:
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    row = (
+        db.query(PendingReleaseToken)
+        .filter(
+            PendingReleaseToken.token_hash == token_hash,
+            PendingReleaseToken.used_at.is_(None),
+            PendingReleaseToken.expires_at > datetime.now(timezone.utc),
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid or expired token")
+    return row
+
 @router.on_event("startup")
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
@@ -1116,6 +1174,16 @@ def init_db() -> None:
             conn.execute(text(
                 "ALTER TABLE pending_releases ADD COLUMN IF NOT EXISTS demo_submission_id INTEGER "
                 "REFERENCES demo_submissions(id) ON DELETE SET NULL"
+            ))
+            conn.execute(text(
+                "ALTER TABLE pending_release_tokens ALTER COLUMN campaign_request_id DROP NOT NULL"
+            ))
+            conn.execute(text(
+                "ALTER TABLE pending_release_tokens ALTER COLUMN artist_id DROP NOT NULL"
+            ))
+            conn.execute(text(
+                "ALTER TABLE pending_release_tokens ADD COLUMN IF NOT EXISTS pending_release_id INTEGER "
+                "REFERENCES pending_releases(id) ON DELETE CASCADE"
             ))
             conn.execute(text(
                 "UPDATE mail_settings SET emails_per_hour = 10 WHERE id = 1 AND (emails_per_hour IS NULL OR emails_per_hour = 5)"
@@ -3224,13 +3292,12 @@ def _create_pending_release_token_and_send_approval_email(
     """Create a one-time token and email the artist with the pending-release form link."""
     raw_token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-    portal_url = (_artist_portal_url()).rstrip("/")
-    # Use hash URL so the link works when the server only serves index.html at / (no SPA fallback).
-    form_link = f"{portal_url}/#/pending-release?token={raw_token}"
+    form_link = _pending_release_form_link(raw_token)
     expires_at = datetime.now(timezone.utc) + timedelta(days=30)
     token_row = PendingReleaseToken(
         token_hash=token_hash,
         campaign_request_id=req.id,
+        pending_release_id=None,
         artist_id=req.artist_id,
         expires_at=expires_at,
     )
@@ -3266,6 +3333,28 @@ def _create_pending_release_token_and_send_approval_email(
             logging.getLogger(__name__).warning(
                 "Failed to send track-approved email to %s: %s", artist.email, message
             )
+
+
+def _create_pending_release_reminder_token(
+    db: Session,
+    *,
+    pending_release: PendingRelease,
+    artist: Artist | None,
+    expires_in_days: int,
+) -> tuple[str, datetime]:
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    expires_at = datetime.now(timezone.utc) + timedelta(days=expires_in_days)
+    token_row = PendingReleaseToken(
+        token_hash=token_hash,
+        campaign_request_id=pending_release.campaign_request_id,
+        pending_release_id=pending_release.id,
+        artist_id=artist.id if artist else pending_release.artist_id,
+        expires_at=expires_at,
+    )
+    db.add(token_row)
+    db.flush()
+    return _pending_release_form_link(raw_token), expires_at
 
 
 @router.patch("/admin/campaign-requests/{request_id}", response_model=CampaignRequestOut)
@@ -3308,19 +3397,9 @@ def public_pending_release_form_validate(
     db: Session = Depends(get_db),
 ) -> PendingReleaseFormInfo:
     """Validate token and return artist/release names for the pending-release form (no auth)."""
-    token_hash = hashlib.sha256(token.encode()).hexdigest()
-    row = (
-        db.query(PendingReleaseToken)
-        .filter(
-            PendingReleaseToken.token_hash == token_hash,
-            PendingReleaseToken.used_at.is_(None),
-            PendingReleaseToken.expires_at > datetime.now(timezone.utc),
-        )
-        .first()
-    )
-    if not row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid or expired token")
+    row = _get_valid_pending_release_token(db, token)
     artist = db.query(Artist).filter(Artist.id == row.artist_id).first()
+    pending_release = _resolve_pending_release_from_token(db, row)
     release_title = None
     if row.campaign_request_id:
         cr = db.query(CampaignRequest).filter(CampaignRequest.id == row.campaign_request_id).first()
@@ -3328,9 +3407,15 @@ def public_pending_release_form_validate(
             rel = db.query(Release).filter(Release.id == cr.release_id).first()
             if rel:
                 release_title = rel.title
+    if pending_release and pending_release.release_title:
+        release_title = pending_release.release_title
     return PendingReleaseFormInfo(
-        artist_name=artist.name if artist else "Artist",
+        artist_name=(pending_release.artist_name if pending_release else None) or (artist.name if artist else "Artist"),
+        artist_email=(pending_release.artist_email if pending_release else None) or (artist.email if artist else ""),
+        artist_data=_safe_json_dict(pending_release.artist_data_json) if pending_release else {},
         release_title=release_title or "Your release",
+        release_data=_safe_json_dict(pending_release.release_data_json) if pending_release else {},
+        expires_at=row.expires_at,
     )
 
 
@@ -3339,48 +3424,80 @@ def public_pending_release_submit(
     payload: PendingReleaseSubmit,
     db: Session = Depends(get_db),
 ) -> PendingReleaseOut:
-    """Submit artist + track details using the one-time token (no auth). Creates a pending release."""
-    token_hash = hashlib.sha256(payload.token.encode()).hexdigest()
-    row = (
-        db.query(PendingReleaseToken)
-        .filter(
-            PendingReleaseToken.token_hash == token_hash,
-            PendingReleaseToken.used_at.is_(None),
-            PendingReleaseToken.expires_at > datetime.now(timezone.utc),
+    """Submit artist + track details using the token (no auth). Updates existing pending release when available."""
+    row = _get_valid_pending_release_token(db, payload.token)
+    pr = _resolve_pending_release_from_token(db, row)
+    if pr is None:
+        pr = PendingRelease(
+            campaign_request_id=row.campaign_request_id,
+            artist_id=row.artist_id,
+            artist_name="Artist",
+            artist_email="",
+            artist_data_json="{}",
+            release_title="Untitled",
+            release_data_json="{}",
+            status="pending",
         )
-        .first()
-    )
-    if not row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid or expired token")
-    row.used_at = datetime.now(timezone.utc)
-    pr = PendingRelease(
-        campaign_request_id=row.campaign_request_id,
-        artist_id=row.artist_id,
-        artist_name=(payload.artist_name or "").strip() or "Artist",
-        artist_email=payload.artist_email.strip().lower(),
-        artist_data_json=json.dumps(payload.artist_data if isinstance(payload.artist_data, dict) else {}),
-        release_title=(payload.release_title or "").strip() or "Untitled",
-        release_data_json=json.dumps(payload.release_data if isinstance(payload.release_data, dict) else {}),
-        status="pending",
-    )
-    db.add(pr)
+        db.add(pr)
+        db.flush()
+        if getattr(row, "pending_release_id", None) is None:
+            row.pending_release_id = pr.id
+    pr.artist_name = (payload.artist_name or "").strip() or "Artist"
+    pr.artist_email = payload.artist_email.strip().lower()
+    pr.artist_data_json = json.dumps(payload.artist_data if isinstance(payload.artist_data, dict) else {})
+    pr.release_title = (payload.release_title or "").strip() or "Untitled"
+    pr.release_data_json = json.dumps(payload.release_data if isinstance(payload.release_data, dict) else {})
+    pr.status = "pending"
     db.commit()
     db.refresh(pr)
-    artist_data = json.loads(pr.artist_data_json or "{}") if isinstance(pr.artist_data_json, str) else {}
-    release_data = json.loads(pr.release_data_json or "{}") if isinstance(pr.release_data_json, str) else {}
-    return PendingReleaseOut(
-        id=pr.id,
-        campaign_request_id=pr.campaign_request_id,
-        artist_id=pr.artist_id,
-        artist_name=pr.artist_name,
-        artist_email=pr.artist_email,
-        artist_data=artist_data,
-        release_title=pr.release_title,
-        release_data=release_data,
-        status=pr.status,
-        created_at=pr.created_at,
-        updated_at=pr.updated_at,
+    return _serialize_pending_release(pr)
+
+
+@router.post("/public/pending-release-reference-image", response_model=PendingReleaseReferenceUploadOut)
+def public_upload_pending_release_reference_image(
+    request: Request,
+    token: str = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+) -> PendingReleaseReferenceUploadOut:
+    """Upload a cover reference image using a valid pending-release token."""
+    _get_valid_pending_release_token(db, token)
+    filename = (file.filename or "").strip()
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in _ALLOWED_PENDING_RELEASE_IMAGE_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only image files are allowed (jpg, jpeg, png, gif, webp).",
+        )
+    reference_dir = os.path.join(settings.upload_dir, "pending_release_references")
+    os.makedirs(reference_dir, exist_ok=True)
+    stored_name = f"{uuid.uuid4().hex}{ext}"
+    path = os.path.join(reference_dir, stored_name)
+    with open(path, "wb") as out:
+        out.write(file.file.read())
+    return PendingReleaseReferenceUploadOut(
+        url=str(request.url_for("public_pending_release_reference_image_file", filename=stored_name)),
+        filename=filename or stored_name,
     )
+
+
+@router.get(
+    "/public/pending-release-reference-image/{filename}",
+    response_class=FileResponse,
+    name="public_pending_release_reference_image_file",
+)
+def public_pending_release_reference_image_file(filename: str) -> FileResponse:
+    path = os.path.join(settings.upload_dir, "pending_release_references", filename)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+    media_types = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+    }
+    return FileResponse(path, media_type=media_types.get(os.path.splitext(filename)[1].lower(), "application/octet-stream"))
 
 
 @router.get("/admin/inbox", response_model=list[LabelInboxThreadOut])
@@ -3546,27 +3663,83 @@ def admin_list_pending_releases(
         q = q.filter(PendingRelease.status == status_filter)
     q = q.order_by(desc(PendingRelease.created_at)).offset(offset).limit(limit)
     items = q.all()
+    reminder_rows = (
+        db.query(ArtistActivityLog.artist_id, func.max(ArtistActivityLog.created_at))
+        .filter(ArtistActivityLog.activity_type == "pending_release_reminder_email")
+        .group_by(ArtistActivityLog.artist_id)
+        .all()
+    )
+    last_reminder_map = {artist_id: created_at for artist_id, created_at in reminder_rows}
     out = []
     for pr in items:
-        artist_data = json.loads(pr.artist_data_json or "{}") if isinstance(pr.artist_data_json, str) else {}
-        release_data = json.loads(pr.release_data_json or "{}") if isinstance(pr.release_data_json, str) else {}
-        out.append(
-            PendingReleaseOut(
-                id=pr.id,
-                campaign_request_id=pr.campaign_request_id,
-                demo_submission_id=getattr(pr, "demo_submission_id", None),
-                artist_id=pr.artist_id,
-                artist_name=pr.artist_name,
-                artist_email=pr.artist_email,
-                artist_data=artist_data,
-                release_title=pr.release_title,
-                release_data=release_data,
-                status=pr.status,
-                created_at=pr.created_at,
-                updated_at=pr.updated_at,
+        out.append(_serialize_pending_release(pr, last_reminder_sent_at=last_reminder_map.get(pr.artist_id)))
+    return out
+
+
+@router.post("/admin/pending-releases/{pending_release_id}/send-reminder", response_model=PendingReleaseReminderResponse)
+def admin_send_pending_release_reminder(
+    pending_release_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> PendingReleaseReminderResponse:
+    """Send a reminder email with a one-week link so the artist can complete or update release details."""
+    require_admin(user)
+    pending_release = db.query(PendingRelease).filter(PendingRelease.id == pending_release_id).first()
+    if not pending_release:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pending release not found")
+    artist = None
+    if pending_release.artist_id is not None:
+        artist = db.query(Artist).filter(Artist.id == pending_release.artist_id).first()
+    to_email = (pending_release.artist_email or (artist.email if artist else "") or "").strip().lower()
+    if not to_email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Artist email is missing for this pending release")
+    form_link, expires_at = _create_pending_release_reminder_token(
+        db,
+        pending_release=pending_release,
+        artist=artist,
+        expires_in_days=7,
+    )
+    artist_name = (pending_release.artist_name or (artist.name if artist else "") or "").strip() or "there"
+    release_title = (pending_release.release_title or "").strip() or "your release"
+    expires_label = expires_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    subject = f"Reminder: please complete the details for \"{release_title}\""
+    body = (
+        f"Hi {artist_name},\n\n"
+        f"We still need a few details to complete your approved release \"{release_title}\".\n\n"
+        "Please update the release details here:\n"
+        f"{form_link}\n\n"
+        f"This link is valid until {expires_label}.\n\n"
+        "You can add the WAV download link, confirm whether mastering is needed, add a cover reference image, "
+        "update the musical style, and send any marketing/story notes for the release.\n\n"
+        "If mastering is needed, please make sure the files have 6 dB headroom.\n\n"
+        "Best regards,\nZalmanim"
+    )
+    success, message = send_email_service(
+        to_email=to_email,
+        subject=subject,
+        body_text=body,
+    )
+    if not success:
+        db.rollback()
+        if "limit" in message.lower():
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+    if pending_release.artist_id is not None:
+        db.add(
+            ArtistActivityLog(
+                artist_id=pending_release.artist_id,
+                activity_type="pending_release_reminder_email",
+                details=f"pending_release_id={pending_release.id}",
             )
         )
-    return out
+    
+    db.commit()
+    return PendingReleaseReminderResponse(
+        success=True,
+        message="Reminder email sent",
+        form_link=form_link,
+        expires_at=expires_at,
+    )
 
 
 @router.get("/public/demo-confirm-form", response_model=DemoConfirmFormInfo)

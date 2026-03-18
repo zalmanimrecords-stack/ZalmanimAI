@@ -88,6 +88,7 @@ abstract class AdminDashboardDelegate {
   // Pending for release (tracks with full details submitted, waiting for treatment)
   List<dynamic> get pendingReleasesList;
   Future<void> loadPendingReleases({String? statusFilter});
+  Future<void> sendPendingReleaseReminder(int pendingReleaseId, String artistName);
 
   // Inbox (artist messages to label; admin can reply, reply is emailed to artist)
   List<dynamic> get inboxThreadsList;

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../../core/api_client.dart';
 import '../../core/loading_error_widgets.dart';
@@ -26,6 +27,12 @@ class _PendingReleaseFormPageState extends State<PendingReleaseFormPage> {
   String? _error;
   String? _artistName;
   String? _releaseTitle;
+  DateTime? _expiresAt;
+  bool _uploadingReferenceImage = false;
+  bool _masteringRequired = false;
+  bool _masteringHeadroomConfirmed = false;
+  String? _referenceImageUrl;
+  String? _referenceImageName;
 
   final _artistNameController = TextEditingController();
   final _artistEmailController = TextEditingController();
@@ -39,6 +46,10 @@ class _PendingReleaseFormPageState extends State<PendingReleaseFormPage> {
   final _trackTitleController = TextEditingController();
   final _catalogNumberController = TextEditingController();
   final _releaseDateController = TextEditingController();
+  final _wavDownloadUrlController = TextEditingController();
+  final _musicalStyleController = TextEditingController();
+  final _marketingTextController = TextEditingController();
+  final _releaseStoryController = TextEditingController();
   final _notesController = TextEditingController();
 
   @override
@@ -55,6 +66,10 @@ class _PendingReleaseFormPageState extends State<PendingReleaseFormPage> {
     _trackTitleController.dispose();
     _catalogNumberController.dispose();
     _releaseDateController.dispose();
+    _wavDownloadUrlController.dispose();
+    _musicalStyleController.dispose();
+    _marketingTextController.dispose();
+    _releaseStoryController.dispose();
     _notesController.dispose();
     super.dispose();
   }
@@ -72,11 +87,39 @@ class _PendingReleaseFormPageState extends State<PendingReleaseFormPage> {
     });
     try {
       final data = await widget.apiClient.fetchPendingReleaseFormInfo(widget.token);
+      final artistData = data['artist_data'] is Map<String, dynamic>
+          ? data['artist_data'] as Map<String, dynamic>
+          : <String, dynamic>{};
+      final releaseData = data['release_data'] is Map<String, dynamic>
+          ? data['release_data'] as Map<String, dynamic>
+          : <String, dynamic>{};
       setState(() {
         _artistName = data['artist_name']?.toString();
         _releaseTitle = data['release_title']?.toString();
+        _expiresAt = DateTime.tryParse(data['expires_at']?.toString() ?? '');
         _artistNameController.text = _artistName ?? '';
+        _artistEmailController.text = data['artist_email']?.toString() ?? '';
+        _artistBrandController.text = artistData['artist_brand']?.toString() ?? '';
+        _fullNameController.text = artistData['full_name']?.toString() ?? '';
+        _websiteController.text = artistData['website']?.toString() ?? '';
+        _soundcloudController.text = artistData['soundcloud']?.toString() ?? '';
+        _instagramController.text = artistData['instagram']?.toString() ?? '';
+        _facebookController.text = artistData['facebook']?.toString() ?? '';
         _releaseTitleController.text = _releaseTitle ?? '';
+        _trackTitleController.text = releaseData['track_title']?.toString() ?? '';
+        _catalogNumberController.text =
+            releaseData['release_number']?.toString() ?? releaseData['catalog_number']?.toString() ?? '';
+        _releaseDateController.text = releaseData['release_date']?.toString() ?? '';
+        _wavDownloadUrlController.text = releaseData['wav_download_url']?.toString() ?? '';
+        _musicalStyleController.text =
+            releaseData['musical_style']?.toString() ?? releaseData['genre']?.toString() ?? '';
+        _marketingTextController.text = releaseData['marketing_text']?.toString() ?? '';
+        _releaseStoryController.text = releaseData['release_story']?.toString() ?? '';
+        _notesController.text = releaseData['notes']?.toString() ?? '';
+        _masteringRequired = releaseData['mastering_required'] == true;
+        _masteringHeadroomConfirmed = releaseData['mastering_headroom_confirmed'] == true;
+        _referenceImageUrl = releaseData['cover_reference_image_url']?.toString();
+        _referenceImageName = releaseData['cover_reference_image_name']?.toString();
         _loading = false;
       });
     } catch (e) {
@@ -103,6 +146,10 @@ class _PendingReleaseFormPageState extends State<PendingReleaseFormPage> {
       setState(() => _error = 'Please enter release title.');
       return;
     }
+    if (_masteringRequired && !_masteringHeadroomConfirmed) {
+      setState(() => _error = 'Please confirm the files will be delivered with 6 dB headroom for mastering.');
+      return;
+    }
     setState(() {
       _submitting = true;
       _error = null;
@@ -118,8 +165,22 @@ class _PendingReleaseFormPageState extends State<PendingReleaseFormPage> {
       };
       final releaseData = <String, dynamic>{
         if (_trackTitleController.text.trim().isNotEmpty) 'track_title': _trackTitleController.text.trim(),
-        if (_catalogNumberController.text.trim().isNotEmpty) 'catalog_number': _catalogNumberController.text.trim(),
+        if (_catalogNumberController.text.trim().isNotEmpty) ...{
+          'catalog_number': _catalogNumberController.text.trim(),
+          'release_number': _catalogNumberController.text.trim(),
+        },
         if (_releaseDateController.text.trim().isNotEmpty) 'release_date': _releaseDateController.text.trim(),
+        if (_wavDownloadUrlController.text.trim().isNotEmpty) 'wav_download_url': _wavDownloadUrlController.text.trim(),
+        if (_musicalStyleController.text.trim().isNotEmpty) ...{
+          'musical_style': _musicalStyleController.text.trim(),
+          'genre': _musicalStyleController.text.trim(),
+        },
+        'mastering_required': _masteringRequired,
+        'mastering_headroom_confirmed': _masteringHeadroomConfirmed,
+        if ((_referenceImageUrl ?? '').trim().isNotEmpty) 'cover_reference_image_url': _referenceImageUrl!.trim(),
+        if ((_referenceImageName ?? '').trim().isNotEmpty) 'cover_reference_image_name': _referenceImageName!.trim(),
+        if (_marketingTextController.text.trim().isNotEmpty) 'marketing_text': _marketingTextController.text.trim(),
+        if (_releaseStoryController.text.trim().isNotEmpty) 'release_story': _releaseStoryController.text.trim(),
         if (_notesController.text.trim().isNotEmpty) 'notes': _notesController.text.trim(),
       };
       await widget.apiClient.submitPendingRelease(
@@ -156,6 +217,38 @@ class _PendingReleaseFormPageState extends State<PendingReleaseFormPage> {
           _error = e.toString().replaceFirst('Exception: ', '');
         });
       }
+    }
+  }
+
+  Future<void> _pickAndUploadReferenceImage() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    final file = (result == null || result.files.isEmpty) ? null : result.files.first;
+    if (file == null || file.bytes == null || file.bytes!.isEmpty) return;
+    setState(() {
+      _uploadingReferenceImage = true;
+      _error = null;
+    });
+    try {
+      final data = await widget.apiClient.uploadPendingReleaseReferenceImage(
+        token: widget.token,
+        fileBytes: file.bytes!,
+        filename: file.name.isEmpty ? 'reference-image.png' : file.name,
+      );
+      if (!mounted) return;
+      setState(() {
+        _referenceImageUrl = data['url']?.toString();
+        _referenceImageName = data['filename']?.toString() ?? file.name;
+        _uploadingReferenceImage = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _uploadingReferenceImage = false;
+        _error = e.toString().replaceFirst('Exception: ', '');
+      });
     }
   }
 
@@ -200,6 +293,13 @@ class _PendingReleaseFormPageState extends State<PendingReleaseFormPage> {
             'Please fill in your full artist details and track/release information so we can proceed with your release.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[700]),
           ),
+          if (_expiresAt != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'This link is available until ${_expiresAt!.toLocal()}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+            ),
+          ],
           const SizedBox(height: 24),
           const Text('Artist details', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
           const SizedBox(height: 8),
@@ -302,7 +402,7 @@ class _PendingReleaseFormPageState extends State<PendingReleaseFormPage> {
           TextField(
             controller: _catalogNumberController,
             decoration: const InputDecoration(
-              labelText: 'Catalog number',
+              labelText: 'Release number / catalog number',
               border: OutlineInputBorder(),
             ),
             textInputAction: TextInputAction.next,
@@ -314,6 +414,109 @@ class _PendingReleaseFormPageState extends State<PendingReleaseFormPage> {
               labelText: 'Release date (e.g. 2025-04-01)',
               border: OutlineInputBorder(),
             ),
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _wavDownloadUrlController,
+            decoration: const InputDecoration(
+              labelText: 'WAV download link',
+              border: OutlineInputBorder(),
+            ),
+            keyboardType: TextInputType.url,
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Mastering is needed for this release'),
+            subtitle: const Text('If enabled, please deliver the files with 6 dB headroom.'),
+            value: _masteringRequired,
+            onChanged: (value) => setState(() {
+              _masteringRequired = value;
+              if (!value) _masteringHeadroomConfirmed = false;
+            }),
+          ),
+          if (_masteringRequired)
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('I confirm the files will be delivered at -6 dB headroom'),
+              value: _masteringHeadroomConfirmed,
+              onChanged: (value) => setState(() => _masteringHeadroomConfirmed = value ?? false),
+            ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _musicalStyleController,
+            decoration: const InputDecoration(
+              labelText: 'Musical style',
+              border: OutlineInputBorder(),
+            ),
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _uploadingReferenceImage ? null : _pickAndUploadReferenceImage,
+                  icon: _uploadingReferenceImage
+                      ? const SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.image_outlined),
+                  label: Text(_uploadingReferenceImage ? 'Uploading image...' : 'Upload cover reference image'),
+                ),
+                if ((_referenceImageName ?? '').isNotEmpty)
+                  Text(
+                    _referenceImageName!,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+              ],
+            ),
+          ),
+          if ((_referenceImageUrl ?? '').isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.network(
+                _referenceImageUrl!,
+                height: 180,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  height: 120,
+                  alignment: Alignment.center,
+                  color: Colors.grey.shade200,
+                  child: const Text('Could not preview image'),
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          TextField(
+            controller: _marketingTextController,
+            decoration: const InputDecoration(
+              labelText: 'Marketing text about the release',
+              alignLabelWithHint: true,
+              border: OutlineInputBorder(),
+            ),
+            maxLines: 4,
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _releaseStoryController,
+            decoration: const InputDecoration(
+              labelText: 'What is the release about?',
+              alignLabelWithHint: true,
+              border: OutlineInputBorder(),
+            ),
+            maxLines: 4,
             textInputAction: TextInputAction.next,
           ),
           const SizedBox(height: 8),

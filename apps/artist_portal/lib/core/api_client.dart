@@ -386,6 +386,28 @@ class ApiClient {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> uploadPendingReleaseReferenceImage({
+    required String token,
+    required List<int> fileBytes,
+    required String filename,
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/public/pending-release-reference-image'),
+    );
+    request.fields['token'] = token;
+    request.files.add(
+      http.MultipartFile.fromBytes('file', fileBytes, filename: filename),
+    );
+    final response = await request.send();
+    final body = await response.stream.bytesToString();
+    if (response.statusCode != 200) {
+      final detail = _detailFromErrorBody(body);
+      throw Exception(detail.isNotEmpty ? detail : 'Image upload failed');
+    }
+    return jsonDecode(body) as Map<String, dynamic>;
+  }
+
   /// Public: validate demo confirmation token and get prefilled form data from demo submission (no auth).
   Future<Map<String, dynamic>> fetchDemoConfirmFormInfo(String token) async {
     final response = await http.get(
