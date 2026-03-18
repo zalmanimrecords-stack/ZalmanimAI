@@ -82,8 +82,18 @@ services:
     depends_on:
       api:
         condition: service_started
-    ports:
-      - "80:80"
+    expose:
+      - "80"
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.lm.entrypoints: "websecure"
+      traefik.http.routers.lm.rule: "Host(`lm.zalmanim.com`)"
+      traefik.http.routers.lm.tls.certresolver: "letsencrypt"
+      traefik.http.routers.artists.entrypoints: "websecure"
+      traefik.http.routers.artists.rule: "Host(`artists.zalmanim.com`)"
+      traefik.http.routers.artists.tls.certresolver: "letsencrypt"
+      traefik.http.services.lm.loadbalancer.server.port: "80"
+      traefik.http.services.artists.loadbalancer.server.port: "80"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
       interval: 30s
