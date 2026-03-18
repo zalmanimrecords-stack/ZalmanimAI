@@ -74,12 +74,12 @@ class InboxTab extends StatelessWidget {
                                   label: Text('Replied'),
                                   padding: EdgeInsets.symmetric(horizontal: 6, vertical: 0),
                                 ),
-                              IconButton(
-                                tooltip: 'Delete thread',
+                              TextButton.icon(
                                 onPressed: threadId <= 0
                                     ? null
                                     : () => delegate.deleteInboxThread(threadId, artistName),
-                                icon: const Icon(Icons.delete_outline),
+                                icon: const Icon(Icons.delete_outline, size: 18),
+                                label: const Text('Delete'),
                               ),
                             ],
                           ),

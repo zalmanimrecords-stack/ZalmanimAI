@@ -860,6 +860,133 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
   }
 
+  Future<void> _showPendingReleaseMessageDialog(Map<String, dynamic> pendingRelease) async {
+    final artistName = (pendingRelease['artist_name'] ?? '').toString().trim();
+    final artistEmail = (pendingRelease['artist_email'] ?? '').toString().trim();
+    final releaseTitle = (pendingRelease['release_title'] ?? '').toString().trim();
+    final artistId = pendingRelease['artist_id'] as int?;
+    if (artistEmail.isEmpty) {
+      _showErrorSnackBar('This pending release does not have an artist email.');
+      return;
+    }
+
+    final subjectController = TextEditingController(
+      text: releaseTitle.isEmpty ? 'About your release submission' : 'About your release submission: $releaseTitle',
+    );
+    final bodyController = TextEditingController(
+      text: artistName.isEmpty ? 'Hi,\n\n' : 'Hi $artistName,\n\n',
+    );
+    var sending = false;
+
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: const Text('Message artist'),
+            content: SizedBox(
+              width: 620,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SelectableText(
+                      artistEmail,
+                      style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: subjectController,
+                      decoration: const InputDecoration(
+                        labelText: 'Subject',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: bodyController,
+                      decoration: const InputDecoration(
+                        labelText: 'Message',
+                        hintText: 'Write your message to the artist...',
+                        border: OutlineInputBorder(),
+                        alignLabelWithHint: true,
+                      ),
+                      maxLines: 10,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: sending ? null : () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                onPressed: sending
+                    ? null
+                    : () async {
+                        final subject = subjectController.text.trim();
+                        final body = bodyController.text.trim();
+                        if (subject.isEmpty || body.isEmpty) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            const SnackBar(content: Text('Subject and message are required.')),
+                          );
+                          return;
+                        }
+                        setDialogState(() => sending = true);
+                        try {
+                          final escapedBody = const HtmlEscape(HtmlEscapeMode.element).convert(body);
+                          final htmlBody = '<p>${escapedBody.replaceAll('\n', '<br>')}</p>';
+                          await widget.apiClient.sendEmail(
+                            token: widget.token,
+                            toEmail: artistEmail,
+                            subject: subject,
+                            bodyText: body,
+                            bodyHtml: htmlBody,
+                            artistId: artistId,
+                          );
+                          if (!ctx.mounted) return;
+                          Navigator.of(ctx).pop();
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                artistName.isEmpty
+                                    ? 'Message sent to $artistEmail.'
+                                    : 'Message sent to $artistName.',
+                              ),
+                            ),
+                          );
+                          await _loadPendingReleases();
+                        } catch (e) {
+                          if (!ctx.mounted) return;
+                          setDialogState(() => sending = false);
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+                          );
+                        }
+                      },
+                icon: sending
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.send),
+                label: Text(sending ? 'Sending...' : 'Send'),
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      subjectController.dispose();
+      bodyController.dispose();
+    }
+  }
+
   Future<void> _loadInbox() async {
     if (mounted) setState(() => loading = true);
     try {
@@ -1064,6 +1191,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   @override
   Future<void> sendPendingReleaseReminder(int pendingReleaseId, String artistName) =>
       _sendPendingReleaseReminder(pendingReleaseId, artistName);
+
+  @override
+  void showPendingReleaseMessageDialog(Map<String, dynamic> pendingRelease) =>
+      _showPendingReleaseMessageDialog(pendingRelease);
 
   @override
   List<dynamic> get inboxThreadsList => inboxThreads;

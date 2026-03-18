@@ -167,6 +167,13 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
                                             : const Icon(Icons.mark_email_unread_outlined),
                                         label: Text(reminderBusy ? 'Sending...' : 'Send completion email'),
                                       ),
+                                      OutlinedButton.icon(
+                                        onPressed: artistEmail.trim().isEmpty
+                                            ? null
+                                            : () => widget.delegate.showPendingReleaseMessageDialog(item),
+                                        icon: const Icon(Icons.email_outlined),
+                                        label: const Text('Message artist'),
+                                      ),
                                     ],
                                   ),
                                   if (wavLink.isNotEmpty ||
