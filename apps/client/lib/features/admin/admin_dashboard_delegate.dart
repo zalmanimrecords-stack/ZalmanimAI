@@ -26,13 +26,16 @@ abstract class AdminDashboardDelegate {
   void showAddArtistDialog();
   void showEditArtistDialog(int id);
   void showSetArtistPasswordDialog(int artistId, String artistName);
-  void sendArtistPortalInvite(int artistId, String artistName, String artistEmail);
+  void sendArtistPortalInvite(
+      int artistId, String artistName, String artistEmail);
   void sendArtistPortalInviteToAll();
-  void sendArtistUpdateProfileInvite(int artistId, String artistName, String artistEmail);
+  void sendArtistUpdateProfileInvite(
+      int artistId, String artistName, String artistEmail);
   void showArtistDetailsDialog(int id);
   void removeArtist(int id, String name);
   void showMergeArtistsDialog();
   void showArtistReleases(int id, String name);
+  void showGrooverInviteDialog();
 
   // Demos
   List<dynamic> get demoSubmissionsList;
@@ -61,7 +64,8 @@ abstract class AdminDashboardDelegate {
   void syncOriginalArtistsFromArtists();
   void createMissingOriginalArtists();
   void showSetArtistsDialog(Map<String, dynamic> release);
-  void prepareCampaignFromRelease(int artistId, String artistName, Map<String, dynamic> release);
+  void prepareCampaignFromRelease(
+      int artistId, String artistName, Map<String, dynamic> release);
 
   // Campaigns
   List<dynamic> get campaignsList;
@@ -74,7 +78,11 @@ abstract class AdminDashboardDelegate {
   void setCampaignsSort(int by, bool asc);
   Future<void> loadCampaigns();
   Future<void> loadMoreCampaigns();
-  void showCreateCampaignDialog({String? initialName, String? initialTitle, String? initialBody, int? initialArtistId});
+  void showCreateCampaignDialog(
+      {String? initialName,
+      String? initialTitle,
+      String? initialBody,
+      int? initialArtistId});
   void showEditCampaignDialog(Map<String, dynamic> campaign);
   void showScheduleCampaignDialog(int campaignId);
   void cancelCampaignSchedule(int id);
@@ -83,12 +91,14 @@ abstract class AdminDashboardDelegate {
   // Campaign requests (from artists)
   List<dynamic> get campaignRequestsList;
   Future<void> loadCampaignRequests({String? statusFilter});
-  void updateCampaignRequestStatus(int requestId, String status, {String? adminNotes});
+  void updateCampaignRequestStatus(int requestId, String status,
+      {String? adminNotes});
 
   // Pending for release (tracks with full details submitted, waiting for treatment)
   List<dynamic> get pendingReleasesList;
   Future<void> loadPendingReleases({String? statusFilter});
-  Future<void> sendPendingReleaseReminder(int pendingReleaseId, String artistName);
+  Future<void> sendPendingReleaseReminder(
+      int pendingReleaseId, String artistName);
   void showPendingReleaseMessageDialog(Map<String, dynamic> pendingRelease);
 
   // Inbox (artist messages to label; admin can reply, reply is emailed to artist)
@@ -112,7 +122,8 @@ abstract class AdminDashboardDelegate {
   // Reports
   void showArtistRemindersReport(BuildContext context);
   void showSignedInArtistsReport(BuildContext context);
-  void showSendEmailToReportArtistsDialog(BuildContext context, List<dynamic> reportList, List<int> selectedIndices);
+  void showSendEmailToReportArtistsDialog(BuildContext context,
+      List<dynamic> reportList, List<int> selectedIndices);
   void showArtistReminderMailSettingsDialog(BuildContext context);
 
   // Admin users (admin-only)
@@ -126,5 +137,3 @@ abstract class AdminDashboardDelegate {
 
   Future<void> load();
 }
-
-

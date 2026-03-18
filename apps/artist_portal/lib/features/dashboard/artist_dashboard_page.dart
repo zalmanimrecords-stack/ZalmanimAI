@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../core/api_client.dart';
+import '../../core/app_config.dart';
 import '../../core/demo_genre_options.dart';
 import '../../core/url_launcher_util.dart';
 import '../../core/zalmanim_icons.dart';
@@ -96,6 +97,28 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
     }
     super.dispose();
   }
+
+  bool _isCompactLayout(BuildContext context) =>
+      MediaQuery.sizeOf(context).width < 720;
+
+  String _portalBaseUrl() {
+    final configured = AppConfig.publicBaseUrl.trim();
+    if (configured.isNotEmpty) {
+      return configured.endsWith('/')
+          ? configured.substring(0, configured.length - 1)
+          : configured;
+    }
+    final base = Uri.base;
+    if (base.hasScheme &&
+        (base.scheme == 'http' || base.scheme == 'https') &&
+        base.host.isNotEmpty) {
+      return base.origin;
+    }
+    return 'https://artists.zalmanim.com';
+  }
+
+  String _linktreeUrlFor(dynamic artistId) =>
+      '${_portalBaseUrl()}/#/l/$artistId';
 
   Future<void> _load() async {
     setState(() {
@@ -590,6 +613,8 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
+    final compact = _isCompactLayout(context);
+    final horizontalPadding = compact ? 16.0 : 20.0;
     final releases = (dashboard?['releases'] as List<dynamic>? ?? const []);
     final tasks = (dashboard?['tasks'] as List<dynamic>? ?? const []);
     final artistMap = dashboard?['artist'] as Map<String, dynamic>?;
@@ -597,20 +622,22 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Row(
+        titleSpacing: compact ? 12 : null,
+        title: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Image.asset(
               'assets/images/zalmanim_logo.png',
-              height: 32,
+              height: compact ? 26 : 32,
               fit: BoxFit.contain,
             ),
             if (appVersion != null) ...[
-              const SizedBox(width: 12),
+              const SizedBox(height: 2),
               Text(
                 appVersion!,
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: compact ? 12 : 14,
                   color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.9),
                 ),
               ),
@@ -645,21 +672,20 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
           : error != null
               ? Center(
                   child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    padding: EdgeInsets.all(horizontalPadding),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: SelectableText(
-                            error!,
-                            style: TextStyle(color: Theme.of(context).colorScheme.error),
-                          ),
+                        SelectableText(
+                          error!,
+                          style: TextStyle(color: Theme.of(context).colorScheme.error),
                         ),
-                        IconButton(
-                          icon: const Icon(ZalmanimIcons.copy),
-                          tooltip: 'Copy error',
+                        const SizedBox(height: 8),
+                        FilledButton.tonalIcon(
                           onPressed: () => Clipboard.setData(ClipboardData(text: error!)),
+                          icon: const Icon(ZalmanimIcons.copy),
+                          label: const Text('Copy error'),
                         ),
                       ],
                     ),
@@ -668,16 +694,82 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
               : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView(
-                    padding: const EdgeInsets.all(20),
+                    padding: EdgeInsets.fromLTRB(
+                      horizontalPadding,
+                      compact ? 16 : 20,
+                      horizontalPadding,
+                      28,
+                    ),
                     children: [
-                      Text(
-                        'Welcome, $artistName',
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: primary,
+                      _card(
+                        context,
+                        primary,
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Welcome, $artistName',
+                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: primary,
+                                  ),
                             ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Manage your profile, demos, media, and messages from one mobile-friendly dashboard.',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(color: Colors.grey[700], height: 1.4),
+                            ),
+                            const SizedBox(height: 16),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _summaryChip(context, primary, '${releases.length} releases'),
+                                _summaryChip(context, primary, '${demos.length} demos'),
+                                _summaryChip(context, primary, '${tasks.length} tasks'),
+                                _summaryChip(context, primary, '${inboxThreads.length} messages'),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 20),
+                      _sectionTitle(context, 'Request campaign', primary),
+                      _card(
+                        context,
+                        primary,
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Ask the label to run a campaign for one of your releases.',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+                            ),
+                            const SizedBox(height: 12),
+                            FilledButton(
+                              onPressed: requestingCampaign ? null : _requestCampaign,
+                              child: Text(requestingCampaign ? 'Sending...' : 'Request campaign for a release'),
+                            ),
+                            if (campaignRequests.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              const Text('My requests', style: TextStyle(fontWeight: FontWeight.w600)),
+                              const SizedBox(height: 8),
+                              ...campaignRequests.map((r) {
+                                final item = r as Map<String, dynamic>;
+                                return ListTile(
+                                  leading: Icon(ZalmanimIcons.campaign, color: primary),
+                                  title: Text(item['release_title']?.toString() ?? 'No release'),
+                                  subtitle: Text('${item['status']}${(item['message']?.toString().trim() ?? '').isNotEmpty ? ' Â· ${item['message']}' : ''}'),
+                                );
+                              }),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
                       _sectionTitle(context, 'Message the label', primary),
                       _card(
                         context,
@@ -808,22 +900,53 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                                 style: TextStyle(fontWeight: FontWeight.w600),
                               ),
                               const SizedBox(height: 8),
-                              InkWell(
-                                onTap: () {
-                                  final link = '${Uri.base.origin}/#/l/${artistMap['id']}';
-                                  openUrlOrCopy(context, link);
+                              Builder(
+                                builder: (context) {
+                                  final link = _linktreeUrlFor(artistMap['id']);
+                                  return InkWell(
+                                    onTap: () => openUrlOrCopy(context, link),
+                                    child: compact
+                                        ? Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              SelectableText(
+                                                link,
+                                                style: TextStyle(
+                                                  color: primary,
+                                                  decoration:
+                                                      TextDecoration.underline,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Icon(
+                                                Icons.open_in_new,
+                                                size: 18,
+                                                color: primary,
+                                              ),
+                                            ],
+                                          )
+                                        : Row(
+                                            children: [
+                                              Expanded(
+                                                child: SelectableText(
+                                                  link,
+                                                  style: TextStyle(
+                                                    color: primary,
+                                                    decoration: TextDecoration
+                                                        .underline,
+                                                  ),
+                                                ),
+                                              ),
+                                              Icon(
+                                                Icons.open_in_new,
+                                                size: 18,
+                                                color: primary,
+                                              ),
+                                            ],
+                                          ),
+                                  );
                                 },
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: SelectableText(
-                                        '${Uri.base.origin}/#/l/${artistMap['id']}',
-                                        style: TextStyle(color: primary, decoration: TextDecoration.underline),
-                                      ),
-                                    ),
-                                    Icon(Icons.open_in_new, size: 18, color: primary),
-                                  ],
-                                ),
                               ),
                               const SizedBox(height: 4),
                               Text(
@@ -1033,39 +1156,6 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                           );
                         }),
                       const SizedBox(height: 24),
-                      _sectionTitle(context, 'Request campaign', primary),
-                      _card(
-                        context,
-                        primary,
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Ask the label to run a campaign for one of your releases.',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
-                            ),
-                            const SizedBox(height: 12),
-                            FilledButton(
-                              onPressed: requestingCampaign ? null : _requestCampaign,
-                              child: Text(requestingCampaign ? 'Sending...' : 'Request campaign for a release'),
-                            ),
-                            if (campaignRequests.isNotEmpty) ...[
-                              const SizedBox(height: 16),
-                              const Text('My requests', style: TextStyle(fontWeight: FontWeight.w600)),
-                              const SizedBox(height: 8),
-                              ...campaignRequests.map((r) {
-                                final item = r as Map<String, dynamic>;
-                                return ListTile(
-                                  leading: Icon(ZalmanimIcons.campaign, color: primary),
-                                  title: Text(item['release_title']?.toString() ?? 'No release'),
-                                  subtitle: Text('${item['status']}${(item['message']?.toString().trim() ?? '').isNotEmpty ? ' · ${item['message']}' : ''}'),
-                                );
-                              }),
-                            ],
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 24),
                       _sectionTitle(context, 'Tasks', primary),
                       if (tasks.isEmpty)
                         Padding(
@@ -1101,15 +1191,33 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
     );
   }
 
+  Widget _summaryChip(BuildContext context, Color primary, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: primary,
+              fontWeight: FontWeight.w700,
+            ),
+      ),
+    );
+  }
+
   Widget _card(BuildContext context, Color primary, Widget child) {
+    final compact = _isCompactLayout(context);
     return Card(
       elevation: 1,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(compact ? 16 : 12),
         side: BorderSide(color: primary.withValues(alpha: 0.3), width: 1),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: EdgeInsets.all(compact ? 16 : 20),
         child: child,
       ),
     );
@@ -1141,15 +1249,10 @@ class _LinktreeImageRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final currentName = _filenameForId(currentMediaId);
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            '$label: ${currentName ?? 'Not set'}',
-            style: TextStyle(fontSize: 13, color: Colors.grey[700]),
-          ),
-        ),
-        TextButton.icon(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 420;
+        final button = TextButton.icon(
           onPressed: mediaList.isEmpty
               ? null
               : () async {
@@ -1187,8 +1290,32 @@ class _LinktreeImageRow extends StatelessWidget {
                 },
           icon: const Icon(Icons.photo_library_outlined, size: 18),
           label: const Text('Set from my media'),
-        ),
-      ],
+        );
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '$label: ${currentName ?? 'Not set'}',
+                style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+              ),
+              const SizedBox(height: 6),
+              button,
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(
+              child: Text(
+                '$label: ${currentName ?? 'Not set'}',
+                style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+              ),
+            ),
+            button,
+          ],
+        );
+      },
     );
   }
 }

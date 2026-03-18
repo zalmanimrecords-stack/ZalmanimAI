@@ -63,6 +63,8 @@ def get_effective_mail_config_for_api():
         "demo_receipt_body": (getattr(row, "demo_receipt_body", None) if row else None) or "",
         "portal_invite_subject": (getattr(row, "portal_invite_subject", None) if row else None) or "",
         "portal_invite_body": (getattr(row, "portal_invite_body", None) if row else None) or "",
+        "groover_invite_subject": (getattr(row, "groover_invite_subject", None) if row else None) or "",
+        "groover_invite_body": (getattr(row, "groover_invite_body", None) if row else None) or "",
         "update_profile_invite_subject": (getattr(row, "update_profile_invite_subject", None) if row else None) or "",
         "update_profile_invite_body": (getattr(row, "update_profile_invite_body", None) if row else None) or "",
         "password_reset_subject": (getattr(row, "password_reset_subject", None) if row else None) or "",
@@ -88,6 +90,8 @@ def save_mail_settings(
     demo_receipt_body: str | None = None,
     portal_invite_subject: str | None = None,
     portal_invite_body: str | None = None,
+    groover_invite_subject: str | None = None,
+    groover_invite_body: str | None = None,
     update_profile_invite_subject: str | None = None,
     update_profile_invite_body: str | None = None,
     password_reset_subject: str | None = None,
@@ -133,6 +137,10 @@ def save_mail_settings(
             row.portal_invite_subject = portal_invite_subject.strip() or None
         if portal_invite_body is not None:
             row.portal_invite_body = portal_invite_body.strip() or None
+        if groover_invite_subject is not None:
+            row.groover_invite_subject = groover_invite_subject.strip() or None
+        if groover_invite_body is not None:
+            row.groover_invite_body = groover_invite_body.strip() or None
         if update_profile_invite_subject is not None:
             row.update_profile_invite_subject = update_profile_invite_subject.strip() or None
         if update_profile_invite_body is not None:

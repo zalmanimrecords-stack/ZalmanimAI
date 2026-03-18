@@ -309,11 +309,48 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _sectionTitle('Mail server (SMTP)'),
-        const Text(
-          'Edit mail server details below. Values are stored in the server database and override environment variables.',
-          style: TextStyle(fontSize: 12, color: Colors.grey),
-        ),
-        const SizedBox(height: 12),
+          const Text(
+            'Edit mail server details below. Values are stored in the server database and override environment variables.',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Global email footer',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'This text is appended automatically to every outgoing email from the system.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _emailFooterController,
+                    decoration: const InputDecoration(
+                      labelText: 'Email footer',
+                      hintText: 'Appended automatically to every outgoing email.',
+                      border: OutlineInputBorder(),
+                      alignLabelWithHint: true,
+                    ),
+                    maxLines: 5,
+                    minLines: 3,
+                    textInputAction: TextInputAction.newline,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
         TextField(
           controller: _smtpHostController,
           decoration: const InputDecoration(
@@ -377,19 +414,6 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
           ),
           keyboardType: TextInputType.number,
           textInputAction: TextInputAction.done,
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _emailFooterController,
-          decoration: const InputDecoration(
-            labelText: 'Global email footer',
-            hintText: 'Appended automatically to every outgoing email.',
-            border: OutlineInputBorder(),
-            alignLabelWithHint: true,
-          ),
-          maxLines: 5,
-          minLines: 3,
-          textInputAction: TextInputAction.newline,
         ),
         const SizedBox(height: 8),
         Row(

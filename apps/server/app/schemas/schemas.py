@@ -749,6 +749,7 @@ class LabelInboxMessageOut(BaseModel):
     sender: str  # 'artist' | 'label'
     body: str
     created_at: datetime
+    admin_read_at: datetime | None = None
     reply_email_sent_at: datetime | None = None
 
 
@@ -764,6 +765,7 @@ class LabelInboxThreadOut(BaseModel):
     updated_at: datetime | None
     message_count: int
     has_label_reply: bool
+    unread_count: int = 0
 
 
 class LabelInboxThreadDetailOut(BaseModel):
@@ -776,6 +778,7 @@ class LabelInboxThreadDetailOut(BaseModel):
     updated_at: datetime | None
     message_count: int
     has_label_reply: bool
+    unread_count: int = 0
     messages: list[LabelInboxMessageOut]
 
 
@@ -992,6 +995,8 @@ class SystemSettingsOut(BaseModel):
     demo_receipt_body: str = ""
     portal_invite_subject: str = ""
     portal_invite_body: str = ""
+    groover_invite_subject: str = ""
+    groover_invite_body: str = ""
     update_profile_invite_subject: str = ""
     update_profile_invite_body: str = ""
     password_reset_subject: str = ""
@@ -1042,10 +1047,58 @@ class SystemSettingsMailUpdate(BaseModel):
     demo_receipt_body: str | None = None
     portal_invite_subject: str | None = None
     portal_invite_body: str | None = None
+    groover_invite_subject: str | None = None
+    groover_invite_body: str | None = None
     update_profile_invite_subject: str | None = None
     update_profile_invite_body: str | None = None
     password_reset_subject: str | None = None
     password_reset_body: str | None = None
+
+
+class GrooverInviteRequest(BaseModel):
+    email: EmailStr
+    artist_name: str | None = None
+    full_name: str | None = None
+    notes: str | None = None
+
+
+class GrooverInviteResponse(BaseModel):
+    message: str
+    artist_id: int
+    email: EmailStr
+    registration_url: str
+    created_artist: bool = False
+
+
+class ArtistRegistrationFormInfo(BaseModel):
+    artist_id: int
+    email: EmailStr
+    artist_name: str = ""
+    full_name: str = ""
+    notes: str = ""
+    expires_at: datetime
+
+
+class ArtistRegistrationCompleteRequest(BaseModel):
+    token: str
+    artist_name: str
+    full_name: str | None = None
+    website: str | None = None
+    soundcloud: str | None = None
+    instagram: str | None = None
+    spotify: str | None = None
+    apple_music: str | None = None
+    youtube: str | None = None
+    tiktok: str | None = None
+    facebook: str | None = None
+    linktree: str | None = None
+    notes: str | None = None
+    password: str
+
+
+class ArtistRegistrationCompleteResponse(BaseModel):
+    message: str
+    portal_url: str
 
 
 

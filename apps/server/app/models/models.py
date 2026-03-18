@@ -28,6 +28,8 @@ class MailSettings(Base):
     demo_receipt_body: Mapped[str | None] = mapped_column(Text, nullable=True)
     portal_invite_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     portal_invite_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    groover_invite_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    groover_invite_body: Mapped[str | None] = mapped_column(Text, nullable=True)
     update_profile_invite_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     update_profile_invite_body: Mapped[str | None] = mapped_column(Text, nullable=True)
     password_reset_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -130,6 +132,22 @@ class DemoConfirmationToken(Base):
     demo_submission: Mapped["DemoSubmission"] = relationship()
 
 
+class ArtistRegistrationToken(Base):
+    """One-time token for invited artists to complete registration before portal sign-in."""
+    __tablename__ = "artist_registration_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    source: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    expires_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    artist: Mapped["Artist"] = relationship()
+
+
 class ArtistMedia(Base):
     """Per-artist media folder: files uploaded by the artist for their own use."""
     __tablename__ = "artist_media"
@@ -226,6 +244,7 @@ class LabelInboxMessage(Base):
     sender: Mapped[str] = mapped_column(String(20), nullable=False, index=True)  # 'artist' | 'label'
     body: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    admin_read_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reply_email_sent_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     thread: Mapped["LabelInboxThread"] = relationship(back_populates="messages")

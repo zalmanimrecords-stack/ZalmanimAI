@@ -11,6 +11,22 @@ class ApiClient {
 
   final String baseUrl;
 
+  String get _publicBaseUrl {
+    final configured = AppConfig.publicBaseUrl.trim();
+    if (configured.isNotEmpty) {
+      return configured.endsWith('/')
+          ? configured.substring(0, configured.length - 1)
+          : configured;
+    }
+    final uri = Uri.base;
+    if (uri.hasScheme &&
+        (uri.scheme == 'http' || uri.scheme == 'https') &&
+        uri.host.isNotEmpty) {
+      return uri.origin;
+    }
+    return 'https://artists.zalmanim.com';
+  }
+
   Map<String, String> _authHeaders(String token) {
     return {'Authorization': 'Bearer $token'};
   }
@@ -152,6 +168,60 @@ class ApiClient {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> fetchArtistRegistrationForm(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/public/artist-registration').replace(
+        queryParameters: {'token': token},
+      ),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Registration form failed (${response.statusCode})');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> submitArtistRegistration({
+    required String token,
+    required String artistName,
+    String? fullName,
+    String? website,
+    String? soundcloud,
+    String? instagram,
+    String? spotify,
+    String? appleMusic,
+    String? youtube,
+    String? tiktok,
+    String? facebook,
+    String? linktree,
+    String? notes,
+    required String password,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/public/artist-registration'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'token': token,
+        'artist_name': artistName,
+        if (fullName != null) 'full_name': fullName,
+        if (website != null) 'website': website,
+        if (soundcloud != null) 'soundcloud': soundcloud,
+        if (instagram != null) 'instagram': instagram,
+        if (spotify != null) 'spotify': spotify,
+        if (appleMusic != null) 'apple_music': appleMusic,
+        if (youtube != null) 'youtube': youtube,
+        if (tiktok != null) 'tiktok': tiktok,
+        if (facebook != null) 'facebook': facebook,
+        if (linktree != null) 'linktree': linktree,
+        if (notes != null) 'notes': notes,
+        'password': password,
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Registration submit failed (${response.statusCode})');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> updateArtistProfile(
     String token, {
     String? name,
@@ -166,8 +236,12 @@ class ApiClient {
     if (notes != null) body['notes'] = notes;
     if (extra != null) body.addAll(extra);
     if (artistBrands != null) body['artist_brands'] = artistBrands;
-    if (profileImageMediaId != null) body['profile_image_media_id'] = profileImageMediaId;
-    if (logoMediaId != null) body['logo_media_id'] = logoMediaId;
+    if (profileImageMediaId != null) {
+      body['profile_image_media_id'] = profileImageMediaId;
+    }
+    if (logoMediaId != null) {
+      body['logo_media_id'] = logoMediaId;
+    }
     final response = await http.patch(
       Uri.parse('$baseUrl/artist/me'),
       headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
@@ -511,7 +585,7 @@ class ApiClient {
         'fields': fields,
         'consent_to_emails': consentToEmails,
         'source': 'artists_portal_landing',
-        'source_site_url': Uri.base.origin,
+        'source_site_url': _publicBaseUrl,
       }),
     );
     if (response.statusCode != 200) {
@@ -568,7 +642,7 @@ class ApiClient {
     request.fields['message'] = message?.trim() ?? '';
     request.fields['links_json'] = jsonEncode(links);
     request.fields['source'] = 'artists_portal_landing';
-    request.fields['source_site_url'] = Uri.base.origin;
+    request.fields['source_site_url'] = _publicBaseUrl;
 
     if (fileBytes != null && fileBytes.isNotEmpty) {
       request.files.add(http.MultipartFile.fromBytes(

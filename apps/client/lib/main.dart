@@ -10,6 +10,7 @@ import 'features/admin/admin_dashboard_page.dart';
 import 'features/auth/login_page.dart';
 import 'features/auth/reset_password_page.dart';
 import 'features/legal/cookie_consent_page.dart';
+import 'widgets/ambient_underwater_shell.dart';
 
 /// Message shown when an artist token is used in the LM app (artists use the artist portal only).
 const String kLmArtistForbiddenMessage =
@@ -120,11 +121,79 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF1B7A5E),
+      brightness: Brightness.light,
+    ).copyWith(
+      primary: const Color(0xFF156B5C),
+      secondary: const Color(0xFFDA8A6C),
+      tertiary: const Color(0xFFE47BAA),
+      surface: const Color(0xFFFCFEFD),
+      surfaceContainerHighest: const Color(0xFFE7F3F0),
+    );
+
     return MaterialApp(
       title: 'LabelOps',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1B7A5E)),
+        colorScheme: colorScheme,
         useMaterial3: true,
+        scaffoldBackgroundColor: const Color(0xFFF4FBFB),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFFF7FCFC),
+          foregroundColor: Color(0xFF133A38),
+          elevation: 0,
+          scrolledUnderElevation: 1,
+        ),
+        dividerColor: const Color(0x22156B5C),
+        cardTheme: CardThemeData(
+          color: const Color(0xFDFDFEFE),
+          elevation: 2,
+          shadowColor: const Color(0x18156B5C),
+          surfaceTintColor: const Color(0x33156B5C),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+            side: const BorderSide(color: Color(0x14156B5C)),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white.withValues(alpha: 0.84),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(color: Color(0x22156B5C)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(color: Color(0x22156B5C)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(color: Color(0xAA156B5C), width: 1.4),
+          ),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: colorScheme.primary,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+          ),
+        ),
+        snackBarTheme: SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: colorScheme.primary,
+          contentTextStyle: const TextStyle(color: Colors.white),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+        ),
+      ),
+      builder: (context, child) => AmbientUnderwaterShell(
+        child: child ?? const SizedBox.shrink(),
       ),
       home: _buildHome(),
     );

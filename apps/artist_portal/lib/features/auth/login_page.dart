@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/api_client.dart';
+import '../../core/app_config.dart';
 import '../../core/session.dart';
 import '../../core/session_storage.dart';
 import '../../core/zalmanim_icons.dart';
@@ -30,6 +31,7 @@ class _LoginPageState extends State<LoginPage> {
   final passwordController = TextEditingController();
   bool rememberMe = true;
   bool loading = false;
+  bool obscurePassword = true;
   String? error;
 
   @override
@@ -51,10 +53,12 @@ class _LoginPageState extends State<LoginPage> {
       error = null;
     });
     try {
-      final session = await widget.apiClient.login(email: email, password: password);
+      final session =
+          await widget.apiClient.login(email: email, password: password);
       if (session.role != 'artist') {
         setState(() {
-          error = 'This portal is for artists only. Use the management app for admin access.';
+          error =
+              'This portal is for artists only. Use the management app for admin access.';
           loading = false;
         });
         return;
@@ -72,188 +76,252 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
+    final compact = MediaQuery.sizeOf(context).width < 600;
+
     return Scaffold(
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              primary.withValues(alpha: 0.12),
-              primary.withValues(alpha: 0.04),
-            ],
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: Container(
+          width: double.infinity,
+          height: double.infinity,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                primary.withValues(alpha: 0.12),
+                primary.withValues(alpha: 0.04),
+              ],
+            ),
           ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 400),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: widget.onBack == null
-                          ? const SizedBox(height: 24)
-                          : TextButton.icon(
-                              onPressed: widget.onBack,
-                              icon: const Icon(ZalmanimIcons.arrowBack),
-                              label: const Text('Back'),
-                            ),
-                    ),
-                    const SizedBox(height: 12),
-                    Image.asset(
-                      'assets/images/zalmanim_logo.png',
-                      height: 72,
-                      fit: BoxFit.contain,
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        ZalmanimIcons.alienIcon(size: 28, color: primary),
-                        const SizedBox(width: 12),
-                        ZalmanimIcons.jellyfishIcon(size: 28, color: primary),
-                        const SizedBox(width: 12),
-                        ZalmanimIcons.squidIcon(size: 28, color: primary),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Artist sign in',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: Colors.grey[600],
-                          ),
-                    ),
-                    const SizedBox(height: 40),
-                    Card(
-                      elevation: 2,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            TextField(
-                              controller: emailController,
-                              decoration: const InputDecoration(
-                                labelText: 'Email',
-                                border: OutlineInputBorder(),
-                                prefixIcon: Icon(ZalmanimIcons.email),
+          child: SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.all(compact ? 16 : 24),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 400),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: widget.onBack == null
+                            ? const SizedBox(height: 24)
+                            : TextButton.icon(
+                                onPressed: widget.onBack,
+                                icon: const Icon(ZalmanimIcons.arrowBack),
+                                label: const Text('Back'),
                               ),
-                              keyboardType: TextInputType.emailAddress,
-                              textInputAction: TextInputAction.next,
+                      ),
+                      const SizedBox(height: 12),
+                      Image.asset(
+                        'assets/images/zalmanim_logo.png',
+                        height: compact ? 64 : 72,
+                        fit: BoxFit.contain,
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ZalmanimIcons.alienIcon(size: 28, color: primary),
+                          const SizedBox(width: 12),
+                          ZalmanimIcons.jellyfishIcon(size: 28, color: primary),
+                          const SizedBox(width: 12),
+                          ZalmanimIcons.squidIcon(size: 28, color: primary),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        AppConfig.labelName,
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Artist sign in',
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              color: Colors.grey[600],
                             ),
-                            const SizedBox(height: 16),
-                            TextField(
-                              controller: passwordController,
-                              decoration: const InputDecoration(
-                                labelText: 'Password',
-                                border: OutlineInputBorder(),
-                                prefixIcon: Icon(ZalmanimIcons.lock),
+                      ),
+                      SizedBox(height: compact ? 24 : 40),
+                      Card(
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Padding(
+                          padding: EdgeInsets.all(compact ? 18 : 24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              TextField(
+                                controller: emailController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Email',
+                                  border: OutlineInputBorder(),
+                                  prefixIcon: Icon(ZalmanimIcons.email),
+                                ),
+                                keyboardType: TextInputType.emailAddress,
+                                textInputAction: TextInputAction.next,
                               ),
-                              obscureText: true,
-                              textInputAction: TextInputAction.done,
-                              onSubmitted: (_) => _login(),
-                            ),
-                            const SizedBox(height: 8),
-                            CheckboxListTile(
-                              value: rememberMe,
-                              onChanged: loading ? null : (value) => setState(() => rememberMe = value ?? false),
-                              contentPadding: EdgeInsets.zero,
-                              controlAffinity: ListTileControlAffinity.leading,
-                              title: const Text('Remember me'),
-                              dense: true,
-                            ),
-                            if (error != null) ...[
                               const SizedBox(height: 16),
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Icon(ZalmanimIcons.errorOutline, size: 20, color: Theme.of(context).colorScheme.error),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: SelectableText(
-                                      error!,
-                                      style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 13),
+                              TextField(
+                                controller: passwordController,
+                                decoration: InputDecoration(
+                                  labelText: 'Password',
+                                  border: const OutlineInputBorder(),
+                                  prefixIcon: const Icon(ZalmanimIcons.lock),
+                                  suffixIcon: IconButton(
+                                    onPressed: () => setState(
+                                      () =>
+                                          obscurePassword = !obscurePassword,
+                                    ),
+                                    icon: Icon(
+                                      obscurePassword
+                                          ? ZalmanimIcons.visibility
+                                          : ZalmanimIcons.visibilityOff,
                                     ),
                                   ),
-                                  IconButton(
-                                    icon: const Icon(ZalmanimIcons.copy, size: 20),
-                                    tooltip: 'Copy error',
-                                    onPressed: () => Clipboard.setData(ClipboardData(text: error!)),
-                                  ),
-                                ],
+                                ),
+                                obscureText: obscurePassword,
+                                textInputAction: TextInputAction.done,
+                                onSubmitted: (_) => _login(),
                               ),
-                            ],
-                            const SizedBox(height: 8),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton(
-                                onPressed: loading
+                              const SizedBox(height: 8),
+                              CheckboxListTile(
+                                value: rememberMe,
+                                onChanged: loading
                                     ? null
-                                    : () => Navigator.of(context).push(
-                                          MaterialPageRoute(
-                                            builder: (_) => ForgotPasswordPage(
-                                              apiClient: widget.apiClient,
-                                              initialEmail: emailController.text.trim().isNotEmpty
-                                                  ? emailController.text.trim()
-                                                  : null,
-                                              onBack: () => Navigator.of(context).pop(),
+                                    : (value) => setState(
+                                          () => rememberMe = value ?? false,
+                                        ),
+                                contentPadding: EdgeInsets.zero,
+                                controlAffinity:
+                                    ListTileControlAffinity.leading,
+                                title: const Text('Remember me'),
+                                dense: true,
+                              ),
+                              if (error != null) ...[
+                                const SizedBox(height: 16),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(
+                                      ZalmanimIcons.errorOutline,
+                                      size: 20,
+                                      color: Theme.of(context).colorScheme.error,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: SelectableText(
+                                        error!,
+                                        style: TextStyle(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .error,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(
+                                        ZalmanimIcons.copy,
+                                        size: 20,
+                                      ),
+                                      tooltip: 'Copy error',
+                                      onPressed: () => Clipboard.setData(
+                                        ClipboardData(text: error!),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton(
+                                  onPressed: loading
+                                      ? null
+                                      : () => Navigator.of(context).push(
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  ForgotPasswordPage(
+                                                apiClient: widget.apiClient,
+                                                initialEmail: emailController
+                                                        .text
+                                                        .trim()
+                                                        .isNotEmpty
+                                                    ? emailController.text.trim()
+                                                    : null,
+                                                onBack: () =>
+                                                    Navigator.of(context).pop(),
+                                              ),
                                             ),
                                           ),
+                                  child: const Text('Forgot password?'),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              FilledButton(
+                                onPressed: loading ? null : _login,
+                                style: FilledButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                child: loading
+                                    ? const SizedBox(
+                                        height: 22,
+                                        width: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
                                         ),
-                                child: const Text('Forgot password?'),
+                                      )
+                                    : const Text('Sign in'),
                               ),
-                            ),
-                            const SizedBox(height: 16),
-                            FilledButton(
-                              onPressed: loading ? null : _login,
-                              style: FilledButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              ),
-                              child: loading
-                                  ? SizedBox(
-                                      height: 22,
-                                      width: 22,
-                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                    )
-                                  : const Text('Sign in'),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const TermsOfUsePage(),
+                      const SizedBox(height: 20),
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const TermsOfUsePage(),
+                              ),
                             ),
+                            child: const Text('Terms of Use'),
                           ),
-                          child: const Text('Terms of Use'),
-                        ),
-                        Text(' · ', style: Theme.of(context).textTheme.bodySmall),
-                        TextButton(
-                          onPressed: () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const PrivacyPolicyPage(),
+                          Text(
+                            '·',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const PrivacyPolicyPage(),
+                              ),
                             ),
+                            child: const Text('Privacy Policy'),
                           ),
-                          child: const Text('Privacy Policy'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 32),
-                  ],
+                        ],
+                      ),
+                      const SizedBox(height: 32),
+                    ],
+                  ),
                 ),
               ),
             ),

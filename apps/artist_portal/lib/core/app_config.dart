@@ -27,6 +27,12 @@ class AppConfig {
     defaultValue: '',
   );
 
+  /// Public artists portal URL used for share links and public form attribution.
+  static const String publicBaseUrl = String.fromEnvironment(
+    'PUBLIC_BASE_URL',
+    defaultValue: 'https://artists.zalmanim.com/',
+  );
+
   static const String demoSubmissionToken = String.fromEnvironment(
     'DEMO_SUBMISSION_TOKEN',
     defaultValue: 'TOKEN',

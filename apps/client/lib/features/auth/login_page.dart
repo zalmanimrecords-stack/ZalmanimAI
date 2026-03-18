@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../core/api_client.dart';
 import '../../core/session.dart';
 import '../../core/zalmanim_icons.dart';
+import '../../widgets/ambient_underwater_shell.dart';
 import '../../widgets/api_connection_indicator.dart';
 import '../legal/privacy_policy_page.dart';
 import '../legal/terms_of_use_page.dart';
@@ -41,6 +42,8 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(
         title: Image.asset(
@@ -50,129 +53,181 @@ class _LoginPageState extends State<LoginPage> {
         ),
         actions: [ApiConnectionIndicator(apiClient: widget.apiClient)],
       ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Card(
-            margin: const EdgeInsets.all(20),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
+      body: Stack(
+        children: [
+          const Positioned.fill(child: AmbientBackdrop()),
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Card(
+                margin: const EdgeInsets.all(20),
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
                   child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Image.asset(
-                    'assets/images/zalmanim_logo.png',
-                    height: 64,
-                    fit: BoxFit.contain,
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      ZalmanimIcons.alienIcon(size: 28, color: Theme.of(context).colorScheme.primary),
-                      const SizedBox(width: 12),
-                      ZalmanimIcons.jellyfishIcon(size: 28, color: Theme.of(context).colorScheme.primary),
-                      const SizedBox(width: 12),
-                      ZalmanimIcons.squidIcon(size: 28, color: Theme.of(context).colorScheme.primary),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  const Text('Login', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 16),
-                  TextField(controller: emailController, decoration: const InputDecoration(labelText: 'Email')),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: passwordController,
-                    decoration: const InputDecoration(labelText: 'Password'),
-                    obscureText: true,
-                  ),
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: loading
-                          ? null
-                          : () => Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => ForgotPasswordPage(
-                                    apiClient: widget.apiClient,
-                                    initialEmail: emailController.text.trim().isNotEmpty ? emailController.text.trim() : null,
-                                    onBack: () => Navigator.of(context).pop(),
+                      Image.asset(
+                        'assets/images/zalmanim_logo.png',
+                        height: 64,
+                        fit: BoxFit.contain,
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ZalmanimIcons.alienIcon(
+                            size: 28,
+                            color: theme.colorScheme.primary,
+                          ),
+                          const SizedBox(width: 12),
+                          ZalmanimIcons.jellyfishIcon(
+                            size: 28,
+                            color: theme.colorScheme.tertiary,
+                          ),
+                          const SizedBox(width: 12),
+                          ZalmanimIcons.squidIcon(
+                            size: 28,
+                            color: theme.colorScheme.secondary,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Login',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'A cleaner control room, with a little pulse.',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: emailController,
+                        decoration: const InputDecoration(labelText: 'Email'),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: passwordController,
+                        decoration: const InputDecoration(labelText: 'Password'),
+                        obscureText: true,
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: loading
+                              ? null
+                              : () => Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => ForgotPasswordPage(
+                                        apiClient: widget.apiClient,
+                                        initialEmail: emailController
+                                                .text
+                                                .trim()
+                                                .isNotEmpty
+                                            ? emailController.text.trim()
+                                            : null,
+                                        onBack: () =>
+                                            Navigator.of(context).pop(),
+                                      ),
+                                    ),
                                   ),
+                          child: const Text('Forgot password?'),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: CheckboxListTile(
+                          value: rememberMe,
+                          onChanged: (v) =>
+                              setState(() => rememberMe = v ?? false),
+                          title: const Text('Remember me'),
+                          contentPadding: EdgeInsets.zero,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          dense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      if (error != null)
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: SelectableText(
+                                error!,
+                                style: const TextStyle(color: Colors.red),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(ZalmanimIcons.copy, size: 20),
+                              tooltip: 'Copy error',
+                              onPressed: () => Clipboard.setData(
+                                ClipboardData(text: error!),
+                              ),
+                            ),
+                          ],
+                        ),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: loading ? null : _login,
+                          child: loading
+                              ? const SizedBox(
+                                  height: 18,
+                                  width: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text('Login'),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text('Use your system user credentials.'),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) =>
+                                    const TermsOfUsePage(appName: 'LabelOps'),
+                              ),
+                            ),
+                            child: const Text('Terms of Use'),
+                          ),
+                          Text(
+                            ' | ',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const PrivacyPolicyPage(
+                                  appName: 'LabelOps',
                                 ),
                               ),
-                      child: const Text('Forgot password?'),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: CheckboxListTile(
-                      value: rememberMe,
-                      onChanged: (v) => setState(() => rememberMe = v ?? false),
-                      title: const Text('Remember me'),
-                      contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      dense: true,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  if (error != null)
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: SelectableText(
-                            error!,
-                            style: const TextStyle(color: Colors.red),
+                            ),
+                            child: const Text('Privacy Policy'),
                           ),
-                        ),
-                        IconButton(
-                          icon: const Icon(ZalmanimIcons.copy, size: 20),
-                          tooltip: 'Copy error',
-                          onPressed: () => Clipboard.setData(ClipboardData(text: error!)),
-                        ),
-                      ],
-                    ),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: loading ? null : _login,
-                      child: loading
-                          ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Text('Login'),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text('Use your system user credentials.'),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const TermsOfUsePage(appName: 'LabelOps'),
-                          ),
-                        ),
-                        child: const Text('Terms of Use'),
-                      ),
-                      Text(' · ', style: Theme.of(context).textTheme.bodySmall),
-                      TextButton(
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const PrivacyPolicyPage(appName: 'LabelOps'),
-                          ),
-                        ),
-                        child: const Text('Privacy Policy'),
+                        ],
                       ),
                     ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -191,10 +246,14 @@ class _LoginPageState extends State<LoginPage> {
       await _completeLogin(session);
     } catch (e) {
       final msg = e.toString();
-      final isConnection = msg.contains('Failed to fetch') || msg.contains('Connection refused') || msg.contains('SocketException');
-      setState(() => error = isConnection
-          ? 'Cannot reach API at ${widget.apiClient.baseUrl}. Backend running? Stop the app and run again (full restart). Or run: docker compose up -d'
-          : msg);
+      final isConnection = msg.contains('Failed to fetch') ||
+          msg.contains('Connection refused') ||
+          msg.contains('SocketException');
+      setState(
+        () => error = isConnection
+            ? 'Cannot reach API at ${widget.apiClient.baseUrl}. Backend running? Stop the app and run again (full restart). Or run: docker compose up -d'
+            : msg,
+      );
     } finally {
       if (mounted) setState(() => loading = false);
     }

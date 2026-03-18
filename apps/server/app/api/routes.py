@@ -32,6 +32,7 @@ from app.models import models as models_module  # noqa: F401 - register all tabl
 from app.models.models import (
     Artist,
     ArtistActivityLog,
+    ArtistRegistrationToken,
     ArtistMedia,
     AutomationTask,
     Campaign,
@@ -95,7 +96,12 @@ from app.schemas.schemas import (
     ArtistPortalInviteBulkError,
     ArtistPortalInviteBulkResponse,
     ArtistPortalInviteResponse,
+    ArtistRegistrationCompleteRequest,
+    ArtistRegistrationCompleteResponse,
+    ArtistRegistrationFormInfo,
     LoginActivityOut,
+    GrooverInviteRequest,
+    GrooverInviteResponse,
     ArtistSetPasswordRequest,
     AdminDashboardStatsOut,
     LoginStatsOut,
@@ -159,6 +165,11 @@ _GOOGLE_AUTH_SCOPES = [
 
 def _artist_portal_url() -> str:
     return (settings.artist_portal_base_url or "").strip() or "https://artists.zalmanim.com"
+
+
+def _artist_registration_link(raw_token: str) -> str:
+    portal_url = _artist_portal_url().rstrip("/")
+    return f"{portal_url}/#/artist-registration?token={raw_token}"
 
 
 def _create_pending_release_for_demo(db: Session, item: DemoSubmission) -> PendingRelease:
@@ -736,6 +747,68 @@ def _get_portal_invite_subject_and_body(
     return subject, body
 
 
+def _default_groover_invite_subject() -> str:
+    return "Thanks for reaching out on Groover"
+
+
+def _default_groover_invite_body(display_name: str, registration_url: str, portal_url: str) -> str:
+    return (
+        f"Hi {display_name},\n\n"
+        "I hope you are doing well. I am Simon from Zalmanim Music,\n"
+        "and I would like to introduce you to our work.\n\n"
+        "We are a music label and an internet magazine that works with electronic music, focusing on underground dance music such as Techno, Psytech, and sometimes some variants of house. "
+        "We are also releasing some Ambient and chill out to ease the mind.\n\n"
+        "We also work on a new label focused only on Psytech and Prog Trance named SiYu Music.\n\n"
+        "We also have an internet magazine at www.zalmanim.com and we promote music on our YouTube channel https://www.youtube.com/channel/UCa24JK3VKaYJwVlQCiSqzqg\n\n"
+        "I invite you to listen to our music and be impressed by it. You can\n"
+        "find out our label music at the following link:\n"
+        "https://soundcloud.com/zalmanim\n\n"
+        "We've been in contact over Groover.\n\n"
+        "To continue, please complete your artist registration form here:\n"
+        f"{registration_url}\n\n"
+        "Once you complete the form, you will be able to sign in to our artist portal:\n"
+        f"{portal_url}\n\n"
+        "So, if you are interested in releasing music with the label, please\n"
+        "send me some unreleased music.\n\n"
+        "If you are interested in sharing your music on our YouTube channel,\n"
+        "please send me some artwork and the music file.\n\n"
+        "If you're interested in an interview or short article, please send us a short bio and pictures or any written material, and we will see if it suits both of us.\n\n"
+        "Peace,\n"
+        "Best regards,\n"
+        "Simon Rosenfeld\n"
+        "Founder & A&R | Zalmanim & SiYu Rec\n"
+        "🌐 www.zalmanim.com\n\n"
+        "🎧 Join our SoundCloud promo group:\n"
+        "https://influenceplanner.com/invite/Anyone\n\n"
+        "💬 Join our WhatsApp artist community:\n"
+        "https://chat.whatsapp.com/Bc4EpRLdpIwEV7lAzYzdSy\n"
+    )
+
+
+def _get_groover_invite_subject_and_body(
+    display_name: str,
+    registration_url: str,
+    portal_url: str,
+) -> tuple[str, str]:
+    """Resolve Groover invite email from settings or defaults."""
+    mail = get_effective_mail_config_for_api()
+    subject = (mail.get("groover_invite_subject") or "").strip()
+    body = (mail.get("groover_invite_body") or "").strip()
+    replacements = {
+        "{display_name}": display_name,
+        "{registration_url}": registration_url,
+        "{portal_url}": portal_url,
+    }
+    if not subject:
+        subject = _default_groover_invite_subject()
+    if not body:
+        body = _default_groover_invite_body(display_name, registration_url, portal_url)
+    for token, value in replacements.items():
+        subject = subject.replace(token, value)
+        body = body.replace(token, value)
+    return subject, body
+
+
 def _default_update_profile_invite_subject() -> str:
     return "Update your artist page and see your releases"
 
@@ -1135,6 +1208,22 @@ def _get_valid_pending_release_token(db: Session, token: str) -> PendingReleaseT
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid or expired token")
     return row
 
+
+def _get_valid_artist_registration_token(db: Session, token: str) -> ArtistRegistrationToken:
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    row = (
+        db.query(ArtistRegistrationToken)
+        .filter(
+            ArtistRegistrationToken.token_hash == token_hash,
+            ArtistRegistrationToken.used_at.is_(None),
+            ArtistRegistrationToken.expires_at > datetime.now(timezone.utc),
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid or expired token")
+    return row
+
 @router.on_event("startup")
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
@@ -1166,6 +1255,8 @@ def init_db() -> None:
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_receipt_body TEXT"))
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS portal_invite_subject VARCHAR(255)"))
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS portal_invite_body TEXT"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS groover_invite_subject VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS groover_invite_body TEXT"))
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS email_footer TEXT"))
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS update_profile_invite_subject VARCHAR(255)"))
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS update_profile_invite_body TEXT"))
@@ -1184,6 +1275,9 @@ def init_db() -> None:
             conn.execute(text(
                 "ALTER TABLE pending_release_tokens ADD COLUMN IF NOT EXISTS pending_release_id INTEGER "
                 "REFERENCES pending_releases(id) ON DELETE CASCADE"
+            ))
+            conn.execute(text(
+                "ALTER TABLE label_inbox_messages ADD COLUMN IF NOT EXISTS admin_read_at TIMESTAMP WITH TIME ZONE"
             ))
             conn.execute(text(
                 "UPDATE mail_settings SET emails_per_hour = 10 WHERE id = 1 AND (emails_per_hour IS NULL OR emails_per_hour = 5)"
@@ -2467,6 +2561,122 @@ def admin_send_artist_portal_invite(
     )
 
 
+@router.post("/admin/artists/send-groover-invite", response_model=GrooverInviteResponse)
+def admin_send_groover_invite(
+    payload: GrooverInviteRequest,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> GrooverInviteResponse:
+    """Create or reuse an artist and send a Groover follow-up email with registration form link."""
+    require_admin(user)
+    email = (payload.email or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email is required")
+
+    artist = db.query(Artist).filter(func.lower(Artist.email) == email).first()
+    created_artist = False
+    base_name = (
+        (payload.artist_name or "").strip()
+        or (payload.full_name or "").strip()
+        or email.split("@")[0]
+    )
+    if not artist:
+        extra = {
+            "artist_brand": (payload.artist_name or "").strip() or base_name,
+            "full_name": (payload.full_name or "").strip(),
+            "source_row": "groover",
+        }
+        artist = Artist(
+            name=base_name[:120],
+            email=email,
+            notes=(payload.notes or "").strip(),
+            extra_json=json.dumps({k: v for k, v in extra.items() if v}),
+        )
+        db.add(artist)
+        db.flush()
+        created_artist = True
+    else:
+        extra = _artist_extra_from_model(artist)
+        changed = False
+        artist_brand = (payload.artist_name or "").strip()
+        full_name = (payload.full_name or "").strip()
+        if artist_brand and not str(extra.get("artist_brand") or "").strip():
+            extra["artist_brand"] = artist_brand
+            changed = True
+        if full_name and not str(extra.get("full_name") or "").strip():
+            extra["full_name"] = full_name
+            changed = True
+        if "source_row" not in extra:
+            extra["source_row"] = "groover"
+            changed = True
+        if changed:
+            artist.extra_json = json.dumps(extra)
+        if (payload.notes or "").strip():
+            notes_prefix = (artist.notes or "").strip()
+            groover_note = (payload.notes or "").strip()
+            if groover_note not in notes_prefix:
+                artist.notes = f"{notes_prefix}\n\n{groover_note}".strip()
+
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    expires_at = datetime.now(timezone.utc) + timedelta(days=14)
+    token_row = ArtistRegistrationToken(
+        artist_id=artist.id,
+        token_hash=token_hash,
+        email=email,
+        source="groover",
+        expires_at=expires_at,
+    )
+    db.add(token_row)
+
+    extra = _artist_extra_from_model(artist)
+    display_name = (
+        (payload.full_name or "").strip()
+        or str(extra.get("full_name") or "").strip()
+        or (payload.artist_name or "").strip()
+        or str(extra.get("artist_brand") or "").strip()
+        or (artist.name or "").strip()
+        or email
+    )
+    portal_url = _artist_portal_url()
+    registration_url = _artist_registration_link(raw_token)
+    subject, body_text = _get_groover_invite_subject_and_body(display_name, registration_url, portal_url)
+    body_html = "<p>" + html.escape(body_text).replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
+    for link in (registration_url, portal_url):
+        body_html = body_html.replace(
+            html.escape(link),
+            f'<a href="{html.escape(link)}">{html.escape(link)}</a>',
+        )
+
+    success, message = send_email_service(
+        to_email=email,
+        subject=subject,
+        body_text=body_text,
+        body_html=body_html,
+    )
+    if not success:
+        db.rollback()
+        if "limit" in message.lower():
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+
+    db.add(
+        ArtistActivityLog(
+            artist_id=artist.id,
+            activity_type="groover_invite_email",
+            details=f"Groover invite sent to {email}",
+        )
+    )
+    db.commit()
+    return GrooverInviteResponse(
+        message="Groover invite sent.",
+        artist_id=artist.id,
+        email=email,
+        registration_url=registration_url,
+        created_artist=created_artist,
+    )
+
+
 @router.post("/admin/artists/send-portal-invite-all", response_model=ArtistPortalInviteBulkResponse)
 def admin_send_portal_invite_all(
     db: Session = Depends(get_db),
@@ -3135,8 +3345,13 @@ def _label_inbox_message_out(m: LabelInboxMessage) -> LabelInboxMessageOut:
         sender=m.sender,
         body=m.body,
         created_at=m.created_at,
+        admin_read_at=m.admin_read_at,
         reply_email_sent_at=m.reply_email_sent_at,
     )
+
+
+def _label_inbox_unread_count(messages: list[LabelInboxMessage]) -> int:
+    return sum(1 for m in messages if m.sender == "artist" and m.admin_read_at is None)
 
 
 def _label_inbox_thread_out(
@@ -3146,6 +3361,7 @@ def _label_inbox_thread_out(
     last_message_at: datetime,
     message_count: int,
     has_label_reply: bool,
+    unread_count: int,
 ) -> LabelInboxThreadOut:
     return LabelInboxThreadOut(
         id=thread.id,
@@ -3158,11 +3374,13 @@ def _label_inbox_thread_out(
         updated_at=thread.updated_at,
         message_count=message_count,
         has_label_reply=has_label_reply,
+        unread_count=unread_count,
     )
 
 
 def _label_inbox_thread_detail_out(thread: LabelInboxThread, artist: Artist, messages: list[LabelInboxMessage]) -> LabelInboxThreadDetailOut:
     has_label_reply = any(m.sender == "label" for m in messages)
+    unread_count = _label_inbox_unread_count(messages)
     return LabelInboxThreadDetailOut(
         id=thread.id,
         artist_id=thread.artist_id,
@@ -3172,8 +3390,70 @@ def _label_inbox_thread_detail_out(thread: LabelInboxThread, artist: Artist, mes
         updated_at=thread.updated_at,
         message_count=len(messages),
         has_label_reply=has_label_reply,
+        unread_count=unread_count,
         messages=[_label_inbox_message_out(m) for m in messages],
     )
+
+
+def _get_or_create_latest_label_inbox_thread(db: Session, artist_id: int) -> LabelInboxThread:
+    thread = (
+        db.query(LabelInboxThread)
+        .filter(LabelInboxThread.artist_id == artist_id)
+        .order_by(desc(LabelInboxThread.updated_at), desc(LabelInboxThread.id))
+        .first()
+    )
+    if thread:
+        return thread
+    thread = LabelInboxThread(artist_id=artist_id)
+    db.add(thread)
+    db.flush()
+    return thread
+
+
+def _mark_admin_thread_as_read(
+    db: Session,
+    *,
+    thread: LabelInboxThread,
+    read_at: datetime | None = None,
+) -> bool:
+    timestamp = read_at or datetime.now(timezone.utc)
+    unread_messages = [
+        message
+        for message in (thread.messages or [])
+        if message.sender == "artist" and message.admin_read_at is None
+    ]
+    if not unread_messages:
+        return False
+    for message in unread_messages:
+        message.admin_read_at = timestamp
+    return True
+
+
+def _create_pending_release_inbox_message(
+    db: Session,
+    *,
+    pending_release: PendingRelease,
+    message_prefix: str,
+) -> None:
+    if pending_release.artist_id is None:
+        return
+    thread = _get_or_create_latest_label_inbox_thread(db, pending_release.artist_id)
+    release_title = (pending_release.release_title or "").strip() or "Untitled"
+    message_body = (
+        f"{message_prefix}\n\n"
+        f"Release: {release_title}\n"
+        f"Artist: {(pending_release.artist_name or '').strip() or 'Artist'}\n"
+        f"Email: {(pending_release.artist_email or '').strip().lower()}"
+    )
+    db.add(
+        LabelInboxMessage(
+            thread_id=thread.id,
+            sender="artist",
+            body=message_body,
+            admin_read_at=None,
+        )
+    )
+    thread.updated_at = datetime.now(timezone.utc)
 
 
 @router.post("/artist/me/inbox", response_model=LabelInboxThreadDetailOut)
@@ -3193,7 +3473,12 @@ def artist_send_inbox_message(
     thread = LabelInboxThread(artist_id=artist.id)
     db.add(thread)
     db.flush()
-    msg = LabelInboxMessage(thread_id=thread.id, sender="artist", body=body)
+    msg = LabelInboxMessage(
+        thread_id=thread.id,
+        sender="artist",
+        body=body,
+        admin_read_at=None,
+    )
     db.add(msg)
     db.commit()
     db.refresh(thread)
@@ -3237,6 +3522,7 @@ def artist_list_my_inbox(
                 last.created_at,
                 len(msgs),
                 has_label,
+                _label_inbox_unread_count(msgs),
             )
         )
     return out
@@ -3448,6 +3734,11 @@ def public_pending_release_submit(
     pr.release_title = (payload.release_title or "").strip() or "Untitled"
     pr.release_data_json = json.dumps(payload.release_data if isinstance(payload.release_data, dict) else {})
     pr.status = "pending"
+    _create_pending_release_inbox_message(
+        db,
+        pending_release=pr,
+        message_prefix="Pending Release form submitted by the artist.",
+    )
     db.commit()
     db.refresh(pr)
     return _serialize_pending_release(pr)
@@ -3541,6 +3832,7 @@ def admin_list_inbox(
                 last.created_at,
                 len(msgs),
                 has_label,
+                _label_inbox_unread_count(msgs),
             )
         )
     return out
@@ -3565,6 +3857,9 @@ def admin_get_inbox_thread(
     artist = thread.artist
     if not artist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    if _mark_admin_thread_as_read(db, thread=thread):
+        db.commit()
+        db.refresh(thread)
     messages = sorted(thread.messages or [], key=lambda m: m.created_at)
     return _label_inbox_thread_detail_out(thread, artist, messages)
 
@@ -3592,10 +3887,16 @@ def admin_reply_inbox_thread(
     body = (payload.body or "").strip()
     if not body:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reply body is required")
-    reply_msg = LabelInboxMessage(thread_id=thread.id, sender="label", body=body)
+    now = datetime.now(timezone.utc)
+    _mark_admin_thread_as_read(db, thread=thread, read_at=now)
+    reply_msg = LabelInboxMessage(
+        thread_id=thread.id,
+        sender="label",
+        body=body,
+        admin_read_at=now,
+    )
     db.add(reply_msg)
     db.flush()
-    now = datetime.now(timezone.utc)
     if is_email_configured():
         label_name = "Zalmanim"  # could come from settings later
         subject = f"Re: Your message to {label_name}"
@@ -3849,6 +4150,11 @@ def public_demo_confirm_submit(
             status="pending",
         )
         db.add(pr)
+    _create_pending_release_inbox_message(
+        db,
+        pending_release=pr,
+        message_prefix="Pending Release details were completed from the demo approval form.",
+    )
     item.status = "pending_release"
     db.commit()
     db.refresh(pr)
@@ -3867,6 +4173,79 @@ def public_demo_confirm_submit(
         status=pr.status,
         created_at=pr.created_at,
         updated_at=pr.updated_at,
+    )
+
+
+@router.get("/public/artist-registration", response_model=ArtistRegistrationFormInfo)
+def public_artist_registration_info(
+    token: str = Query(..., description="One-time token from Groover invite email"),
+    db: Session = Depends(get_db),
+) -> ArtistRegistrationFormInfo:
+    """Validate registration token and return prefilled artist info."""
+    row = _get_valid_artist_registration_token(db, token)
+    artist = db.query(Artist).filter(Artist.id == row.artist_id).first()
+    if not artist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    extra = _artist_extra_from_model(artist)
+    return ArtistRegistrationFormInfo(
+        artist_id=artist.id,
+        email=row.email,
+        artist_name=str(extra.get("artist_brand") or artist.name or "").strip(),
+        full_name=str(extra.get("full_name") or "").strip(),
+        notes=(artist.notes or "").strip(),
+        expires_at=row.expires_at,
+    )
+
+
+@router.post("/public/artist-registration", response_model=ArtistRegistrationCompleteResponse)
+def public_artist_registration_submit(
+    payload: ArtistRegistrationCompleteRequest,
+    db: Session = Depends(get_db),
+) -> ArtistRegistrationCompleteResponse:
+    """Complete artist registration from email invite and enable portal sign-in."""
+    row = _get_valid_artist_registration_token(db, payload.token)
+    artist = db.query(Artist).filter(Artist.id == row.artist_id).first()
+    if not artist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    if not payload.artist_name.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Artist name is required")
+    if not payload.password or len(payload.password) < 6:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 6 characters")
+
+    artist.name = payload.artist_name.strip()[:120]
+    artist.notes = (payload.notes or "").strip()
+    current = _artist_extra_from_model(artist)
+    current.update(
+        {
+            "artist_brand": payload.artist_name.strip(),
+            "full_name": (payload.full_name or "").strip(),
+            "website": (payload.website or "").strip(),
+            "soundcloud": (payload.soundcloud or "").strip(),
+            "instagram": (payload.instagram or "").strip(),
+            "spotify": (payload.spotify or "").strip(),
+            "apple_music": (payload.apple_music or "").strip(),
+            "youtube": (payload.youtube or "").strip(),
+            "tiktok": (payload.tiktok or "").strip(),
+            "facebook": (payload.facebook or "").strip(),
+            "linktree": (payload.linktree or "").strip(),
+            "source_row": current.get("source_row") or "groover",
+        }
+    )
+    artist.extra_json = json.dumps({k: v for k, v in current.items() if v not in (None, "")})
+    artist.password_hash = hash_password(payload.password)
+    artist.last_profile_updated_at = datetime.now(timezone.utc)
+    row.used_at = datetime.now(timezone.utc)
+    db.add(
+        ArtistActivityLog(
+            artist_id=artist.id,
+            activity_type="groover_registration_completed",
+            details=f"Registration completed for {artist.email}",
+        )
+    )
+    db.commit()
+    return ArtistRegistrationCompleteResponse(
+        message="Registration completed. You can now sign in to the artist portal.",
+        portal_url=_artist_portal_url(),
     )
 
 
@@ -4100,6 +4479,8 @@ def get_system_settings(
         demo_receipt_body=mail.get("demo_receipt_body", "") or "",
         portal_invite_subject=mail.get("portal_invite_subject", "") or "",
         portal_invite_body=mail.get("portal_invite_body", "") or "",
+        groover_invite_subject=mail.get("groover_invite_subject", "") or "",
+        groover_invite_body=mail.get("groover_invite_body", "") or "",
         update_profile_invite_subject=mail.get("update_profile_invite_subject", "") or "",
         update_profile_invite_body=mail.get("update_profile_invite_body", "") or "",
         password_reset_subject=mail.get("password_reset_subject", "") or "",
@@ -4141,6 +4522,8 @@ def update_system_settings_mail(
         demo_receipt_body=payload.demo_receipt_body,
         portal_invite_subject=payload.portal_invite_subject,
         portal_invite_body=payload.portal_invite_body,
+        groover_invite_subject=payload.groover_invite_subject,
+        groover_invite_body=payload.groover_invite_body,
         update_profile_invite_subject=payload.update_profile_invite_subject,
         update_profile_invite_body=payload.update_profile_invite_body,
         password_reset_subject=payload.password_reset_subject,
@@ -4166,6 +4549,8 @@ def update_system_settings_mail(
         demo_receipt_body=mail.get("demo_receipt_body", "") or "",
         portal_invite_subject=mail.get("portal_invite_subject", "") or "",
         portal_invite_body=mail.get("portal_invite_body", "") or "",
+        groover_invite_subject=mail.get("groover_invite_subject", "") or "",
+        groover_invite_body=mail.get("groover_invite_body", "") or "",
         update_profile_invite_subject=mail.get("update_profile_invite_subject", "") or "",
         update_profile_invite_body=mail.get("update_profile_invite_body", "") or "",
         password_reset_subject=mail.get("password_reset_subject", "") or "",

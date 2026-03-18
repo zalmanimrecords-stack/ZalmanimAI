@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/api_client.dart';
+import '../../core/app_config.dart';
 import '../../core/demo_genre_options.dart';
 import '../legal/privacy_policy_page.dart';
 import '../legal/terms_of_use_page.dart';
@@ -77,7 +78,8 @@ class _LandingPageState extends State<LandingPage> {
       if (!mounted) return;
       setState(() {
         _success = true;
-        _feedback = 'Your demo was received successfully. We sent a confirmation email with a summary of your submission.';
+        _feedback =
+            'Your demo was received successfully. We sent a confirmation email with a summary of your submission.';
         _submitting = false;
         _consentToEmails = false;
         _selectedGenre = null;
@@ -105,338 +107,469 @@ class _LandingPageState extends State<LandingPage> {
     final theme = Theme.of(context);
     final primary = theme.colorScheme.primary;
     final surface = const Color(0xFFF4EFE8);
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width < 760;
+    final shellPadding = compact ? 16.0 : 24.0;
+
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFFF8F4EE), Color(0xFFE9DFD3)],
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFF8F4EE), Color(0xFFE9DFD3)],
+            ),
           ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-                child: Row(
-                  children: [
-                    Image.asset(
-                      'assets/images/zalmanim_logo.png',
-                      height: 40,
-                      fit: BoxFit.contain,
-                    ),
-                    const Spacer(),
-                    TextButton(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const TermsOfUsePage(),
-                        ),
-                      ),
-                      child: const Text('Terms of Use'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const PrivacyPolicyPage(),
-                        ),
-                      ),
-                      child: const Text('Privacy Policy'),
-                    ),
-                    TextButton(
-                      onPressed: widget.onSignIn,
-                      child: const Text('Sign In'),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 1120),
-                      child: Wrap(
-                        spacing: 28,
-                        runSpacing: 28,
-                        crossAxisAlignment: WrapCrossAlignment.start,
-                        children: [
-                          SizedBox(
-                            width: 420,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+          child: SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: shellPadding,
+                    vertical: compact ? 16 : 18,
+                  ),
+                  child: compact
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Image.asset(
+                              'assets/images/zalmanim_logo.png',
+                              height: 36,
+                              fit: BoxFit.contain,
+                            ),
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: primary.withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                  child: Text(
-                                    'Demo intake for artists.zalmanim.com',
-                                    style: theme.textTheme.labelLarge?.copyWith(
-                                      color: primary,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
+                                _headerTextButton(
+                                  context,
+                                  label: 'Terms of Use',
+                                  builder: (_) => const TermsOfUsePage(),
                                 ),
-                                const SizedBox(height: 18),
-                                Text(
-                                  'Send your demo link directly to the Zalmanim LM system.',
-                                  style: theme.textTheme.displaySmall?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    color: const Color(0xFF1F1712),
-                                    height: 1.05,
-                                  ),
+                                _headerTextButton(
+                                  context,
+                                  label: 'Privacy Policy',
+                                  builder: (_) => const PrivacyPolicyPage(),
                                 ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'Use this page to submit a demo link. File uploads are available only for registered artists after Sign In.',
-                                  style: theme.textTheme.titleMedium?.copyWith(
-                                    color: const Color(0xFF5C4D40),
-                                    height: 1.5,
-                                  ),
-                                ),
-                                const SizedBox(height: 24),
-                                _FeatureCard(
-                                  title: 'What happens next',
-                                  body: 'Your form enters the LM system with status demo. We also email you a submission summary, then the team reviews it and takes it into treatment.',
-                                ),
-                                const SizedBox(height: 14),
-                                _FeatureCard(
-                                  title: 'File uploads for registered artists',
-                                  body: 'Public demo uploads now accept links only. To upload demo files directly, sign in with a registered artist account.',
-                                ),
-                                const SizedBox(height: 14),
-                                _FeatureCard(
-                                  title: 'Mailing consent',
-                                  body: 'Submitting a demo requires consent to join the Zalmanim mailing list and receive operational and marketing emails related to your submission and future updates.',
+                                FilledButton.tonal(
+                                  onPressed: widget.onSignIn,
+                                  child: const Text('Sign In'),
                                 ),
                               ],
                             ),
-                          ),
-                          Container(
-                            width: 620,
-                            padding: const EdgeInsets.all(24),
-                            decoration: BoxDecoration(
-                              color: surface,
-                              borderRadius: BorderRadius.circular(28),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Color(0x14000000),
-                                  blurRadius: 28,
-                                  offset: Offset(0, 18),
-                                ),
-                              ],
+                          ],
+                        )
+                      : Row(
+                          children: [
+                            Image.asset(
+                              'assets/images/zalmanim_logo.png',
+                              height: 40,
+                              fit: BoxFit.contain,
                             ),
-                            child: Form(
-                              key: _formKey,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                            const Spacer(),
+                            _headerTextButton(
+                              context,
+                              label: 'Terms of Use',
+                              builder: (_) => const TermsOfUsePage(),
+                            ),
+                            _headerTextButton(
+                              context,
+                              label: 'Privacy Policy',
+                              builder: (_) => const PrivacyPolicyPage(),
+                            ),
+                            TextButton(
+                              onPressed: widget.onSignIn,
+                              child: const Text('Sign In'),
+                            ),
+                          ],
+                        ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(
+                      shellPadding,
+                      12,
+                      shellPadding,
+                      compact ? 24 : 32,
+                    ),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1120),
+                        child: compact
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  Text(
-                                    'Demo submission form',
-                                    style: theme.textTheme.headlineSmall?.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                      color: const Color(0xFF231A14),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    'Fill in the details below and we will route your demo link into the system.',
-                                    style: theme.textTheme.bodyLarge?.copyWith(color: const Color(0xFF6B5D52)),
-                                  ),
-                                  if (_feedback != null) ...[
-                                    const SizedBox(height: 18),
-                                    Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.all(14),
-                                      decoration: BoxDecoration(
-                                        color: _success ? const Color(0xFFE7F6EA) : const Color(0xFFFBE9E8),
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
-                                      child: Row(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Expanded(
-                                            child: SelectableText(_feedback!),
-                                          ),
-                                          if (!_success)
-                                            IconButton(
-                                              icon: const Icon(Icons.copy, size: 20),
-                                              onPressed: () => Clipboard.setData(
-                                                ClipboardData(text: _feedback!),
-                                              ),
-                                              tooltip: 'Copy error',
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                  const SizedBox(height: 22),
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(18),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFFFFBF6),
-                                      borderRadius: BorderRadius.circular(18),
-                                      border: Border.all(color: const Color(0xFFD9CCBF)),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'Submission terms',
-                                          style: theme.textTheme.titleMedium?.copyWith(
-                                            fontWeight: FontWeight.w800,
-                                            color: const Color(0xFF231A14),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          'By sending this demo, you agree to join the Zalmanim mailing list for marketing and operational emails related to your submission and future updates.',
-                                          style: theme.textTheme.bodyMedium?.copyWith(
-                                            color: const Color(0xFF6B5D52),
-                                            height: 1.5,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 14),
-                                        FormField<bool>(
-                                          initialValue: _consentToEmails,
-                                          validator: (value) {
-                                            if (value == true) return null;
-                                            return 'You must approve email consent before sending a demo.';
-                                          },
-                                          builder: (field) {
-                                            return Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Container(
-                                                  width: double.infinity,
-                                                  padding: const EdgeInsets.all(16),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.white,
-                                                    borderRadius: BorderRadius.circular(16),
-                                                    border: Border.all(
-                                                      color: field.hasError
-                                                          ? const Color(0xFFB84C42)
-                                                          : const Color(0xFFD9CCBF),
-                                                    ),
-                                                  ),
-                                                  child: CheckboxListTile(
-                                                    contentPadding: EdgeInsets.zero,
-                                                    value: _consentToEmails,
-                                                    controlAffinity: ListTileControlAffinity.leading,
-                                                    title: const Text(
-                                                      'I approve the use of my email for marketing and operational communication.',
-                                                    ),
-                                                    subtitle: const Text(
-                                                      'This includes confirmation emails, status updates, and future label communication.',
-                                                    ),
-                                                    onChanged: (value) {
-                                                      setState(() {
-                                                        _consentToEmails = value ?? false;
-                                                      });
-                                                      field.didChange(value ?? false);
-                                                    },
-                                                  ),
-                                                ),
-                                                if (field.hasError) ...[
-                                                  const SizedBox(height: 8),
-                                                  Text(
-                                                    field.errorText!,
-                                                    style: theme.textTheme.bodySmall?.copyWith(
-                                                      color: const Color(0xFFB84C42),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ],
-                                            );
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 22),
-                                  Wrap(
-                                    spacing: 16,
-                                    runSpacing: 16,
-                                    children: [
-                                      _field(_artistNameController, 'Artist name', width: 280, required: true),
-                                      _field(_contactNameController, 'Contact name', width: 280),
-                                      _field(_emailController, 'Email', width: 280, required: true, email: true),
-                                      _field(_phoneController, 'Phone', width: 280),
-                                      _genreField(width: 280),
-                                      _field(_cityController, 'City', width: 280),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 16),
-                                  _field(
-                                    _messageController,
-                                    'Message',
-                                    width: 576,
-                                    maxLines: 5,
-                                  ),
-                                  const SizedBox(height: 18),
-                                  Text(
-                                    'Demo track link',
-                                    style: theme.textTheme.titleSmall?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                      color: const Color(0xFF231A14),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  _field(
-                                    _soundCloudLinkController,
-                                    'SoundCloud or private track link',
-                                    width: 576,
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(14),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFFFFBF6),
-                                      borderRadius: BorderRadius.circular(14),
-                                      border: Border.all(color: const Color(0xFFD9CCBF)),
-                                    ),
-                                    child: Text(
-                                      'MP3 uploads are available only for registered artists inside the portal after Sign In.',
-                                      style: theme.textTheme.bodyMedium?.copyWith(
-                                        color: const Color(0xFF6B5D52),
-                                        height: 1.5,
-                                      ),
-                                    ),
-                                  ),
+                                  _buildInfoPanel(context, primary),
                                   const SizedBox(height: 24),
-                                  FilledButton(
-                                    onPressed: _submitting ? null : _submit,
-                                    style: FilledButton.styleFrom(
-                                      backgroundColor: const Color(0xFF1E1A17),
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                    ),
-                                    child: _submitting
-                                        ? const SizedBox(
-                                            width: 22,
-                                            height: 22,
-                                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                          )
-                                        : const Text('Send Demo'),
+                                  _buildFormCard(context, theme, surface, true),
+                                ],
+                              )
+                            : Wrap(
+                                spacing: 28,
+                                runSpacing: 28,
+                                crossAxisAlignment:
+                                    WrapCrossAlignment.start,
+                                children: [
+                                  SizedBox(
+                                    width: 420,
+                                    child: _buildInfoPanel(context, primary),
+                                  ),
+                                  SizedBox(
+                                    width: 620,
+                                    child:
+                                        _buildFormCard(context, theme, surface, false),
                                   ),
                                 ],
                               ),
-                            ),
-                          ),
-                        ],
                       ),
                     ),
                   ),
                 ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _headerTextButton(
+    BuildContext context, {
+    required String label,
+    required WidgetBuilder builder,
+  }) {
+    return TextButton(
+      onPressed: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: builder),
+      ),
+      child: Text(label),
+    );
+  }
+
+  Widget _buildInfoPanel(BuildContext context, Color primary) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: primary.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            'Demo intake for ${AppConfig.labelName}',
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: primary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(height: 18),
+        Text(
+          'Send your demo link directly to the Zalmanim LM system.',
+          style: theme.textTheme.displaySmall?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFF1F1712),
+            height: 1.05,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Use this page to submit a demo link. File uploads are available only for registered artists after Sign In.',
+          style: theme.textTheme.titleMedium?.copyWith(
+            color: const Color(0xFF5C4D40),
+            height: 1.5,
+          ),
+        ),
+        const SizedBox(height: 24),
+        const _FeatureCard(
+          title: 'What happens next',
+          body:
+              'Your form enters the LM system with status demo. We also email you a submission summary, then the team reviews it and takes it into treatment.',
+        ),
+        const SizedBox(height: 14),
+        const _FeatureCard(
+          title: 'File uploads for registered artists',
+          body:
+              'Public demo uploads now accept links only. To upload demo files directly, sign in with a registered artist account.',
+        ),
+        const SizedBox(height: 14),
+        const _FeatureCard(
+          title: 'Mailing consent',
+          body:
+              'Submitting a demo requires consent to join the Zalmanim mailing list and receive operational and marketing emails related to your submission and future updates.',
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFormCard(
+    BuildContext context,
+    ThemeData theme,
+    Color surface,
+    bool compact,
+  ) {
+    final shortWidth = compact ? null : 280.0;
+    final longWidth = compact ? null : 576.0;
+
+    return Container(
+      padding: EdgeInsets.all(compact ? 18 : 24),
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: BorderRadius.circular(compact ? 22 : 28),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 28,
+            offset: Offset(0, 18),
+          ),
+        ],
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Demo submission form',
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFF231A14),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Fill in the details below and we will route your demo link into the system.',
+              style: theme.textTheme.bodyLarge
+                  ?.copyWith(color: const Color(0xFF6B5D52)),
+            ),
+            if (_feedback != null) ...[
+              const SizedBox(height: 18),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: _success
+                      ? const Color(0xFFE7F6EA)
+                      : const Color(0xFFFBE9E8),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: SelectableText(_feedback!)),
+                    if (!_success)
+                      IconButton(
+                        icon: const Icon(Icons.copy, size: 20),
+                        onPressed: () => Clipboard.setData(
+                          ClipboardData(text: _feedback!),
+                        ),
+                        tooltip: 'Copy error',
+                      ),
+                  ],
+                ),
               ),
             ],
-          ),
+            const SizedBox(height: 22),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBF6),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: const Color(0xFFD9CCBF)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Submission terms',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF231A14),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'By sending this demo, you agree to join the Zalmanim mailing list for marketing and operational emails related to your submission and future updates.',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: const Color(0xFF6B5D52),
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  FormField<bool>(
+                    initialValue: _consentToEmails,
+                    validator: (value) {
+                      if (value == true) return null;
+                      return 'You must approve email consent before sending a demo.';
+                    },
+                    builder: (field) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: field.hasError
+                                    ? const Color(0xFFB84C42)
+                                    : const Color(0xFFD9CCBF),
+                              ),
+                            ),
+                            child: CheckboxListTile(
+                              contentPadding: EdgeInsets.zero,
+                              value: _consentToEmails,
+                              controlAffinity:
+                                  ListTileControlAffinity.leading,
+                              title: const Text(
+                                'I approve the use of my email for marketing and operational communication.',
+                              ),
+                              subtitle: const Text(
+                                'This includes confirmation emails, status updates, and future label communication.',
+                              ),
+                              onChanged: (value) {
+                                final next = value ?? false;
+                                setState(() => _consentToEmails = next);
+                                field.didChange(next);
+                              },
+                            ),
+                          ),
+                          if (field.hasError) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              field.errorText!,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: const Color(0xFFB84C42),
+                              ),
+                            ),
+                          ],
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 22),
+            if (compact) ...[
+              _field(_artistNameController, 'Artist name', required: true),
+              const SizedBox(height: 16),
+              _field(_contactNameController, 'Contact name'),
+              const SizedBox(height: 16),
+              _field(
+                _emailController,
+                'Email',
+                required: true,
+                email: true,
+              ),
+              const SizedBox(height: 16),
+              _field(_phoneController, 'Phone'),
+              const SizedBox(height: 16),
+              _genreField(),
+              const SizedBox(height: 16),
+              _field(_cityController, 'City'),
+            ] else
+              Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                children: [
+                  _field(
+                    _artistNameController,
+                    'Artist name',
+                    width: shortWidth,
+                    required: true,
+                  ),
+                  _field(
+                    _contactNameController,
+                    'Contact name',
+                    width: shortWidth,
+                  ),
+                  _field(
+                    _emailController,
+                    'Email',
+                    width: shortWidth,
+                    required: true,
+                    email: true,
+                  ),
+                  _field(_phoneController, 'Phone', width: shortWidth),
+                  _genreField(width: shortWidth),
+                  _field(_cityController, 'City', width: shortWidth),
+                ],
+              ),
+            const SizedBox(height: 16),
+            _field(
+              _messageController,
+              'Message',
+              width: longWidth,
+              maxLines: 5,
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'Demo track link',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF231A14),
+              ),
+            ),
+            const SizedBox(height: 8),
+            _field(
+              _soundCloudLinkController,
+              'SoundCloud or private track link',
+              width: longWidth,
+            ),
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBF6),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFD9CCBF)),
+              ),
+              child: Text(
+                'MP3 uploads are available only for registered artists inside the portal after Sign In.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: const Color(0xFF6B5D52),
+                  height: 1.5,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: compact ? double.infinity : null,
+              child: FilledButton(
+                onPressed: _submitting ? null : _submit,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E1A17),
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: _submitting
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text('Send Demo'),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -445,83 +578,87 @@ class _LandingPageState extends State<LandingPage> {
   Widget _field(
     TextEditingController controller,
     String label, {
-    required double width,
+    double? width,
     bool required = false,
     bool email = false,
     int maxLines = 1,
   }) {
-    return SizedBox(
-      width: width,
-      child: TextFormField(
-        controller: controller,
-        maxLines: maxLines,
-        keyboardType: email ? TextInputType.emailAddress : TextInputType.text,
-        validator: (value) {
-          final text = (value ?? '').trim();
-          if (required && text.isEmpty) {
-            return 'Required';
-          }
-          if (email && text.isNotEmpty && !text.contains('@')) {
-            return 'Enter a valid email';
-          }
-          return null;
-        },
-        decoration: InputDecoration(
-          labelText: label,
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Color(0xFFD9CCBF)),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Color(0xFFD9CCBF)),
-          ),
+    final field = TextFormField(
+      controller: controller,
+      maxLines: maxLines,
+      keyboardType: email ? TextInputType.emailAddress : TextInputType.text,
+      validator: (value) {
+        final text = (value ?? '').trim();
+        if (required && text.isEmpty) {
+          return 'Required';
+        }
+        if (email && text.isNotEmpty && !text.contains('@')) {
+          return 'Enter a valid email';
+        }
+        return null;
+      },
+      decoration: InputDecoration(
+        labelText: label,
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFD9CCBF)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFD9CCBF)),
         ),
       ),
     );
+    if (width == null) {
+      return field;
+    }
+    return SizedBox(width: width, child: field);
   }
 
-  Widget _genreField({required double width}) {
-    return SizedBox(
-      width: width,
-      child: DropdownButtonFormField<String>(
-        initialValue: _selectedGenre,
-        decoration: InputDecoration(
-          labelText: 'Musical style',
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Color(0xFFD9CCBF)),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Color(0xFFD9CCBF)),
-          ),
+  Widget _genreField({double? width}) {
+    final field = DropdownButtonFormField<String>(
+      initialValue: _selectedGenre,
+      decoration: InputDecoration(
+        labelText: 'Musical style',
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFD9CCBF)),
         ),
-        items: [
-          for (final group in demoGenreGroups)
-            ...[
-              DropdownMenuItem<String>(
-                enabled: false,
-                value: '__$group',
-                child: Text(
-                  group,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-              for (final option in demoGenreOptions.where((item) => item.group == group))
-                DropdownMenuItem<String>(
-                  value: option.value,
-                  child: Text(option.value),
-                ),
-            ],
-        ],
-        onChanged: (value) => setState(() => _selectedGenre = value),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFD9CCBF)),
+        ),
       ),
+      items: [
+        for (final group in demoGenreGroups)
+          ...[
+            DropdownMenuItem<String>(
+              enabled: false,
+              value: '__$group',
+              child: Text(
+                group,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            for (final option in demoGenreOptions.where(
+              (item) => item.group == group,
+            ))
+              DropdownMenuItem<String>(
+                value: option.value,
+                child: Text(option.value),
+              ),
+          ],
+      ],
+      onChanged: (value) => setState(() => _selectedGenre = value),
     );
+    if (width == null) {
+      return field;
+    }
+    return SizedBox(width: width, child: field);
   }
 }
 
@@ -547,12 +684,18 @@ class _FeatureCard extends StatelessWidget {
         children: [
           Text(
             title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
           Text(
             body,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.5, color: const Color(0xFF5F564F)),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  height: 1.5,
+                  color: const Color(0xFF5F564F),
+                ),
           ),
         ],
       ),

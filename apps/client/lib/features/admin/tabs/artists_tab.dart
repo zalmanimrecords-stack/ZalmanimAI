@@ -124,7 +124,8 @@ class _ArtistsTabState extends State<ArtistsTab> {
               child: Column(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(sideMargin, 12, sideMargin, 8),
+                    padding: const EdgeInsets.fromLTRB(
+                        sideMargin, 12, sideMargin, 8),
                     child: TextField(
                       controller: delegate.artistSearchController,
                       decoration: InputDecoration(
@@ -134,18 +135,21 @@ class _ArtistsTabState extends State<ArtistsTab> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
                       ),
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(sideMargin, 8, sideMargin, 12),
+                    padding: const EdgeInsets.fromLTRB(
+                        sideMargin, 8, sideMargin, 12),
                     child: Row(
                       children: [
                         Expanded(
                           child: Text(
                             'Artists',
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.bold),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -157,9 +161,17 @@ class _ArtistsTabState extends State<ArtistsTab> {
                         ),
                         const SizedBox(width: 8),
                         FilledButton.icon(
-                          onPressed: delegate.artistsList.isEmpty ? null : delegate.showMergeArtistsDialog,
+                          onPressed: delegate.artistsList.isEmpty
+                              ? null
+                              : delegate.showMergeArtistsDialog,
                           icon: const Icon(ZalmanimIcons.merge),
                           label: const Text('Merge artists'),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton.icon(
+                          onPressed: delegate.showGrooverInviteDialog,
+                          icon: const Icon(ZalmanimIcons.email),
+                          label: const Text('Groover invite'),
                         ),
                         const SizedBox(width: 8),
                         FilledButton.icon(
@@ -172,7 +184,8 @@ class _ArtistsTabState extends State<ArtistsTab> {
                   ),
                   Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: sideMargin),
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: sideMargin),
                       child: Scrollbar(
                         controller: _horizontalController,
                         thumbVisibility: true,
@@ -185,15 +198,23 @@ class _ArtistsTabState extends State<ArtistsTab> {
                               children: [
                                 Container(
                                   height: _headerHeight,
-                                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .surfaceContainerHighest,
                                   child: Row(
                                     children: [
-                                      _headerCell(context, 'Brand', 0, brandWidth),
-                                      _headerCell(context, 'Full name', 1, nameWidth),
-                                      _headerCell(context, 'Email', 2, emailWidth),
-                                      _headerCell(context, 'Last Release', 3, releaseWidth),
-                                      _headerCell(context, 'Profile updated', 4, profileUpdatedWidth),
-                                      _headerCell(context, 'Last email sent', 5, lastEmailWidth),
+                                      _headerCell(
+                                          context, 'Brand', 0, brandWidth),
+                                      _headerCell(
+                                          context, 'Full name', 1, nameWidth),
+                                      _headerCell(
+                                          context, 'Email', 2, emailWidth),
+                                      _headerCell(context, 'Last Release', 3,
+                                          releaseWidth),
+                                      _headerCell(context, 'Profile updated', 4,
+                                          profileUpdatedWidth),
+                                      _headerCell(context, 'Last email sent', 5,
+                                          lastEmailWidth),
                                       SizedBox(width: actionsWidth),
                                     ],
                                   ),
@@ -201,16 +222,20 @@ class _ArtistsTabState extends State<ArtistsTab> {
                                 Expanded(
                                   child: ListView.builder(
                                     controller: _verticalController,
-                                    physics: const AlwaysScrollableScrollPhysics(),
+                                    physics:
+                                        const AlwaysScrollableScrollPhysics(),
                                     itemCount: sorted.length + 1,
                                     itemBuilder: (context, index) {
                                       if (index == sorted.length) {
                                         return Padding(
-                                          padding: const EdgeInsets.symmetric(vertical: 12),
+                                          padding: const EdgeInsets.symmetric(
+                                              vertical: 12),
                                           child: _buildFooter(context),
                                         );
                                       }
-                                      final artist = Artist.fromJson(sorted[index] as Map<String, dynamic>);
+                                      final artist = Artist.fromJson(
+                                          sorted[index]
+                                              as Map<String, dynamic>);
                                       final bgColor = artist.isActive
                                           ? null
                                           : Theme.of(context)
@@ -223,30 +248,47 @@ class _ArtistsTabState extends State<ArtistsTab> {
                                         child: Row(
                                           children: [
                                             _brandCell(artist, brandWidth),
-                                            _textCell(artist.fullName.isEmpty ? '-' : artist.fullName, nameWidth),
+                                            _textCell(
+                                                artist.fullName.isEmpty
+                                                    ? '-'
+                                                    : artist.fullName,
+                                                nameWidth),
                                             _textCell(artist.email, emailWidth),
-                                            _textCell(artist.lastReleaseDisplay, releaseWidth),
-                                            _textCell(artist.lastProfileUpdatedDisplay, profileUpdatedWidth),
-                                            _textCell(artist.lastEmailSentDisplay, lastEmailWidth),
+                                            _textCell(artist.lastReleaseDisplay,
+                                                releaseWidth),
+                                            _textCell(
+                                                artist
+                                                    .lastProfileUpdatedDisplay,
+                                                profileUpdatedWidth),
+                                            _textCell(
+                                                artist.lastEmailSentDisplay,
+                                                lastEmailWidth),
                                             SizedBox(
                                               width: actionsWidth,
                                               child: SingleChildScrollView(
-                                                scrollDirection: Axis.horizontal,
+                                                scrollDirection:
+                                                    Axis.horizontal,
                                                 child: Row(
-                                                  mainAxisAlignment: MainAxisAlignment.end,
-                                                  mainAxisSize: MainAxisSize.min,
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.end,
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
                                                   children: [
                                                     _actionButton(
                                                       icon: ZalmanimIcons.info,
                                                       color: Colors.grey,
                                                       tooltip: 'Details & logs',
-                                                      onPressed: () => delegate.showArtistDetailsDialog(artist.id),
+                                                      onPressed: () => delegate
+                                                          .showArtistDetailsDialog(
+                                                              artist.id),
                                                     ),
                                                     _actionButton(
-                                                      icon: ZalmanimIcons.releases,
+                                                      icon: ZalmanimIcons
+                                                          .releases,
                                                       color: Colors.blue,
                                                       tooltip: 'View releases',
-                                                      onPressed: () => delegate.showArtistReleases(
+                                                      onPressed: () => delegate
+                                                          .showArtistReleases(
                                                         artist.id,
                                                         artist.displayName,
                                                       ),
@@ -255,23 +297,30 @@ class _ArtistsTabState extends State<ArtistsTab> {
                                                       icon: ZalmanimIcons.edit,
                                                       color: Colors.orange,
                                                       tooltip: 'Edit',
-                                                      onPressed: () => delegate.showEditArtistDialog(artist.id),
+                                                      onPressed: () => delegate
+                                                          .showEditArtistDialog(
+                                                              artist.id),
                                                     ),
                                                     _actionButton(
-                                                      icon: ZalmanimIcons.campaignRequests,
+                                                      icon: ZalmanimIcons
+                                                          .campaignRequests,
                                                       color: Colors.indigo,
-                                                      tooltip: 'Send portal access email',
-                                                      onPressed: () => delegate.sendArtistPortalInvite(
+                                                      tooltip:
+                                                          'Send portal access email',
+                                                      onPressed: () => delegate
+                                                          .sendArtistPortalInvite(
                                                         artist.id,
                                                         artist.displayName,
                                                         artist.email,
                                                       ),
                                                     ),
                                                     _actionButton(
-                                                      icon: ZalmanimIcons.delete,
+                                                      icon:
+                                                          ZalmanimIcons.delete,
                                                       color: Colors.red,
                                                       tooltip: 'Remove',
-                                                      onPressed: () => delegate.removeArtist(
+                                                      onPressed: () =>
+                                                          delegate.removeArtist(
                                                         artist.id,
                                                         artist.displayName,
                                                       ),
@@ -318,7 +367,8 @@ class _ArtistsTabState extends State<ArtistsTab> {
     return const SizedBox.shrink();
   }
 
-  Widget _headerCell(BuildContext context, String label, int columnIndex, double width) {
+  Widget _headerCell(
+      BuildContext context, String label, int columnIndex, double width) {
     final isActive = delegate.artistsSortColumn == columnIndex;
     return InkWell(
       onTap: () => delegate.setArtistsSort(
@@ -332,11 +382,14 @@ class _ArtistsTabState extends State<ArtistsTab> {
           child: Row(
             children: [
               Flexible(
-                child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+                child: Text(label,
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
               ),
               if (isActive)
                 Icon(
-                  delegate.artistsSortAsc ? ZalmanimIcons.arrowDropUp : ZalmanimIcons.arrowDropDown,
+                  delegate.artistsSortAsc
+                      ? ZalmanimIcons.arrowDropUp
+                      : ZalmanimIcons.arrowDropDown,
                   size: 20,
                 ),
             ],

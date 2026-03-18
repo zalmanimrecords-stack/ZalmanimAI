@@ -97,6 +97,23 @@ const List<_EmailTemplateConfig> _templateConfigs = [
     },
   ),
   _EmailTemplateConfig(
+    id: 'groover_invite',
+    title: 'Groover invite',
+    description:
+        'Sent after a contact from Groover. Placeholders: {display_name}, {registration_url}, {portal_url}.',
+    subjectKey: 'groover_invite_subject',
+    bodyKey: 'groover_invite_body',
+    subjectHint: 'Thanks for reaching out on Groover',
+    bodyHint:
+        'Hi {display_name},\n\nThanks for reaching out on Groover...\n\nPlease complete your registration here:\n{registration_url}',
+    previewValues: {
+      'display_name': 'Maya Cohen',
+      'registration_url':
+          'https://artists.zalmanim.com/#/artist-registration?token=abc123',
+      'portal_url': 'https://artists.zalmanim.com',
+    },
+  ),
+  _EmailTemplateConfig(
     id: 'update_profile_invite',
     title: 'Update profile invite',
     description:
@@ -234,6 +251,13 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
             portalInviteBody: body,
           );
           break;
+        case 'groover_invite':
+          await delegate.apiClient.updateSystemSettingsMail(
+            token: delegate.token,
+            grooverInviteSubject: subject,
+            grooverInviteBody: body,
+          );
+          break;
         case 'update_profile_invite':
           await delegate.apiClient.updateSystemSettingsMail(
             token: delegate.token,
@@ -281,7 +305,8 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
                 IconButton(
                   icon: const Icon(Icons.copy),
                   tooltip: 'Copy error',
-                  onPressed: () => Clipboard.setData(ClipboardData(text: _error!)),
+                  onPressed: () =>
+                      Clipboard.setData(ClipboardData(text: _error!)),
                 ),
                 FilledButton(onPressed: _load, child: const Text('Retry')),
               ],
@@ -423,7 +448,8 @@ class _EmailTemplateCardState extends State<_EmailTemplateCard> {
                   },
                 ),
                 const SizedBox(height: 8),
-                _PlaceholderWrap(placeholders: widget.config.previewValues.keys.toList()),
+                _PlaceholderWrap(
+                    placeholders: widget.config.previewValues.keys.toList()),
                 const SizedBox(height: 8),
                 TextField(
                   controller: widget.bodyController,
@@ -451,8 +477,8 @@ class _EmailTemplateCardState extends State<_EmailTemplateCard> {
                     child: IconButton(
                       icon: const Icon(Icons.copy),
                       tooltip: 'Copy error',
-                      onPressed: () =>
-                          Clipboard.setData(ClipboardData(text: widget.saveError!)),
+                      onPressed: () => Clipboard.setData(
+                          ClipboardData(text: widget.saveError!)),
                     ),
                   ),
                 ],
@@ -489,7 +515,8 @@ class _TemplatePreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final htmlPreview = '<p>${body.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('\n\n', '</p><p>').replaceAll('\n', '<br>')}</p>';
+    final htmlPreview =
+        '<p>${body.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('\n\n', '</p><p>').replaceAll('\n', '<br>')}</p>';
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
@@ -508,7 +535,8 @@ class _TemplatePreview extends StatelessWidget {
           const SizedBox(height: 4),
           SelectableText(body.isEmpty ? '(empty body)' : body),
           const SizedBox(height: 12),
-          Text('HTML source preview', style: Theme.of(context).textTheme.labelLarge),
+          Text('HTML source preview',
+              style: Theme.of(context).textTheme.labelLarge),
           const SizedBox(height: 4),
           SelectableText(
             htmlPreview,

@@ -11,6 +11,7 @@ import '../../core/session.dart';
 import '../../core/session_storage.dart';
 import '../../core/zalmanim_icons.dart';
 import '../account/user_settings_sheet.dart';
+import '../../widgets/ambient_underwater_shell.dart';
 import '../../widgets/api_connection_indicator.dart';
 import 'admin_dashboard_delegate.dart';
 import 'tabs/artists_tab.dart';
@@ -24,7 +25,8 @@ import 'tabs/settings_tab.dart';
 import 'tabs/signed_in_artists_report_dialog.dart';
 
 // Default subject/body for artist reminder emails (used by Reports > Artist reminders).
-const String _defaultReminderSubject = 'Checking in - do you have new music for us?';
+const String _defaultReminderSubject =
+    'Checking in - do you have new music for us?';
 const String _defaultReminderBody = r'''Hi {name},
 
 Hope you're doing well. We're reaching out to see if you have any new music you'd like to send us. We'd love to hear from you.
@@ -32,9 +34,12 @@ Hope you're doing well. We're reaching out to see if you have any new music you'
 Best regards''';
 
 const List<_ReminderTemplateField> _reminderTemplateFields = [
-  _ReminderTemplateField('name', 'Artist name', 'Preferred display name for the artist'),
-  _ReminderTemplateField('artist_brand', 'Artist brand', 'Artist brand field from the profile'),
-  _ReminderTemplateField('full_name', 'Full name', 'Artist full name from the profile'),
+  _ReminderTemplateField(
+      'name', 'Artist name', 'Preferred display name for the artist'),
+  _ReminderTemplateField(
+      'artist_brand', 'Artist brand', 'Artist brand field from the profile'),
+  _ReminderTemplateField(
+      'full_name', 'Full name', 'Artist full name from the profile'),
   _ReminderTemplateField('email', 'Email', 'Primary artist email address'),
   _ReminderTemplateField('website', 'Website', 'Artist website URL'),
   _ReminderTemplateField('facebook', 'Facebook', 'Facebook URL'),
@@ -49,10 +54,13 @@ const List<_ReminderTemplateField> _reminderTemplateFields = [
   _ReminderTemplateField('other_1', 'Other 1', 'Additional artist link'),
   _ReminderTemplateField('other_2', 'Other 2', 'Additional artist link'),
   _ReminderTemplateField('other_3', 'Other 3', 'Additional artist link'),
-  _ReminderTemplateField('address', 'Address', 'Address from the artist profile'),
-  _ReminderTemplateField('comments', 'Comments', 'Internal comments stored on the artist'),
+  _ReminderTemplateField(
+      'address', 'Address', 'Address from the artist profile'),
+  _ReminderTemplateField(
+      'comments', 'Comments', 'Internal comments stored on the artist'),
   _ReminderTemplateField('notes', 'Notes', 'Artist notes'),
-  _ReminderTemplateField('source_row', 'Source row', 'Original import source row'),
+  _ReminderTemplateField(
+      'source_row', 'Source row', 'Original import source row'),
 ];
 
 const Map<String, String> _sampleReminderTemplateValues = {
@@ -106,9 +114,10 @@ Map<String, String> _buildReminderTemplateValues(Map<String, dynamic>? artist) {
   final extra = item['extra'] is Map<String, dynamic>
       ? item['extra'] as Map<String, dynamic>
       : const <String, dynamic>{};
-  final name = (extra['artist_brand'] ?? item['name'] ?? item['email'] ?? 'there')
-      .toString()
-      .trim();
+  final name =
+      (extra['artist_brand'] ?? item['name'] ?? item['email'] ?? 'there')
+          .toString()
+          .trim();
 
   String readValue(String key) {
     if (key == 'name') return name;
@@ -124,7 +133,8 @@ Map<String, String> _buildReminderTemplateValues(Map<String, dynamic>? artist) {
   }
 
   return {
-    for (final field in _reminderTemplateFields) field.key: readValue(field.key),
+    for (final field in _reminderTemplateFields)
+      field.key: readValue(field.key),
   };
 }
 
@@ -139,7 +149,8 @@ String _applyReminderTemplate(String template, Map<String, String> values) {
   return output;
 }
 
-bool _looksLikeHtml(String value) => RegExp(r'<[a-zA-Z][\s\S]*>').hasMatch(value);
+bool _looksLikeHtml(String value) =>
+    RegExp(r'<[a-zA-Z][\s\S]*>').hasMatch(value);
 
 String _renderReminderHtml(String value, Map<String, String> values) {
   final rendered = _applyReminderTemplate(value, values);
@@ -185,7 +196,8 @@ void _insertIntoController(TextEditingController controller, String value) {
   final selection = controller.selection;
   if (!selection.isValid) {
     controller.text += value;
-    controller.selection = TextSelection.collapsed(offset: controller.text.length);
+    controller.selection =
+        TextSelection.collapsed(offset: controller.text.length);
     return;
   }
   final start = selection.start < 0 ? controller.text.length : selection.start;
@@ -290,6 +302,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   bool _campaignsLoadingMore = false;
   bool _loadingAllArtistsForSelection = false;
 
+  int get _unreadInboxCount => inboxThreads.fold<int>(0, (total, item) {
+        if (item is! Map<String, dynamic>) return total;
+        final unreadCount = item['unread_count'];
+        if (unreadCount is num) return total + unreadCount.toInt();
+        return total;
+      });
+
   int _artistsSortColumn = 0;
   bool _artistsSortAsc = true;
   int? _catalogSortColumnIndex;
@@ -301,28 +320,25 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   /// Last system update from Git (from /health), shown in the app bar next to the logo.
   String? _lastGitUpdate;
+
   /// Dashboard header: active artists count and total releases count.
   int? _artistsCount;
   int? _releasesCount;
 
   /// Demos that still appear on the Demos tab (exclude approved and pending_release).
-  List<dynamic> get _demosOnScreen => demoSubmissions
-      .where((d) {
+  List<dynamic> get _demosOnScreen => demoSubmissions.where((d) {
         final s = (d['status'] ?? 'demo').toString();
         return s != 'approved' && s != 'pending_release';
-      })
-      .toList();
+      }).toList();
 
   /// Demo counts for top bar: in review and awaiting treatment (from demos still on screen).
   int get _demosInReviewCount => _demosOnScreen
       .where((d) => (d['status'] ?? '').toString() == 'in_review')
       .length;
-  int get _demosPendingCount => _demosOnScreen
-      .where((d) {
+  int get _demosPendingCount => _demosOnScreen.where((d) {
         final s = (d['status'] ?? 'demo').toString();
         return s == 'demo' || s.isEmpty;
-      })
-      .length;
+      }).length;
 
   @override
   ApiClient get apiClient => widget.apiClient;
@@ -459,6 +475,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     _fetchDashboardStats();
     // Load demos on init so the top bar can show "in review" and "pending" counts.
     _loadDemoSubmissions(withOverlay: false);
+    _loadInbox(withOverlay: false);
   }
 
   Future<void> _fetchLastGitUpdate() async {
@@ -481,11 +498,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   Future<void> _fetchDashboardStats() async {
     try {
-      final stats = await widget.apiClient.fetchAdminDashboardStats(widget.token);
+      final stats =
+          await widget.apiClient.fetchAdminDashboardStats(widget.token);
       if (!mounted) return;
       setState(() {
-        _artistsCount = stats['artists_count'] is int ? stats['artists_count'] as int : null;
-        _releasesCount = stats['releases_count'] is int ? stats['releases_count'] as int : null;
+        _artistsCount = stats['artists_count'] is int
+            ? stats['artists_count'] as int
+            : null;
+        _releasesCount = stats['releases_count'] is int
+            ? stats['releases_count'] as int
+            : null;
       });
     } catch (_) {
       if (!mounted) return;
@@ -565,7 +587,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Log out?'),
-        content: const Text('You will return to the login screen on this device.'),
+        content:
+            const Text('You will return to the login screen on this device.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -583,7 +606,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
   }
 
-  Future<void> _loadArtists({bool reset = true, bool withOverlay = true}) async {
+  Future<void> _loadArtists(
+      {bool reset = true, bool withOverlay = true}) async {
     if (_artistsLoadingMore || (!reset && !_artistsHasMore)) return;
     final showOverlay = withOverlay && (reset || artists.isEmpty);
     if (mounted) {
@@ -620,7 +644,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
   }
 
-  Future<void> _loadReleases({bool reset = true, bool withOverlay = true}) async {
+  Future<void> _loadReleases(
+      {bool reset = true, bool withOverlay = true}) async {
     if ((_catalogLoadingMore || _adminReleasesLoadingMore) ||
         (!reset && !_catalogHasMore && !_adminReleasesHasMore)) {
       return;
@@ -664,8 +689,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       final catalogPage = results[0];
       final releasesPage = results[1];
       setState(() {
-        catalogTracks = reset ? catalogPage : [...catalogTracks, ...catalogPage];
-        adminReleases = reset ? releasesPage : [...adminReleases, ...releasesPage];
+        catalogTracks =
+            reset ? catalogPage : [...catalogTracks, ...catalogPage];
+        adminReleases =
+            reset ? releasesPage : [...adminReleases, ...releasesPage];
         _catalogHasMore = catalogPage.length >= _pageSize;
         _adminReleasesHasMore = releasesPage.length >= _pageSize;
         _catalogLoadingMore = false;
@@ -730,7 +757,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
   }
 
-  Future<void> _loadCampaigns({bool reset = true, bool withOverlay = true}) async {
+  Future<void> _loadCampaigns(
+      {bool reset = true, bool withOverlay = true}) async {
     if (_campaignsLoadingMore || (!reset && !_campaignsHasMore)) return;
     final showOverlay = withOverlay && (reset || campaigns.isEmpty);
     if (mounted) {
@@ -787,7 +815,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
   }
 
-  Future<void> _updateCampaignRequestStatus(int requestId, String status, {String? adminNotes}) async {
+  Future<void> _updateCampaignRequestStatus(int requestId, String status,
+      {String? adminNotes}) async {
     try {
       await widget.apiClient.updateCampaignRequest(
         token: widget.token,
@@ -837,7 +866,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
   }
 
-  Future<void> _sendPendingReleaseReminder(int pendingReleaseId, String artistName) async {
+  Future<void> _sendPendingReleaseReminder(
+      int pendingReleaseId, String artistName) async {
     try {
       final result = await widget.apiClient.sendPendingReleaseReminder(
         token: widget.token,
@@ -860,10 +890,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
   }
 
-  Future<void> _showPendingReleaseMessageDialog(Map<String, dynamic> pendingRelease) async {
+  Future<void> _showPendingReleaseMessageDialog(
+      Map<String, dynamic> pendingRelease) async {
     final artistName = (pendingRelease['artist_name'] ?? '').toString().trim();
-    final artistEmail = (pendingRelease['artist_email'] ?? '').toString().trim();
-    final releaseTitle = (pendingRelease['release_title'] ?? '').toString().trim();
+    final artistEmail =
+        (pendingRelease['artist_email'] ?? '').toString().trim();
+    final releaseTitle =
+        (pendingRelease['release_title'] ?? '').toString().trim();
     final artistId = pendingRelease['artist_id'] as int?;
     if (artistEmail.isEmpty) {
       _showErrorSnackBar('This pending release does not have an artist email.');
@@ -871,7 +904,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
 
     final subjectController = TextEditingController(
-      text: releaseTitle.isEmpty ? 'About your release submission' : 'About your release submission: $releaseTitle',
+      text: releaseTitle.isEmpty
+          ? 'About your release submission'
+          : 'About your release submission: $releaseTitle',
     );
     final bodyController = TextEditingController(
       text: artistName.isEmpty ? 'Hi,\n\n' : 'Hi $artistName,\n\n',
@@ -931,14 +966,19 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                         final body = bodyController.text.trim();
                         if (subject.isEmpty || body.isEmpty) {
                           ScaffoldMessenger.of(ctx).showSnackBar(
-                            const SnackBar(content: Text('Subject and message are required.')),
+                            const SnackBar(
+                                content:
+                                    Text('Subject and message are required.')),
                           );
                           return;
                         }
                         setDialogState(() => sending = true);
                         try {
-                          final escapedBody = const HtmlEscape(HtmlEscapeMode.element).convert(body);
-                          final htmlBody = '<p>${escapedBody.replaceAll('\n', '<br>')}</p>';
+                          final escapedBody =
+                              const HtmlEscape(HtmlEscapeMode.element)
+                                  .convert(body);
+                          final htmlBody =
+                              '<p>${escapedBody.replaceAll('\n', '<br>')}</p>';
                           await widget.apiClient.sendEmail(
                             token: widget.token,
                             toEmail: artistEmail,
@@ -964,7 +1004,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                           if (!ctx.mounted) return;
                           setDialogState(() => sending = false);
                           ScaffoldMessenger.of(ctx).showSnackBar(
-                            SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+                            SnackBar(
+                                content: Text(e
+                                    .toString()
+                                    .replaceFirst('Exception: ', ''))),
                           );
                         }
                       },
@@ -987,14 +1030,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
   }
 
-  Future<void> _loadInbox() async {
-    if (mounted) setState(() => loading = true);
+  Future<void> _loadInbox({bool withOverlay = true}) async {
+    if (mounted && withOverlay) setState(() => loading = true);
     try {
-      final list = await widget.apiClient.fetchInboxThreads(token: widget.token);
+      final list =
+          await widget.apiClient.fetchInboxThreads(token: widget.token);
       if (!mounted) return;
       setState(() {
         inboxThreads = list;
-        loading = false;
+        if (withOverlay) loading = false;
         error = null;
         _loadedInbox = true;
       });
@@ -1002,14 +1046,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       _setError(e);
       if (mounted) {
         setState(() {
-          loading = false;
+          if (withOverlay) loading = false;
           _loadedInbox = true;
         });
       }
     }
   }
 
-  Future<void> _loadAudiences({bool reset = true, bool withOverlay = true}) async {
+  Future<void> _loadAudiences(
+      {bool reset = true, bool withOverlay = true}) async {
     final showOverlay = withOverlay && (reset || audiences.isEmpty);
     if (mounted) {
       setState(() {
@@ -1050,6 +1095,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       if (mounted) setState(() => _loadedAudiences = true);
     }
   }
+
   Future<void> _ensureAllArtistsForSelectionLoaded() async {
     if (_allArtistsForSelection.isNotEmpty || _loadingAllArtistsForSelection) {
       return;
@@ -1083,6 +1129,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       _loadDemoSubmissions(withOverlay: false),
       _loadReleases(reset: true, withOverlay: false),
       _loadPendingReleases(),
+      _loadInbox(withOverlay: false),
       _loadCampaigns(reset: true, withOverlay: false),
       _loadAudiences(reset: true, withOverlay: false),
       _fetchDashboardStats(),
@@ -1094,10 +1141,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   void _setError(Object e) {
     final msg = e.toString();
     // Treat 401 / invalid or expired token as session expired: logout so user can sign in again.
-    if (msg.contains('401') || msg.contains('Invalid or expired token') || msg.contains('expired token')) {
+    if (msg.contains('401') ||
+        msg.contains('Invalid or expired token') ||
+        msg.contains('expired token')) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Session expired. Please sign in again.')),
+          const SnackBar(
+              content: Text('Session expired. Please sign in again.')),
         );
       }
       widget.onLogout();
@@ -1105,7 +1155,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
     // Artist token used in LM: backend returns 403 with "Artists cannot access the LM system..."
     if (msg.contains('403') && msg.contains('Artists cannot access')) {
-      const text = 'Artists cannot access the LM system. Use the artist portal.';
+      const text =
+          'Artists cannot access the LM system. Use the artist portal.';
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1155,13 +1206,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   Future<void> loadDemoSubmissions() => _loadDemoSubmissions();
 
   @override
-  Future<void> loadMoreArtists() => _loadArtists(reset: false, withOverlay: false);
+  Future<void> loadMoreArtists() =>
+      _loadArtists(reset: false, withOverlay: false);
 
   @override
   Future<void> loadReleases() => _loadReleases(reset: true);
 
   @override
-  Future<void> loadMoreReleasesPage() => _loadReleases(reset: false, withOverlay: false);
+  Future<void> loadMoreReleasesPage() =>
+      _loadReleases(reset: false, withOverlay: false);
 
   @override
   Future<void> loadCampaigns() => _loadCampaigns(reset: true);
@@ -1170,26 +1223,31 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   Future<void> loadAudiences() => _loadAudiences(reset: true);
 
   @override
-  Future<void> loadMoreCampaigns() => _loadCampaigns(reset: false, withOverlay: false);
+  Future<void> loadMoreCampaigns() =>
+      _loadCampaigns(reset: false, withOverlay: false);
 
   @override
   List<dynamic> get campaignRequestsList => campaignRequests;
 
   @override
-  Future<void> loadCampaignRequests({String? statusFilter}) => _loadCampaignRequests(statusFilter: statusFilter);
+  Future<void> loadCampaignRequests({String? statusFilter}) =>
+      _loadCampaignRequests(statusFilter: statusFilter);
 
   @override
-  void updateCampaignRequestStatus(int requestId, String status, {String? adminNotes}) =>
+  void updateCampaignRequestStatus(int requestId, String status,
+          {String? adminNotes}) =>
       _updateCampaignRequestStatus(requestId, status, adminNotes: adminNotes);
 
   @override
   List<dynamic> get pendingReleasesList => pendingReleases;
 
   @override
-  Future<void> loadPendingReleases({String? statusFilter}) => _loadPendingReleases(statusFilter: statusFilter);
+  Future<void> loadPendingReleases({String? statusFilter}) =>
+      _loadPendingReleases(statusFilter: statusFilter);
 
   @override
-  Future<void> sendPendingReleaseReminder(int pendingReleaseId, String artistName) =>
+  Future<void> sendPendingReleaseReminder(
+          int pendingReleaseId, String artistName) =>
       _sendPendingReleaseReminder(pendingReleaseId, artistName);
 
   @override
@@ -1239,7 +1297,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            artistName.isEmpty ? 'Inbox thread deleted.' : 'Deleted conversation with $artistName.',
+            artistName.isEmpty
+                ? 'Inbox thread deleted.'
+                : 'Deleted conversation with $artistName.',
           ),
         ),
       );
@@ -1253,8 +1313,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   Future<void> _showInboxThreadDialog(int threadId) async {
     try {
-      var threadData = await widget.apiClient.fetchInboxThread(token: widget.token, threadId: threadId);
+      var threadData = await widget.apiClient
+          .fetchInboxThread(token: widget.token, threadId: threadId);
       if (!mounted) return;
+      unawaited(_loadInbox(withOverlay: false));
       final replyController = TextEditingController();
       bool sending = false;
       await showDialog<void>(
@@ -1278,7 +1340,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(artistEmail, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                      Text(artistEmail,
+                          style:
+                              TextStyle(fontSize: 12, color: Colors.grey[600])),
                       const SizedBox(height: 16),
                       Expanded(
                         child: SingleChildScrollView(
@@ -1289,19 +1353,28 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                                 Padding(
                                   padding: const EdgeInsets.only(bottom: 12),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        (m['sender'] ?? '').toString() == 'label' ? 'Label (you)' : 'Artist',
+                                        (m['sender'] ?? '').toString() ==
+                                                'label'
+                                            ? 'Label (you)'
+                                            : 'Artist',
                                         style: TextStyle(
                                           fontWeight: FontWeight.w600,
-                                          color: (m['sender'] ?? '').toString() == 'label'
-                                              ? Theme.of(ctx).colorScheme.primary
-                                              : Colors.grey[700],
+                                          color:
+                                              (m['sender'] ?? '').toString() ==
+                                                      'label'
+                                                  ? Theme.of(ctx)
+                                                      .colorScheme
+                                                      .primary
+                                                  : Colors.grey[700],
                                         ),
                                       ),
                                       const SizedBox(height: 4),
-                                      SelectableText((m['body'] ?? '').toString()),
+                                      SelectableText(
+                                          (m['body'] ?? '').toString()),
                                     ],
                                   ),
                                 ),
@@ -1311,7 +1384,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                         ),
                       ),
                       const Divider(),
-                      const Text('Reply (sends email to artist)', style: TextStyle(fontWeight: FontWeight.w600)),
+                      const Text('Reply (sends email to artist)',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
                       const SizedBox(height: 8),
                       TextField(
                         controller: replyController,
@@ -1329,7 +1403,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 actions: [
                   TextButton(
                     onPressed: () async {
-                      final deleted = await _deleteInboxThread(threadId, artistName);
+                      final deleted =
+                          await _deleteInboxThread(threadId, artistName);
                       if (deleted && ctx.mounted) {
                         Navigator.of(ctx).pop();
                       }
@@ -1348,7 +1423,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                             if (body.isEmpty) return;
                             setDialogState(() => sending = true);
                             try {
-                              threadData = await widget.apiClient.replyToInboxThread(
+                              threadData =
+                                  await widget.apiClient.replyToInboxThread(
                                 token: widget.token,
                                 threadId: threadId,
                                 body: body,
@@ -1357,24 +1433,34 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                               setDialogState(() => sending = false);
                               replyController.clear();
                               ScaffoldMessenger.of(ctx).showSnackBar(
-                                const SnackBar(content: Text('Reply sent (email sent to artist).')),
+                                const SnackBar(
+                                    content: Text(
+                                        'Reply sent (email sent to artist).')),
                               );
                             } catch (e) {
                               if (ctx.mounted) {
                                 setDialogState(() => sending = false);
                                 ScaffoldMessenger.of(ctx).showSnackBar(
                                   SnackBar(
-                                    content: SelectableText(e.toString().replaceFirst('Exception: ', '')),
+                                    content: SelectableText(e
+                                        .toString()
+                                        .replaceFirst('Exception: ', '')),
                                     action: SnackBarAction(
                                       label: 'Copy',
-                                      onPressed: () => Clipboard.setData(ClipboardData(text: e.toString())),
+                                      onPressed: () => Clipboard.setData(
+                                          ClipboardData(text: e.toString())),
                                     ),
                                   ),
                                 );
                               }
                             }
                           },
-                    child: sending ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Reply'),
+                    child: sending
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Text('Reply'),
                   ),
                 ],
               );
@@ -1419,16 +1505,19 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   void showEditArtistDialog(int id) => _showEditArtistDialog(id);
 
   @override
-  void showSetArtistPasswordDialog(int artistId, String artistName) => _showSetArtistPasswordDialog(artistId, artistName);
+  void showSetArtistPasswordDialog(int artistId, String artistName) =>
+      _showSetArtistPasswordDialog(artistId, artistName);
 
   @override
-  void sendArtistPortalInvite(int artistId, String artistName, String artistEmail) =>
+  void sendArtistPortalInvite(
+          int artistId, String artistName, String artistEmail) =>
       _sendArtistPortalInvite(artistId, artistName, artistEmail);
   @override
   void sendArtistPortalInviteToAll() => _sendArtistPortalInviteToAll();
 
   @override
-  void sendArtistUpdateProfileInvite(int artistId, String artistName, String artistEmail) =>
+  void sendArtistUpdateProfileInvite(
+          int artistId, String artistName, String artistEmail) =>
       _sendArtistUpdateProfileInvite(artistId, artistName, artistEmail);
 
   @override
@@ -1442,6 +1531,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   @override
   void showArtistDetailsDialog(int id) => _showArtistDetailsDialog(id);
+
+  @override
+  void showGrooverInviteDialog() => _showGrooverInviteDialog();
 
   @override
   void showDemoDetailsDialog(Map<String, dynamic> submission) =>
@@ -1466,8 +1558,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   void syncReleasesFromCatalog() => _syncReleasesFromCatalog();
 
   @override
-  void syncOriginalArtistsFromArtists() =>
-      _syncOriginalArtistsFromArtists();
+  void syncOriginalArtistsFromArtists() => _syncOriginalArtistsFromArtists();
 
   @override
   void createMissingOriginalArtists() => _createMissingOriginalArtists();
@@ -1547,11 +1638,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   void showArtistReminderMailSettingsDialog(BuildContext context) =>
       _showArtistReminderMailSettingsDialog(context);
 
-  Future<void> _showArtistReminderMailSettingsDialog(BuildContext context) async {
+  Future<void> _showArtistReminderMailSettingsDialog(
+      BuildContext context) async {
     final savedSubject = await getArtistReminderEmailSubject();
     final savedBody = await getArtistReminderEmailBody();
-    final subjectController = TextEditingController(text: savedSubject ?? _defaultReminderSubject);
-    final bodyController = TextEditingController(text: savedBody ?? _defaultReminderBody);
+    final subjectController =
+        TextEditingController(text: savedSubject ?? _defaultReminderSubject);
+    final bodyController =
+        TextEditingController(text: savedBody ?? _defaultReminderBody);
     if (!mounted) return;
     if (!context.mounted) return;
     final saved = await showDialog<bool>(
@@ -1565,13 +1659,18 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               subjectController: subjectController,
               bodyController: bodyController,
               previewValues: _sampleReminderTemplateValues,
-              helperText: 'Default subject and body for artist reminder emails. The body editor supports HTML snippets and dynamic fields from the artist profile.',
+              helperText:
+                  'Default subject and body for artist reminder emails. The body editor supports HTML snippets and dynamic fields from the artist profile.',
             ),
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Save')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Save')),
         ],
       ),
     );
@@ -1584,7 +1683,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       bodyController.dispose();
       if (!mounted) return;
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mail settings saved.')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Mail settings saved.')));
     } else {
       subjectController.dispose();
       bodyController.dispose();
@@ -1601,7 +1701,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   void showAddUserDialog() => _showAddUserDialog();
 
   @override
-  void showEditUserDialog(Map<String, dynamic> user) => _showEditUserDialog(user);
+  void showEditUserDialog(Map<String, dynamic> user) =>
+      _showEditUserDialog(user);
 
   @override
   void updateUserActive(Map<String, dynamic> user, bool isActive) =>
@@ -1612,7 +1713,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   /// Releases list: unassigned first, then by title or date.
   List<dynamic> get _sortedAdminReleases {
-    final list = List<Map<String, dynamic>>.from(adminReleases.map((e) => e as Map<String, dynamic>));
+    final list = List<Map<String, dynamic>>.from(
+        adminReleases.map((e) => e as Map<String, dynamic>));
     list.sort((a, b) {
       final aIds = a['artist_ids'] as List<dynamic>? ?? [];
       final bIds = b['artist_ids'] as List<dynamic>? ?? [];
@@ -1621,7 +1723,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       if (aNoArtist != bNoArtist) return aNoArtist ? -1 : 1; // unassigned first
       final cmp = _releasesSortBy == 1
           ? _compareReleaseDate(a, b)
-          : _compareString((a['title'] as String?) ?? '', (b['title'] as String?) ?? '');
+          : _compareString(
+              (a['title'] as String?) ?? '', (b['title'] as String?) ?? '');
       return _releasesSortAsc ? cmp : -cmp;
     });
     return list;
@@ -1640,7 +1743,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
   }
 
-  int _compareString(String a, String b) => a.toLowerCase().compareTo(b.toLowerCase());
+  int _compareString(String a, String b) =>
+      a.toLowerCase().compareTo(b.toLowerCase());
 
   /// Catalog tracks filtered by releases search query (catalog #, release/track title, artists, ISRC, UPC, mix).
   List<dynamic> get _filteredCatalogTracks {
@@ -1648,10 +1752,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     final q = _releasesSearchQuery;
     return catalogTracks.where((e) {
       final t = e as Map<String, dynamic>;
-      final catalogNumber = (t['catalog_number'] as String? ?? '').toLowerCase();
+      final catalogNumber =
+          (t['catalog_number'] as String? ?? '').toLowerCase();
       final releaseTitle = (t['release_title'] as String? ?? '').toLowerCase();
       final trackTitle = (t['track_title'] as String? ?? '').toLowerCase();
-      final originalArtists = (t['original_artists'] as String? ?? '').toLowerCase();
+      final originalArtists =
+          (t['original_artists'] as String? ?? '').toLowerCase();
       final isrc = (t['isrc'] as String? ?? '').toLowerCase();
       final upc = (t['upc'] as String? ?? '').toLowerCase();
       final mixTitle = (t['mix_title'] as String? ?? '').toLowerCase();
@@ -1667,7 +1773,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   /// Catalog tracks filtered and sorted for DataTable.
   List<dynamic> get _sortedCatalogTracks {
-    var list = List<Map<String, dynamic>>.from(_filteredCatalogTracks.map((e) => e as Map<String, dynamic>));
+    var list = List<Map<String, dynamic>>.from(
+        _filteredCatalogTracks.map((e) => e as Map<String, dynamic>));
     final col = _catalogSortColumnIndex;
     if (col == null) return list;
     list.sort((a, b) {
@@ -1687,16 +1794,26 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   String _catalogCellValue(Map<String, dynamic> t, int col) {
     switch (col) {
-      case 0: return (t['catalog_number'] as String?) ?? '';
-      case 1: return (t['release_title'] as String?) ?? '';
-      case 2: return (t['release_date'] as String?) ?? '';
-      case 3: return (t['upc'] as String?) ?? '';
-      case 4: return (t['isrc'] as String?) ?? '';
-      case 5: return (t['original_artists'] as String?) ?? '';
-      case 6: return (t['track_title'] as String?) ?? '';
-      case 7: return (t['mix_title'] as String?) ?? '';
-      case 8: return (t['duration'] as String?) ?? '';
-      default: return '';
+      case 0:
+        return (t['catalog_number'] as String?) ?? '';
+      case 1:
+        return (t['release_title'] as String?) ?? '';
+      case 2:
+        return (t['release_date'] as String?) ?? '';
+      case 3:
+        return (t['upc'] as String?) ?? '';
+      case 4:
+        return (t['isrc'] as String?) ?? '';
+      case 5:
+        return (t['original_artists'] as String?) ?? '';
+      case 6:
+        return (t['track_title'] as String?) ?? '';
+      case 7:
+        return (t['mix_title'] as String?) ?? '';
+      case 8:
+        return (t['duration'] as String?) ?? '';
+      default:
+        return '';
     }
   }
 
@@ -1725,21 +1842,26 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   /// Campaigns list sorted for display.
   List<dynamic> get _sortedCampaigns {
-    final list = List<Map<String, dynamic>>.from(campaigns.map((e) => e as Map<String, dynamic>));
+    final list = List<Map<String, dynamic>>.from(
+        campaigns.map((e) => e as Map<String, dynamic>));
     list.sort((a, b) {
       int cmp;
       switch (_campaignsSortBy) {
         case 1:
-          cmp = _compareString((a['scheduled_at'] as String?) ?? '', (b['scheduled_at'] as String?) ?? '');
+          cmp = _compareString((a['scheduled_at'] as String?) ?? '',
+              (b['scheduled_at'] as String?) ?? '');
           break;
         case 2:
-          cmp = _compareString((a['sent_at'] as String?) ?? '', (b['sent_at'] as String?) ?? '');
+          cmp = _compareString(
+              (a['sent_at'] as String?) ?? '', (b['sent_at'] as String?) ?? '');
           break;
         case 3:
-          cmp = _compareString((a['status'] as String?) ?? '', (b['status'] as String?) ?? '');
+          cmp = _compareString(
+              (a['status'] as String?) ?? '', (b['status'] as String?) ?? '');
           break;
         default:
-          cmp = _compareString((a['name'] as String?) ?? '', (b['name'] as String?) ?? '');
+          cmp = _compareString(
+              (a['name'] as String?) ?? '', (b['name'] as String?) ?? '');
       }
       return _campaignsSortAsc ? cmp : -cmp;
     });
@@ -1766,9 +1888,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     ? '$_demosInReviewCount in review - $_demosPendingCount pending'
                     : '- in review - - pending',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w500,
-                ),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w500,
+                    ),
               ),
             ),
           ],
@@ -1782,9 +1904,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 child: SelectableText(
                   '${_artistsCount ?? '—'} artists · ${_releasesCount ?? '—'} releases',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w500,
-                  ),
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                      ),
                 ),
               ),
             ),
@@ -1796,9 +1918,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 child: SelectableText(
                   '${pendingReleases.length} pending release${pendingReleases.length == 1 ? '' : 's'}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w500,
-                  ),
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                      ),
                 ),
               ),
             ),
@@ -1814,15 +1936,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   child: SelectableText(
                     'Updated: ${_lastGitUpdate ?? '—'}',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                   ),
                 ),
                 if (_lastGitUpdate != null)
                   IconButton(
                     icon: const Icon(ZalmanimIcons.copy, size: 18),
                     tooltip: 'Copy last update time',
-                    onPressed: () => Clipboard.setData(ClipboardData(text: _lastGitUpdate!)),
+                    onPressed: () =>
+                        Clipboard.setData(ClipboardData(text: _lastGitUpdate!)),
                     style: IconButton.styleFrom(
                       minimumSize: const Size(32, 32),
                       padding: EdgeInsets.zero,
@@ -1849,19 +1972,52 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         bottom: TabBar(
           controller: _tabController,
           tabs: [
-            Tab(icon: ZalmanimIcons.alienIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Artists'),
-            Tab(icon: ZalmanimIcons.jellyfishIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Demos'),
-            Tab(icon: Icon(ZalmanimIcons.email, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Inbox'),
-            Tab(icon: ZalmanimIcons.squidIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Releases'),
-            Tab(icon: ZalmanimIcons.alienIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'CAMPAIGNS'),
-            Tab(icon: ZalmanimIcons.squidIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Audience'),
-            Tab(icon: ZalmanimIcons.alienIcon(size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Reports'),
-            Tab(icon: Icon(ZalmanimIcons.settings, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant), text: 'Settings'),
+            Tab(
+                icon: ZalmanimIcons.alienIcon(
+                    size: 20,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+                text: 'Artists'),
+            Tab(
+                icon: ZalmanimIcons.jellyfishIcon(
+                    size: 20,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+                text: 'Demos'),
+            Tab(
+                child: InboxTabLabel(
+                  iconColor: Theme.of(context).colorScheme.onSurfaceVariant,
+                  unreadCount: _unreadInboxCount,
+                )),
+            Tab(
+                icon: ZalmanimIcons.squidIcon(
+                    size: 20,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+                text: 'Releases'),
+            Tab(
+                icon: ZalmanimIcons.alienIcon(
+                    size: 20,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+                text: 'CAMPAIGNS'),
+            Tab(
+                icon: ZalmanimIcons.squidIcon(
+                    size: 20,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+                text: 'Audience'),
+            Tab(
+                icon: ZalmanimIcons.alienIcon(
+                    size: 20,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+                text: 'Reports'),
+            Tab(
+                icon: Icon(ZalmanimIcons.settings,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+                text: 'Settings'),
           ],
         ),
       ),
       body: Stack(
         children: [
+          const Positioned.fill(child: AmbientBackdrop()),
           TabBarView(
             controller: _tabController,
             children: [
@@ -1875,46 +2031,47 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               SettingsTab(delegate: this),
             ],
           ),
-            if (loading)
-              Positioned.fill(
-                child: Container(
-                  color: Colors.black12,
-                  child: const Center(child: CircularProgressIndicator()),
-                ),
+          if (loading)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black12,
+                child: const Center(child: CircularProgressIndicator()),
               ),
-            if (error != null)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: Material(
-                  elevation: 4,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: SelectableText(
-                            error!,
-                            style: const TextStyle(color: Colors.red),
-                          ),
+            ),
+          if (error != null)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Material(
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: SelectableText(
+                          error!,
+                          style: const TextStyle(color: Colors.red),
                         ),
-                        IconButton(
-                          icon: const Icon(ZalmanimIcons.copy),
-                          tooltip: 'Copy error',
-                          onPressed: () => Clipboard.setData(ClipboardData(text: error!)),
-                        ),
-                        IconButton(
-                          icon: const Icon(ZalmanimIcons.close),
-                          onPressed: clearError,
-                        ),
-                      ],
-                    ),
+                      ),
+                      IconButton(
+                        icon: const Icon(ZalmanimIcons.copy),
+                        tooltip: 'Copy error',
+                        onPressed: () =>
+                            Clipboard.setData(ClipboardData(text: error!)),
+                      ),
+                      IconButton(
+                        icon: const Icon(ZalmanimIcons.close),
+                        onPressed: clearError,
+                      ),
+                    ],
                   ),
                 ),
               ),
-          ],
-        ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -1939,7 +2096,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-            if (isActive) Icon(_artistsSortAsc ? ZalmanimIcons.arrowDropUp : ZalmanimIcons.arrowDropDown, size: 20),
+            if (isActive)
+              Icon(
+                  _artistsSortAsc
+                      ? ZalmanimIcons.arrowDropUp
+                      : ZalmanimIcons.arrowDropDown,
+                  size: 20),
           ],
         ),
       ),
@@ -1989,6 +2151,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       return s;
     }
   }
+
   static String? _formatLastGitUpdate(dynamic value) {
     if (value == null) return null;
     final raw = value.toString().trim();
@@ -2013,11 +2176,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               lower.contains('soundcloud.app.goo.gl')) &&
           (lower.startsWith('http://') || lower.startsWith('https://'));
     }
+
     void addIfSoundCloud(String s) {
       final t = s.trim();
       if (t.isEmpty) return;
       if (isSoundCloudUrl(t)) urls.add(t);
     }
+
     for (final link in (submission['links'] as List<dynamic>? ?? const [])) {
       addIfSoundCloud(link.toString());
     }
@@ -2043,7 +2208,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     return urls.toList();
   }
 
-  Future<void> _updateDemoStatus(Map<String, dynamic> submission, String status) async {
+  Future<void> _updateDemoStatus(
+      Map<String, dynamic> submission, String status) async {
     final id = submission['id'] as int?;
     if (id == null) return;
     try {
@@ -2062,7 +2228,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       } else {
         message = 'Demo updated to $status.';
       }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
     } catch (e) {
       _setError(e);
     }
@@ -2073,7 +2240,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     if (id == null) return;
     final artistName = (submission['artist_name'] ?? '').toString();
     final subjectController = TextEditingController(
-      text: (submission['approval_subject'] ?? 'Your demo was approved, $artistName').toString(),
+      text: (submission['approval_subject'] ??
+              'Your demo was approved, $artistName')
+          .toString(),
     );
     final bodyController = TextEditingController(
       text: (submission['approval_body'] ??
@@ -2095,7 +2264,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 children: [
                   TextField(
                     controller: subjectController,
-                    decoration: const InputDecoration(labelText: 'Approval subject'),
+                    decoration:
+                        const InputDecoration(labelText: 'Approval subject'),
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -2109,13 +2279,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   const SizedBox(height: 12),
                   SwitchListTile(
                     value: createArtist,
-                    onChanged: (value) => setStateDialog(() => createArtist = value),
+                    onChanged: (value) =>
+                        setStateDialog(() => createArtist = value),
                     title: const Text('Create or link artist in the system'),
                     contentPadding: EdgeInsets.zero,
                   ),
                   SwitchListTile(
                     value: sendEmail,
-                    onChanged: (value) => setStateDialog(() => sendEmail = value),
+                    onChanged: (value) =>
+                        setStateDialog(() => sendEmail = value),
                     title: const Text('Send approval email now'),
                     contentPadding: EdgeInsets.zero,
                   ),
@@ -2153,7 +2325,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       await _loadDemoSubmissions(withOverlay: false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(sendEmail ? 'Demo approved and email sent.' : 'Demo approved.')),
+        SnackBar(
+            content: Text(sendEmail
+                ? 'Demo approved and email sent.'
+                : 'Demo approved.')),
       );
     } catch (e) {
       _setError(e);
@@ -2166,7 +2341,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   Future<void> _showDemoDetailsDialog(Map<String, dynamic> submission) async {
     final id = submission['id'] as int?;
     if (id == null) return;
-    final notesController = TextEditingController(text: (submission['admin_notes'] ?? '').toString());
+    final notesController = TextEditingController(
+        text: (submission['admin_notes'] ?? '').toString());
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -2178,9 +2354,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                _demoInfoRow('Artist', (submission['artist_name'] ?? '').toString()),
+                _demoInfoRow(
+                    'Artist', (submission['artist_name'] ?? '').toString()),
                 _demoInfoRow('Email', (submission['email'] ?? '').toString()),
-                _demoInfoRow('Contact', (submission['contact_name'] ?? '').toString()),
+                _demoInfoRow(
+                    'Contact', (submission['contact_name'] ?? '').toString()),
                 _demoInfoRow('Phone', (submission['phone'] ?? '').toString()),
                 _demoInfoRow('Genre', (submission['genre'] ?? '').toString()),
                 _demoInfoRow('City', (submission['city'] ?? '').toString()),
@@ -2191,7 +2369,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       ? 'Existing artist (ID: ${submission['artist_id']})'
                       : 'New artist (not in system)',
                 ),
-                _demoInfoRow('Message', (submission['message'] ?? '').toString()),
+                _demoInfoRow(
+                    'Message', (submission['message'] ?? '').toString()),
                 _demoInfoRow(
                   'Email consent',
                   submission['consent_to_emails'] == true
@@ -2200,18 +2379,26 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 ),
                 _demoInfoRow('Source', (submission['source'] ?? '').toString()),
                 if ((submission['source_site_url'] ?? '').toString().isNotEmpty)
-                  _demoInfoRow('Source URL', (submission['source_site_url'] ?? '').toString()),
+                  _demoInfoRow('Source URL',
+                      (submission['source_site_url'] ?? '').toString()),
                 if (_formatDemoDate(submission['created_at']) != null)
-                  _demoInfoRow('Submitted at', _formatDemoDate(submission['created_at'])!),
+                  _demoInfoRow('Submitted at',
+                      _formatDemoDate(submission['created_at'])!),
                 if (_formatDemoDate(submission['updated_at']) != null)
-                  _demoInfoRow('Last updated', _formatDemoDate(submission['updated_at'])!),
-                if (_formatDemoDate(submission['approval_email_sent_at']) != null)
-                  _demoInfoRow('Approval email sent', _formatDemoDate(submission['approval_email_sent_at'])!),
-                if (_formatDemoDate(submission['rejection_email_sent_at']) != null)
-                  _demoInfoRow('Rejection email sent', _formatDemoDate(submission['rejection_email_sent_at'])!),
+                  _demoInfoRow('Last updated',
+                      _formatDemoDate(submission['updated_at'])!),
+                if (_formatDemoDate(submission['approval_email_sent_at']) !=
+                    null)
+                  _demoInfoRow('Approval email sent',
+                      _formatDemoDate(submission['approval_email_sent_at'])!),
+                if (_formatDemoDate(submission['rejection_email_sent_at']) !=
+                    null)
+                  _demoInfoRow('Rejection email sent',
+                      _formatDemoDate(submission['rejection_email_sent_at'])!),
                 if (submission['has_demo_file'] == true) ...[
                   const SizedBox(height: 12),
-                  const Text('Demo MP3', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const Text('Demo MP3',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 6),
                   _DemoDownloadMp3Link(
                     demoId: id,
@@ -2220,13 +2407,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   ),
                 ],
                 const SizedBox(height: 12),
-                const Text('Links', style: TextStyle(fontWeight: FontWeight.w600)),
+                const Text('Links',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 6),
-                ...(((submission['links'] as List<dynamic>? ?? const <dynamic>[]))
+                ...(((submission['links'] as List<dynamic>? ??
+                        const <dynamic>[]))
                     .map((link) => SelectableText(link.toString()))),
                 if (_getSoundCloudUrls(submission).isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  const Text('SoundCloud', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const Text('SoundCloud',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 6),
                   ..._getSoundCloudUrls(submission).map(
                     (url) => Padding(
@@ -2234,7 +2424,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          SelectableText(url, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                          SelectableText(url,
+                              style: const TextStyle(
+                                  fontSize: 12, color: Colors.grey)),
                           const SizedBox(height: 4),
                           _SoundCloudEmbedWidget(soundCloudUrl: url),
                         ],
@@ -2243,10 +2435,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   ),
                 ],
                 const SizedBox(height: 12),
-                const Text('Extra fields', style: TextStyle(fontWeight: FontWeight.w600)),
+                const Text('Extra fields',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 6),
                 SelectableText(const JsonEncoder.withIndent('  ').convert(
-                  submission['fields'] is Map<String, dynamic> ? submission['fields'] : const <String, dynamic>{},
+                  submission['fields'] is Map<String, dynamic>
+                      ? submission['fields']
+                      : const <String, dynamic>{},
                 )),
                 const SizedBox(height: 12),
                 TextField(
@@ -2300,7 +2495,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       await _loadDemoSubmissions(withOverlay: false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Demo #$id${artistName.isNotEmpty ? ' ($artistName)' : ''} deleted.')),
+        SnackBar(
+            content: Text(
+                'Demo #$id${artistName.isNotEmpty ? ' ($artistName)' : ''} deleted.')),
       );
     } catch (e) {
       _setError(e);
@@ -2315,12 +2512,25 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         : artists.where((a) {
             final artist = a as Map<String, dynamic>;
             final extra = artist['extra'] as Map<String, dynamic>? ?? {};
-            final brand = (extra['artist_brand']?.toString().trim() ?? artist['name']?.toString() ?? '').toLowerCase();
-            final fullName = (extra['full_name']?.toString().trim() ?? '').toLowerCase();
+            final brand = (extra['artist_brand']?.toString().trim() ??
+                    artist['name']?.toString() ??
+                    '')
+                .toLowerCase();
+            final fullName =
+                (extra['full_name']?.toString().trim() ?? '').toLowerCase();
             final email = (artist['email']?.toString() ?? '').toLowerCase();
             final brandsList = extra['artist_brands'];
-            final brands = (brandsList is List ? brandsList.map((e) => (e?.toString().trim() ?? '').toLowerCase()).where((s) => s.isNotEmpty).join(' ') : '').toLowerCase();
-            return brand.contains(query) || fullName.contains(query) || email.contains(query) || brands.contains(query);
+            final brands = (brandsList is List
+                    ? brandsList
+                        .map((e) => (e?.toString().trim() ?? '').toLowerCase())
+                        .where((s) => s.isNotEmpty)
+                        .join(' ')
+                    : '')
+                .toLowerCase();
+            return brand.contains(query) ||
+                fullName.contains(query) ||
+                email.contains(query) ||
+                brands.contains(query);
           }).toList();
 
     final sortedArtists = List<dynamic>.from(filtered);
@@ -2333,8 +2543,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       String vb;
       switch (_artistsSortColumn) {
         case 0:
-          va = (extraA['artist_brand']?.toString().trim() ?? ar['name']?.toString() ?? '').toLowerCase();
-          vb = (extraB['artist_brand']?.toString().trim() ?? br['name']?.toString() ?? '').toLowerCase();
+          va = (extraA['artist_brand']?.toString().trim() ??
+                  ar['name']?.toString() ??
+                  '')
+              .toLowerCase();
+          vb = (extraB['artist_brand']?.toString().trim() ??
+                  br['name']?.toString() ??
+                  '')
+              .toLowerCase();
           break;
         case 1:
           va = (extraA['full_name']?.toString().trim() ?? '').toLowerCase();
@@ -2370,188 +2586,251 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               child: Column(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(sideMargin, 12, sideMargin, 8),
+                    padding: const EdgeInsets.fromLTRB(
+                        sideMargin, 12, sideMargin, 8),
                     child: TextField(
-              controller: _artistSearchController,
-              decoration: InputDecoration(
-                hintText: 'Search artists (brand, name, email)...',
-                prefixIcon: const Icon(ZalmanimIcons.search),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(sideMargin, 8, sideMargin, 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Artists',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                FilledButton.icon(
-                  onPressed: () => _showAddArtistDialog(),
-                  icon: const Icon(ZalmanimIcons.add),
-                  label: const Text('Add artist'),
-                ),
-                const SizedBox(width: 8),
-                FilledButton.icon(
-                  onPressed: artists.isEmpty ? null : () => _showMergeArtistsDialog(),
-                  icon: const Icon(ZalmanimIcons.merge),
-                  label: const Text('Merge artists'),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: sideMargin),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.vertical,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Table(
-                    columnWidths: const {
-                      0: FixedColumnWidth(160),
-                      1: FixedColumnWidth(160),
-                      2: FixedColumnWidth(220),
-                      3: FixedColumnWidth(180),
-                      4: FixedColumnWidth(140),
-                    },
-                    defaultColumnWidth: const IntrinsicColumnWidth(),
-                    children: [
-                      TableRow(
-                        decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest),
-                        children: [
-                          _sortableHeader(context, 'Brand', 0),
-                          _sortableHeader(context, 'Full name', 1),
-                          _sortableHeader(context, 'Email', 2),
-                          _sortableHeader(context, 'Last Release', 3),
-                          const Padding(padding: EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text('', style: TextStyle(fontWeight: FontWeight.bold))),
-                        ],
+                      controller: _artistSearchController,
+                      decoration: InputDecoration(
+                        hintText: 'Search artists (brand, name, email)...',
+                        prefixIcon: const Icon(ZalmanimIcons.search),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
                       ),
-                      ...sortedArtists.map<TableRow>((a) {
-                        final artist = a as Map<String, dynamic>;
-                        final id = artist['id'] as int?;
-                        final extra = artist['extra'] as Map<String, dynamic>? ?? {};
-                        final brand = extra['artist_brand']?.toString().trim() ?? artist['name']?.toString() ?? '';
-                        final fullName = extra['full_name']?.toString().trim() ?? '';
-                        final email = artist['email']?.toString() ?? '';
-                        final isActive = artist['is_active'] as bool? ?? true;
-                        final displayName = brand.isEmpty ? (fullName.isEmpty ? 'Unknown' : fullName) : brand;
-                        return TableRow(
-                          decoration: isActive ? null : BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5)),
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
-                              child: Row(
-                                children: [
-                                  if (!isActive)
-                                    Padding(
-                                      padding: const EdgeInsets.only(right: 6),
-                                      child: Chip(
-                                        label: const Text('Inactive', style: TextStyle(fontSize: 11)),
-                                        padding: EdgeInsets.zero,
-                                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                      ),
-                                    ),
-                                  Expanded(
-                                    child: ClipRect(
-                                      child: SelectableText(
-                                        brand.isEmpty ? '-' : brand,
-                                        maxLines: 1,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
-                              child: ClipRect(
-                                child: SelectableText(
-                                  fullName.isEmpty ? '-' : fullName,
-                                  maxLines: 1,
-                                ),
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
-                              child: ClipRect(
-                                child: SelectableText(
-                                  email,
-                                  maxLines: 1,
-                                ),
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
-                              child: ClipRect(
-                                child: SelectableText(
-                                  _artistLastRelease(artist),
-                                  maxLines: 1,
-                                ),
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 5),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(ZalmanimIcons.releases, color: Colors.blue, size: 22),
-                                    tooltip: 'View releases',
-                                    onPressed: id != null ? () => _showArtistReleases(id, displayName) : null,
-                                    style: IconButton.styleFrom(
-                                      minimumSize: const Size(36, 36),
-                                      padding: EdgeInsets.zero,
-                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                    ),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(ZalmanimIcons.edit, color: Colors.orange, size: 22),
-                                    tooltip: 'Edit',
-                                    onPressed: id != null
-                                        ? () => _showEditArtistDialog(
-                                              id,
-                                              initialArtist: Map<String, dynamic>.from(artist as Map),
-                                            )
-                                        : null,
-                                    style: IconButton.styleFrom(
-                                      minimumSize: const Size(36, 36),
-                                      padding: EdgeInsets.zero,
-                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                    ),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(ZalmanimIcons.delete, color: Colors.red, size: 22),
-                                    tooltip: 'Remove',
-                                    onPressed: id != null ? () => _removeArtist(id, displayName) : null,
-                                    style: IconButton.styleFrom(
-                                      minimumSize: const Size(36, 36),
-                                      padding: EdgeInsets.zero,
-                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        );
-                      }),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-            ),
-          ),
-        ],
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                        sideMargin, 8, sideMargin, 12),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Artists',
+                            style: const TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.bold),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        FilledButton.icon(
+                          onPressed: () => _showAddArtistDialog(),
+                          icon: const Icon(ZalmanimIcons.add),
+                          label: const Text('Add artist'),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton.icon(
+                          onPressed: artists.isEmpty
+                              ? null
+                              : () => _showMergeArtistsDialog(),
+                          icon: const Icon(ZalmanimIcons.merge),
+                          label: const Text('Merge artists'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: sideMargin),
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.vertical,
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Table(
+                            columnWidths: const {
+                              0: FixedColumnWidth(160),
+                              1: FixedColumnWidth(160),
+                              2: FixedColumnWidth(220),
+                              3: FixedColumnWidth(180),
+                              4: FixedColumnWidth(140),
+                            },
+                            defaultColumnWidth: const IntrinsicColumnWidth(),
+                            children: [
+                              TableRow(
+                                decoration: BoxDecoration(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .surfaceContainerHighest),
+                                children: [
+                                  _sortableHeader(context, 'Brand', 0),
+                                  _sortableHeader(context, 'Full name', 1),
+                                  _sortableHeader(context, 'Email', 2),
+                                  _sortableHeader(context, 'Last Release', 3),
+                                  const Padding(
+                                      padding: EdgeInsets.symmetric(
+                                          horizontal: 4, vertical: 5),
+                                      child: Text('',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold))),
+                                ],
+                              ),
+                              ...sortedArtists.map<TableRow>((a) {
+                                final artist = a as Map<String, dynamic>;
+                                final id = artist['id'] as int?;
+                                final extra =
+                                    artist['extra'] as Map<String, dynamic>? ??
+                                        {};
+                                final brand =
+                                    extra['artist_brand']?.toString().trim() ??
+                                        artist['name']?.toString() ??
+                                        '';
+                                final fullName =
+                                    extra['full_name']?.toString().trim() ?? '';
+                                final email = artist['email']?.toString() ?? '';
+                                final isActive =
+                                    artist['is_active'] as bool? ?? true;
+                                final displayName = brand.isEmpty
+                                    ? (fullName.isEmpty ? 'Unknown' : fullName)
+                                    : brand;
+                                return TableRow(
+                                  decoration: isActive
+                                      ? null
+                                      : BoxDecoration(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .surfaceContainerHighest
+                                              .withValues(alpha: 0.5)),
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 9),
+                                      child: Row(
+                                        children: [
+                                          if (!isActive)
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                  right: 6),
+                                              child: Chip(
+                                                label: const Text('Inactive',
+                                                    style: TextStyle(
+                                                        fontSize: 11)),
+                                                padding: EdgeInsets.zero,
+                                                materialTapTargetSize:
+                                                    MaterialTapTargetSize
+                                                        .shrinkWrap,
+                                              ),
+                                            ),
+                                          Expanded(
+                                            child: ClipRect(
+                                              child: SelectableText(
+                                                brand.isEmpty ? '-' : brand,
+                                                maxLines: 1,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 9),
+                                      child: ClipRect(
+                                        child: SelectableText(
+                                          fullName.isEmpty ? '-' : fullName,
+                                          maxLines: 1,
+                                        ),
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 9),
+                                      child: ClipRect(
+                                        child: SelectableText(
+                                          email,
+                                          maxLines: 1,
+                                        ),
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 9),
+                                      child: ClipRect(
+                                        child: SelectableText(
+                                          _artistLastRelease(artist),
+                                          maxLines: 1,
+                                        ),
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 2, vertical: 5),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.end,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(
+                                                ZalmanimIcons.releases,
+                                                color: Colors.blue,
+                                                size: 22),
+                                            tooltip: 'View releases',
+                                            onPressed: id != null
+                                                ? () => _showArtistReleases(
+                                                    id, displayName)
+                                                : null,
+                                            style: IconButton.styleFrom(
+                                              minimumSize: const Size(36, 36),
+                                              padding: EdgeInsets.zero,
+                                              tapTargetSize:
+                                                  MaterialTapTargetSize
+                                                      .shrinkWrap,
+                                            ),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(ZalmanimIcons.edit,
+                                                color: Colors.orange, size: 22),
+                                            tooltip: 'Edit',
+                                            onPressed: id != null
+                                                ? () => _showEditArtistDialog(
+                                                      id,
+                                                      initialArtist: Map<String,
+                                                              dynamic>.from(
+                                                          artist as Map),
+                                                    )
+                                                : null,
+                                            style: IconButton.styleFrom(
+                                              minimumSize: const Size(36, 36),
+                                              padding: EdgeInsets.zero,
+                                              tapTargetSize:
+                                                  MaterialTapTargetSize
+                                                      .shrinkWrap,
+                                            ),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(
+                                                ZalmanimIcons.delete,
+                                                color: Colors.red,
+                                                size: 22),
+                                            tooltip: 'Remove',
+                                            onPressed: id != null
+                                                ? () => _removeArtist(
+                                                    id, displayName)
+                                                : null,
+                                            style: IconButton.styleFrom(
+                                              minimumSize: const Size(36, 36),
+                                              padding: EdgeInsets.zero,
+                                              tapTargetSize:
+                                                  MaterialTapTargetSize
+                                                      .shrinkWrap,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -2564,7 +2843,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     {'key': 'name', 'label': 'Name (display)'},
     {'key': 'email', 'label': 'Email'},
     {'key': 'artist_brand', 'label': 'Artist brand (primary)'},
-    {'key': 'artist_brands', 'label': 'Brands (comma-separated, all names that match this artist)'},
+    {
+      'key': 'artist_brands',
+      'label': 'Brands (comma-separated, all names that match this artist)'
+    },
     {'key': 'full_name', 'label': 'Full name'},
     {'key': 'website', 'label': 'Website'},
     {'key': 'soundcloud', 'label': 'SoundCloud'},
@@ -2607,13 +2889,18 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     final name = (result['name'] as String?)?.trim() ?? '';
     final email = (result['email'] as String?)?.trim() ?? '';
     if (name.isEmpty || email.isEmpty) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Name and email are required')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Name and email are required')),
+        );
+      }
       return;
     }
     try {
       await widget.apiClient.createArtist(token: widget.token, body: result);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Artist added')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Artist added')));
       _load();
     } catch (e) {
       _showErrorSnackBar(e.toString());
@@ -2625,14 +2912,18 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     Map<String, dynamic>? initialArtist,
   }) async {
     try {
-      final artist =
-          initialArtist ??
-          artists.cast<Map?>().whereType<Map>().map((e) => Map<String, dynamic>.from(e)).firstWhere(
+      final artist = initialArtist ??
+          artists
+              .cast<Map?>()
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .firstWhere(
                 (item) => item['id'] == id,
                 orElse: () => <String, dynamic>{},
               );
-      final artistData =
-          artist.isNotEmpty ? artist : await widget.apiClient.fetchArtist(widget.token, id);
+      final artistData = artist.isNotEmpty
+          ? artist
+          : await widget.apiClient.fetchArtist(widget.token, id);
       if (!mounted) return;
       final extra = artistData['extra'] as Map<String, dynamic>? ?? {};
       final controllers = <String, TextEditingController>{};
@@ -2643,7 +2934,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           value = artistData[key]?.toString() ?? '';
         } else if (key == 'artist_brands') {
           final list = extra['artist_brands'];
-          value = list is List ? (list.map((e) => e?.toString().trim()).where((s) => s != null && s.isNotEmpty).join(', ')) : (extra['artist_brand']?.toString().trim() ?? '');
+          value = list is List
+              ? (list
+                  .map((e) => e?.toString().trim())
+                  .where((s) => s != null && s.isNotEmpty)
+                  .join(', '))
+              : (extra['artist_brand']?.toString().trim() ?? '');
         } else {
           value = extra[key]?.toString() ?? '';
         }
@@ -2666,19 +2962,26 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       final name = (result['name'] as String?)?.trim() ?? '';
       final email = (result['email'] as String?)?.trim() ?? '';
       if (name.isEmpty || email.isEmpty) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Name and email are required')));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Name and email are required')),
+          );
+        }
         return;
       }
-      await widget.apiClient.updateArtist(token: widget.token, id: id, body: result);
+      await widget.apiClient
+          .updateArtist(token: widget.token, id: id, body: result);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Artist updated')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Artist updated')));
       _load();
     } catch (e) {
       _showErrorSnackBar(e.toString());
     }
   }
 
-  Future<void> _showSetArtistPasswordDialog(int artistId, String artistName) async {
+  Future<void> _showSetArtistPasswordDialog(
+      int artistId, String artistName) async {
     final passwordController = TextEditingController();
     final confirmController = TextEditingController();
     final result = await showDialog<bool>(
@@ -2690,7 +2993,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Artist: $artistName', style: const TextStyle(fontWeight: FontWeight.w500)),
+              Text('Artist: $artistName',
+                  style: const TextStyle(fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               const Text(
                 'Sets the password for artists.zalmanim.com. Artist signs in with their artist email and this password.',
@@ -2719,17 +3023,21 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
           FilledButton(
             onPressed: () {
               final p = passwordController.text;
               final c = confirmController.text;
               if (p.length < 6) {
-                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Password must be at least 6 characters')));
+                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                    content: Text('Password must be at least 6 characters')));
                 return;
               }
               if (p != c) {
-                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Passwords do not match')));
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(content: Text('Passwords do not match')));
                 return;
               }
               Navigator.pop(ctx, true);
@@ -2750,15 +3058,19 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         password: password,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Portal password set. Artist can sign in at artists.zalmanim.com.')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'Portal password set. Artist can sign in at artists.zalmanim.com.')));
     } catch (e) {
       _showErrorSnackBar(e.toString());
     }
   }
 
-  Future<void> _sendArtistPortalInvite(int artistId, String artistName, String artistEmail) async {
+  Future<void> _sendArtistPortalInvite(
+      int artistId, String artistName, String artistEmail) async {
     if (artistEmail.trim().isEmpty) {
-      _showErrorSnackBar('Artist email is required before sending portal access.');
+      _showErrorSnackBar(
+          'Artist email is required before sending portal access.');
       return;
     }
     final confirmed = await showDialog<bool>(
@@ -2770,13 +3082,18 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           'The email will include the portal link, username ($artistEmail), a temporary password, and a short explanation of the portal.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Send email')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Send email')),
         ],
       ),
     );
     if (confirmed != true) return;
-    final emailConfigured = await widget.apiClient.isEmailConfigured(widget.token);
+    final emailConfigured =
+        await widget.apiClient.isEmailConfigured(widget.token);
     if (!mounted) return;
     if (!emailConfigured) {
       await _showEmailNotConfiguredDialog(context);
@@ -2789,21 +3106,181 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       );
       if (!mounted) return;
       final username = (result['username'] ?? artistEmail).toString();
-      final portalUrl = (result['portal_url'] ?? 'https://artists.zalmanim.com').toString();
+      final portalUrl =
+          (result['portal_url'] ?? 'https://artists.zalmanim.com').toString();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Portal access sent to $username via $portalUrl.')),
+        SnackBar(
+            content: Text('Portal access sent to $username via $portalUrl.')),
       );
     } catch (e) {
       final msg = e.toString();
-      final isNotConfigured = msg.contains('not configured') || msg.contains('Email is not configured');
-      final isNetworkFailure = msg.contains('Failed to fetch') || msg.contains('ClientException') || msg.contains('TimeoutException');
+      final isNotConfigured = msg.contains('not configured') ||
+          msg.contains('Email is not configured');
+      final isNetworkFailure = msg.contains('Failed to fetch') ||
+          msg.contains('ClientException') ||
+          msg.contains('TimeoutException');
       if (isNotConfigured) {
-        _showErrorSnackBar('$msg\n\nGo to Settings → Mail to configure SMTP or connect Gmail.');
+        _showErrorSnackBar(
+            '$msg\n\nGo to Settings → Mail to configure SMTP or connect Gmail.');
       } else if (isNetworkFailure) {
-        _showErrorSnackBar('$msg\n\nNetwork or timeout. The server may be busy sending the email. Try again; if it persists, check the API is reachable.');
+        _showErrorSnackBar(
+            '$msg\n\nNetwork or timeout. The server may be busy sending the email. Try again; if it persists, check the API is reachable.');
       } else {
         _showErrorSnackBar(msg);
       }
+    }
+  }
+
+  Future<void> _showGrooverInviteDialog() async {
+    final emailController = TextEditingController();
+    final artistNameController = TextEditingController();
+    final fullNameController = TextEditingController();
+    final notesController = TextEditingController(
+      text: 'Source: Groover',
+    );
+    bool sending = false;
+    String? errorText;
+
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setStateDialog) => AlertDialog(
+            title: const Text('Send Groover invite'),
+            content: SizedBox(
+              width: 560,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Enter the artist details from Groover. We will create the artist if needed and send a registration email with a portal onboarding form.',
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: emailController,
+                      decoration: const InputDecoration(
+                        labelText: 'Email',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: artistNameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Artist / stage name',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: fullNameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Full name',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: notesController,
+                      decoration: const InputDecoration(
+                        labelText: 'Internal notes',
+                        border: OutlineInputBorder(),
+                        alignLabelWithHint: true,
+                      ),
+                      minLines: 2,
+                      maxLines: 4,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'You can edit the email wording in Settings → Email templates → Groover invite.',
+                      style: Theme.of(ctx).textTheme.bodySmall,
+                    ),
+                    if (errorText != null) ...[
+                      const SizedBox(height: 12),
+                      SelectableText(errorText!,
+                          style: const TextStyle(color: Colors.red)),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: sending ? null : () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: sending
+                    ? null
+                    : () async {
+                        if (emailController.text.trim().isEmpty) {
+                          setStateDialog(
+                              () => errorText = 'Email is required.');
+                          return;
+                        }
+                        final emailConfigured = await widget.apiClient
+                            .isEmailConfigured(widget.token);
+                        if (!mounted || !ctx.mounted) return;
+                        if (!emailConfigured) {
+                          Navigator.of(ctx).pop();
+                          await _showEmailNotConfiguredDialog(context);
+                          return;
+                        }
+                        setStateDialog(() {
+                          sending = true;
+                          errorText = null;
+                        });
+                        try {
+                          final result =
+                              await widget.apiClient.sendGrooverInvite(
+                            token: widget.token,
+                            email: emailController.text.trim(),
+                            artistName: artistNameController.text.trim().isEmpty
+                                ? null
+                                : artistNameController.text.trim(),
+                            fullName: fullNameController.text.trim().isEmpty
+                                ? null
+                                : fullNameController.text.trim(),
+                            notes: notesController.text.trim().isEmpty
+                                ? null
+                                : notesController.text.trim(),
+                          );
+                          if (!mounted || !ctx.mounted) return;
+                          Navigator.of(ctx).pop();
+                          final createdArtist =
+                              result['created_artist'] == true;
+                          final registrationUrl =
+                              (result['registration_url'] ?? '').toString();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                '${createdArtist ? 'Artist created and' : ''} Groover invite sent.${registrationUrl.isNotEmpty ? ' Registration link generated.' : ''}',
+                              ),
+                            ),
+                          );
+                          await loadArtists();
+                        } catch (e) {
+                          setStateDialog(() {
+                            sending = false;
+                            errorText =
+                                e.toString().replaceFirst('Exception: ', '');
+                          });
+                        }
+                      },
+                child: Text(sending ? 'Sending...' : 'Send invite'),
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      emailController.dispose();
+      artistNameController.dispose();
+      fullNameController.dispose();
+      notesController.dispose();
     }
   }
 
@@ -2818,28 +3295,36 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           'You can edit the email text in Settings → Email templates → Portal invite.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Send to all')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Send to all')),
         ],
       ),
     );
     if (confirmed != true) return;
-    final emailConfigured = await widget.apiClient.isEmailConfigured(widget.token);
+    final emailConfigured =
+        await widget.apiClient.isEmailConfigured(widget.token);
     if (!mounted) return;
     if (!emailConfigured) {
       await _showEmailNotConfiguredDialog(context);
       return;
     }
     try {
-      final result = await widget.apiClient.sendArtistPortalInviteToAll(token: widget.token);
+      final result = await widget.apiClient
+          .sendArtistPortalInviteToAll(token: widget.token);
       if (!mounted) return;
       final sent = result['sent'] as int? ?? 0;
       final failed = result['failed'] as int? ?? 0;
       final errorsRaw = result['errors'];
-      final errors = errorsRaw is List ? List<dynamic>.from(errorsRaw) : <dynamic>[];
+      final errors =
+          errorsRaw is List ? List<dynamic>.from(errorsRaw) : <dynamic>[];
       if (failed > 0 && errors.isNotEmpty) {
         final errorText = errors
-            .map((e) => '${(e is Map ? e['email'] : '')}: ${(e is Map ? e['detail'] : '')}')
+            .map((e) =>
+                '${(e is Map ? e['email'] : '')}: ${(e is Map ? e['detail'] : '')}')
             .join('\n');
         await showDialog<void>(
           context: context,
@@ -2855,7 +3340,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   TextButton.icon(
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: errorText));
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Errors copied to clipboard')));
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                          content: Text('Errors copied to clipboard')));
                     },
                     icon: const Icon(Icons.copy),
                     label: const Text('Copy errors'),
@@ -2864,28 +3350,34 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               ),
             ),
             actions: [
-              FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
             ],
           ),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Portal invite sent to $sent artist(s).${failed > 0 ? ' $failed failed.' : ''}')),
+          SnackBar(
+              content: Text(
+                  'Portal invite sent to $sent artist(s).${failed > 0 ? ' $failed failed.' : ''}')),
         );
       }
       loadArtists();
     } catch (e) {
       final msg = e.toString();
-      final isNotConfigured = msg.contains('not configured') || msg.contains('Email is not configured');
+      final isNotConfigured = msg.contains('not configured') ||
+          msg.contains('Email is not configured');
       if (isNotConfigured) {
-        _showErrorSnackBar('$msg\n\nGo to Settings → Mail to configure SMTP or connect Gmail.');
+        _showErrorSnackBar(
+            '$msg\n\nGo to Settings → Mail to configure SMTP or connect Gmail.');
       } else {
         _showErrorSnackBar(msg);
       }
     }
   }
 
-  Future<void> _sendArtistUpdateProfileInvite(int artistId, String artistName, String artistEmail) async {
+  Future<void> _sendArtistUpdateProfileInvite(
+      int artistId, String artistName, String artistEmail) async {
     if (artistEmail.trim().isEmpty) {
       _showErrorSnackBar('Artist email is required.');
       return;
@@ -2899,13 +3391,18 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           'The email will include the portal link. If they don\'t have a password yet, a temporary one will be set and sent.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Send email')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Send email')),
         ],
       ),
     );
     if (confirmed != true) return;
-    final emailConfigured = await widget.apiClient.isEmailConfigured(widget.token);
+    final emailConfigured =
+        await widget.apiClient.isEmailConfigured(widget.token);
     if (!mounted) return;
     if (!emailConfigured) {
       await _showEmailNotConfiguredDialog(context);
@@ -2923,12 +3420,17 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       );
     } catch (e) {
       final msg = e.toString();
-      final isNotConfigured = msg.contains('not configured') || msg.contains('Email is not configured');
-      final isNetworkFailure = msg.contains('Failed to fetch') || msg.contains('ClientException') || msg.contains('TimeoutException');
+      final isNotConfigured = msg.contains('not configured') ||
+          msg.contains('Email is not configured');
+      final isNetworkFailure = msg.contains('Failed to fetch') ||
+          msg.contains('ClientException') ||
+          msg.contains('TimeoutException');
       if (isNotConfigured) {
-        _showErrorSnackBar('$msg\n\nGo to Settings → Mail to configure SMTP or connect Gmail.');
+        _showErrorSnackBar(
+            '$msg\n\nGo to Settings → Mail to configure SMTP or connect Gmail.');
       } else if (isNetworkFailure) {
-        _showErrorSnackBar('$msg\n\nNetwork or timeout. Try again; if it persists, check the API is reachable.');
+        _showErrorSnackBar(
+            '$msg\n\nNetwork or timeout. Try again; if it persists, check the API is reachable.');
       } else {
         _showErrorSnackBar(msg);
       }
@@ -2945,8 +3447,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           'To send invite emails, configure SMTP or connect Gmail in Settings → Mail.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Open Settings')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Open Settings')),
         ],
       ),
     );
@@ -2981,8 +3487,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                         labelText: f['label'],
                         border: const OutlineInputBorder(),
                       ),
-                      keyboardType: f['key'] == 'email' ? TextInputType.emailAddress : null,
-                      maxLines: (f['key'] == 'comments' || f['key'] == 'notes' || f['key'] == 'address') ? 2 : 1,
+                      keyboardType: f['key'] == 'email'
+                          ? TextInputType.emailAddress
+                          : null,
+                      maxLines: (f['key'] == 'comments' ||
+                              f['key'] == 'notes' ||
+                              f['key'] == 'address')
+                          ? 2
+                          : 1,
                     ),
                     const SizedBox(height: 8),
                   ],
@@ -2999,7 +3511,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel')),
             FilledButton(
               onPressed: () {
                 final body = <String, dynamic>{};
@@ -3007,7 +3521,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   final key = f['key']!;
                   final v = controllers[key]?.text.trim() ?? '';
                   if (key == 'artist_brands') {
-                    final list = v.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+                    final list = v
+                        .split(',')
+                        .map((s) => s.trim())
+                        .where((s) => s.isNotEmpty)
+                        .toList();
                     if (list.isNotEmpty) body[key] = list;
                     continue;
                   }
@@ -3034,10 +3552,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Remove artist?'),
-        content: Text('This will remove "$name". Artists linked to a user cannot be deleted.'),
+        content: Text(
+            'This will remove "$name". Artists linked to a user cannot be deleted.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Remove')),
         ],
       ),
     );
@@ -3045,7 +3568,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     try {
       await widget.apiClient.deleteArtist(token: widget.token, id: id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Artist removed')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Artist removed')));
       _load();
     } catch (e) {
       _showErrorSnackBar(e.toString());
@@ -3066,12 +3590,24 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
             String artistDisplay(Map<String, dynamic> a) {
               final id = a['id'] as int?;
               final extra = a['extra'] as Map<String, dynamic>? ?? {};
-              final brand = extra['artist_brand']?.toString().trim() ?? a['name']?.toString() ?? '';
+              final brand = extra['artist_brand']?.toString().trim() ??
+                  a['name']?.toString() ??
+                  '';
               final list = extra['artist_brands'];
-              final brandsStr = list is List ? list.map((e) => e?.toString().trim()).where((s) => s != null && s.isNotEmpty).join(', ') : '';
-              if (brand.isNotEmpty) return brandsStr.isNotEmpty && brandsStr != brand ? '$brand ($brandsStr)' : brand;
+              final brandsStr = list is List
+                  ? list
+                      .map((e) => e?.toString().trim())
+                      .where((s) => s != null && s.isNotEmpty)
+                      .join(', ')
+                  : '';
+              if (brand.isNotEmpty) {
+                return brandsStr.isNotEmpty && brandsStr != brand
+                    ? '$brand ($brandsStr)'
+                    : brand;
+              }
               return brandsStr.isNotEmpty ? brandsStr : 'Artist ${id ?? '?'}';
             }
+
             return AlertDialog(
               title: const Text('Merge artists'),
               content: SizedBox(
@@ -3080,19 +3616,25 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text('Target artist (kept; all brands will be merged here):', style: TextStyle(fontWeight: FontWeight.w600)),
+                    const Text(
+                        'Target artist (kept; all brands will be merged here):',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
                     const SizedBox(height: 6),
                     DropdownButtonFormField<int>(
                       initialValue: targetId,
-                      decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                      decoration: const InputDecoration(
+                          border: OutlineInputBorder(), isDense: true),
                       hint: const Text('Select target'),
                       items: [
                         for (final a in artists)
                           () {
                             final artist = a as Map<String, dynamic>;
                             final id = artist['id'] as int?;
-                            if (id == null) return null as DropdownMenuItem<int>?;
-                            return DropdownMenuItem<int>(value: id, child: Text(artistDisplay(artist)));
+                            if (id == null) {
+                              return null as DropdownMenuItem<int>?;
+                            }
+                            return DropdownMenuItem<int>(
+                                value: id, child: Text(artistDisplay(artist)));
                           }(),
                       ].whereType<DropdownMenuItem<int>>().toList(),
                       onChanged: (v) {
@@ -3103,7 +3645,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       },
                     ),
                     const SizedBox(height: 16),
-                    const Text('Source artists (merged into target, then deactivated):', style: TextStyle(fontWeight: FontWeight.w600)),
+                    const Text(
+                        'Source artists (merged into target, then deactivated):',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
                     const SizedBox(height: 6),
                     SizedBox(
                       height: 180,
@@ -3117,17 +3661,21 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                           final isTarget = id == targetId;
                           return CheckboxListTile(
                             value: sourceIds.contains(id),
-                            onChanged: isTarget ? null : (v) {
-                              setDialogState(() {
-                                if (v == true) {
-                                  sourceIds.add(id);
-                                } else {
-                                  sourceIds.remove(id);
-                                }
-                              });
-                            },
+                            onChanged: isTarget
+                                ? null
+                                : (v) {
+                                    setDialogState(() {
+                                      if (v == true) {
+                                        sourceIds.add(id);
+                                      } else {
+                                        sourceIds.remove(id);
+                                      }
+                                    });
+                                  },
                             title: Text(artistDisplay(a)),
-                            secondary: isTarget ? const Chip(label: Text('Target')) : null,
+                            secondary: isTarget
+                                ? const Chip(label: Text('Target'))
+                                : null,
                           );
                         },
                       ),
@@ -3136,11 +3684,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Cancel')),
                 FilledButton(
                   onPressed: targetId == null || sourceIds.isEmpty
                       ? null
-                      : () => Navigator.pop(ctx, {'target': targetId!, 'sources': sourceIds.toList()}),
+                      : () => Navigator.pop(ctx,
+                          {'target': targetId!, 'sources': sourceIds.toList()}),
                   child: const Text('Merge'),
                 ),
               ],
@@ -3151,7 +3702,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     );
     if (result == null || !mounted) return;
     final target = result['target'] as int?;
-    final sources = (result['sources'] as List<dynamic>?)?.map((e) => e as int).toList() ?? [];
+    final sources =
+        (result['sources'] as List<dynamic>?)?.map((e) => e as int).toList() ??
+            [];
     if (target == null || sources.isEmpty) return;
     try {
       setState(() => loading = true);
@@ -3164,8 +3717,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: SelectableText('Merged ${sources.length} artist(s) into target. Source artists deactivated.'),
-          action: SnackBarAction(label: 'Copy', onPressed: () => Clipboard.setData(ClipboardData(text: 'Merged ${sources.length} artist(s).'))),
+          content: SelectableText(
+              'Merged ${sources.length} artist(s) into target. Source artists deactivated.'),
+          action: SnackBarAction(
+              label: 'Copy',
+              onPressed: () => Clipboard.setData(
+                  ClipboardData(text: 'Merged ${sources.length} artist(s).'))),
         ),
       );
     } catch (e) {
@@ -3177,7 +3734,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   Future<void> _showArtistReleases(int artistId, String artistName) async {
     try {
-      final releases = await widget.apiClient.fetchArtistReleases(widget.token, artistId);
+      final releases =
+          await widget.apiClient.fetchArtistReleases(widget.token, artistId);
       if (!mounted) return;
       await showDialog<void>(
         context: context,
@@ -3195,12 +3753,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       return ListTile(
                         leading: const Icon(ZalmanimIcons.music, size: 20),
                         title: SelectableText((r['title'] as String?) ?? ''),
-                        subtitle: SelectableText('Status: ${r['status'] ?? ''}'),
+                        subtitle:
+                            SelectableText('Status: ${r['status'] ?? ''}'),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
-                              icon: const Icon(ZalmanimIcons.personAdd, size: 22),
+                              icon:
+                                  const Icon(ZalmanimIcons.personAdd, size: 22),
                               tooltip: 'Set artists',
                               onPressed: () {
                                 Navigator.pop(ctx);
@@ -3208,11 +3768,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                               },
                             ),
                             IconButton(
-                              icon: const Icon(ZalmanimIcons.campaigns, color: Colors.blue, size: 22),
+                              icon: const Icon(ZalmanimIcons.campaigns,
+                                  color: Colors.blue, size: 22),
                               tooltip: 'Create campaign',
                               onPressed: () {
                                 Navigator.pop(ctx);
-                                _prepareCampaignFromRelease(artistId, artistName, r);
+                                _prepareCampaignFromRelease(
+                                    artistId, artistName, r);
                               },
                             ),
                           ],
@@ -3222,7 +3784,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Close')),
           ],
         ),
       );
@@ -3242,7 +3806,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
     if (!mounted) return;
     final extra = artistMap['extra'] as Map<String, dynamic>? ?? {};
-    final displayName = (extra['artist_brand'] ?? artistMap['name'] ?? 'Artist').toString();
+    final displayName =
+        (extra['artist_brand'] ?? artistMap['name'] ?? 'Artist').toString();
 
     await showDialog<void>(
       context: context,
@@ -3271,7 +3836,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                         artistMap: artistMap!,
                         onEdit: () {
                           Navigator.pop(ctx);
-                          _showEditArtistDialog(artistId, initialArtist: artistMap);
+                          _showEditArtistDialog(artistId,
+                              initialArtist: artistMap);
                         },
                       ),
                       _ArtistLogsTab(
@@ -3286,7 +3852,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Close')),
           ],
         ),
       ),
@@ -3297,7 +3865,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   Future<void> _showSetArtistsDialog(Map<String, dynamic> release) async {
     final releaseId = release['id'] as int?;
     final title = (release['title'] as String?) ?? 'Release';
-    final currentIds = (release['artist_ids'] as List<dynamic>?)?.map((e) => e as int).toList() ?? [];
+    final currentIds = (release['artist_ids'] as List<dynamic>?)
+            ?.map((e) => e as int)
+            .toList() ??
+        [];
     if (releaseId == null) return;
 
     try {
@@ -3331,12 +3902,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                         shrinkWrap: true,
                         itemCount: selectableArtists.length,
                         itemBuilder: (_, i) {
-                          final a = selectableArtists[i] as Map<String, dynamic>;
+                          final a =
+                              selectableArtists[i] as Map<String, dynamic>;
                           final id = a['id'] as int?;
                           if (id == null) return const SizedBox.shrink();
                           final name = (a['name'] as String?) ?? 'Artist $id';
-                          final extra = a['extra'] as Map<String, dynamic>? ?? {};
-                          final brand = extra['artist_brand']?.toString() ?? name;
+                          final extra =
+                              a['extra'] as Map<String, dynamic>? ?? {};
+                          final brand =
+                              extra['artist_brand']?.toString() ?? name;
                           return CheckboxListTile(
                             value: selectedIds.contains(id),
                             onChanged: (v) {
@@ -3349,7 +3923,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                               });
                             },
                             title: Text(brand),
-                            subtitle: extra['full_name']?.toString() != null && extra['full_name'] != brand
+                            subtitle: extra['full_name']?.toString() != null &&
+                                    extra['full_name'] != brand
                                 ? Text(extra['full_name'] as String)
                                 : null,
                           );
@@ -3357,7 +3932,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Cancel')),
                 FilledButton(
                   onPressed: () => Navigator.pop(ctx, true),
                   child: const Text('Save'),
@@ -3376,7 +3953,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         artistIds: selectedIds.toList(),
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Artists updated')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Artists updated')));
       _load();
     } catch (e) {
       _showErrorSnackBar(e.toString());
@@ -3384,7 +3962,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   }
 
   /// Builds campaign brief text: artist details + release details + English prompt for social campaign.
-  String _buildCampaignBrief(Map<String, dynamic>? artist, String artistName, Map<String, dynamic> release) {
+  String _buildCampaignBrief(Map<String, dynamic>? artist, String artistName,
+      Map<String, dynamic> release) {
     final buffer = StringBuffer();
     buffer.writeln('--- Artist ---');
     if (artist != null) {
@@ -3407,14 +3986,20 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     buffer.writeln('--- Release ---');
     buffer.writeln('Title: ${release['title'] ?? ''}');
     buffer.writeln('Status: ${release['status'] ?? ''}');
-    if (release['id'] != null) buffer.writeln('Release ID: ${release['id']}');
-    if (release['created_at'] != null) buffer.writeln('Created: ${release['created_at']}');
+    if (release['id'] != null) {
+      buffer.writeln('Release ID: ${release['id']}');
+    }
+    if (release['created_at'] != null) {
+      buffer.writeln('Created: ${release['created_at']}');
+    }
     buffer.writeln('');
-    buffer.writeln('Prepare for me texts and images for a social media campaign.');
+    buffer.writeln(
+        'Prepare for me texts and images for a social media campaign.');
     return buffer.toString();
   }
 
-  Future<void> _prepareCampaignFromRelease(int artistId, String artistName, Map<String, dynamic> release) async {
+  Future<void> _prepareCampaignFromRelease(
+      int artistId, String artistName, Map<String, dynamic> release) async {
     Map<String, dynamic>? artist;
     for (final a in artists) {
       if (a is Map<String, dynamic> && a['id'] == artistId) {
@@ -3447,13 +4032,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      color:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: Theme.of(context).dividerColor),
                     ),
                     child: SelectableText(
                       briefText,
-                      style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                      style: const TextStyle(
+                          fontFamily: 'monospace', fontSize: 13),
                     ),
                   ),
                 ),
@@ -3462,7 +4049,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
           OutlinedButton.icon(
             onPressed: () {
               Clipboard.setData(ClipboardData(text: briefText));
@@ -3498,18 +4086,22 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       child: ListView(
         padding: const EdgeInsets.all(12),
         children: [
-          const Text('Reports', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Text('Reports',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Text(
             'Export and view reports (artists, releases, campaigns). More report types can be added here.',
-            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 24),
           Card(
             child: ListTile(
               leading: const Icon(ZalmanimIcons.personOff),
               title: const Text('Artist reminders'),
-              subtitle: const Text('Artists with no catalog release in the last X months. Run report, send reminder emails.'),
+              subtitle: const Text(
+                  'Artists with no catalog release in the last X months. Run report, send reminder emails.'),
               onTap: () => _showArtistRemindersReport(context),
             ),
           ),
@@ -3518,10 +4110,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
             child: ListTile(
               leading: const Icon(ZalmanimIcons.reports),
               title: const Text('Artists'),
-              subtitle: const Text('Artist list and data for DB import (e.g. CSV).'),
+              subtitle:
+                  const Text('Artist list and data for DB import (e.g. CSV).'),
               onTap: () {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Reports: export options coming soon.')),
+                  const SnackBar(
+                      content: Text('Reports: export options coming soon.')),
                 );
               },
             ),
@@ -3534,7 +4128,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               subtitle: const Text('Releases and catalog summary.'),
               onTap: () {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Reports: export options coming soon.')),
+                  const SnackBar(
+                      content: Text('Reports: export options coming soon.')),
                 );
               },
             ),
@@ -3547,7 +4142,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               subtitle: const Text('Campaign history and delivery status.'),
               onTap: () {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Reports: export options coming soon.')),
+                  const SnackBar(
+                      content: Text('Reports: export options coming soon.')),
                 );
               },
             ),
@@ -3568,7 +4164,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         dialogWidth: width,
         onSendEmailToSelected: (reportList, selectedIndices) {
           Navigator.of(ctx).pop();
-          _showSendEmailToReportArtistsDialog(context, reportList, selectedIndices);
+          _showSendEmailToReportArtistsDialog(
+              context, reportList, selectedIndices);
         },
         showErrorSnackBar: _showErrorSnackBar,
       ),
@@ -3588,11 +4185,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     );
   }
 
-  Future<void> _showSendEmailToReportArtistsDialog(BuildContext context, List<dynamic> reportList, List<int> selectedIndices) async {
+  Future<void> _showSendEmailToReportArtistsDialog(BuildContext context,
+      List<dynamic> reportList, List<int> selectedIndices) async {
     final savedSubject = await getArtistReminderEmailSubject();
     final savedBody = await getArtistReminderEmailBody();
-    final subjectController = TextEditingController(text: savedSubject ?? _defaultReminderSubject);
-    final bodyController = TextEditingController(text: savedBody ?? _defaultReminderBody);
+    final subjectController =
+        TextEditingController(text: savedSubject ?? _defaultReminderSubject);
+    final bodyController =
+        TextEditingController(text: savedBody ?? _defaultReminderBody);
     final sent = <String>[];
     final failed = <String, String>{};
 
@@ -3608,8 +4208,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               subjectController: subjectController,
               bodyController: bodyController,
               previewValues: _sampleReminderTemplateValues,
-              helperText: 'Subject and body support dynamic artist fields. The body is sent as HTML, with a text fallback generated automatically.',
-              footerText: '${selectedIndices.length} artist(s) will receive this email.',
+              helperText:
+                  'Subject and body support dynamic artist fields. The body is sent as HTML, with a text fallback generated automatically.',
+              footerText:
+                  '${selectedIndices.length} artist(s) will receive this email.',
             ),
           ),
         ),
@@ -3658,9 +4260,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   if (failed.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     ...failed.entries.map((e) => Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: SelectableText('${e.key}: ${e.value}', style: const TextStyle(fontSize: 11, color: Colors.red)),
-                    )),
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: SelectableText('${e.key}: ${e.value}',
+                              style: const TextStyle(
+                                  fontSize: 11, color: Colors.red)),
+                        )),
                   ],
                 ],
               ),
@@ -3683,7 +4287,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       final a = reportList[i] as Map<String, dynamic>;
       final values = _buildReminderTemplateValues(a);
       final email = (a['email'] ?? '').toString().trim();
-      final displayName = values['name']?.isNotEmpty == true ? values['name']! : email;
+      final displayName =
+          values['name']?.isNotEmpty == true ? values['name']! : email;
       if (email.isEmpty) {
         failed[displayName] = 'No email';
         refreshProgress?.call();
@@ -3717,9 +4322,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     Navigator.of(context).pop();
     final total = selectedIndices.length;
     if (failed.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Email sent to $total artist(s).')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Email sent to $total artist(s).')));
     } else {
-      _showErrorSnackBar('Sent: ${sent.length}, Failed: ${failed.length}. ${failed.entries.map((e) => '${e.key}: ${e.value}').join('; ')}');
+      _showErrorSnackBar(
+          'Sent: ${sent.length}, Failed: ${failed.length}. ${failed.entries.map((e) => '${e.key}: ${e.value}').join('; ')}');
     }
   }
 
@@ -3730,11 +4337,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       child: ListView(
         padding: const EdgeInsets.all(12),
         children: [
-          const Text('Catalog (Releases)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Text('Catalog (Releases)',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Text(
             'Catalog metadata from Proton export. Import CSV, then Sync to artists to create releases. Schema: Catalog Number, Release Title, Pre-Order/Release Date, UPC, ISRC, Artists, Track Title, Mix, Duration.',
-            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 12),
           Wrap(
@@ -3747,20 +4357,28 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 label: const Text('Import CSV'),
               ),
               FilledButton.icon(
-                onPressed: catalogTracks.isEmpty ? null : () => _syncReleasesFromCatalog(),
+                onPressed: catalogTracks.isEmpty
+                    ? null
+                    : () => _syncReleasesFromCatalog(),
                 icon: const Icon(ZalmanimIcons.sync),
                 label: const Text('Sync to artists'),
                 style: FilledButton.styleFrom(
-                  backgroundColor: catalogTracks.isEmpty ? null : Theme.of(context).colorScheme.tertiary,
+                  backgroundColor: catalogTracks.isEmpty
+                      ? null
+                      : Theme.of(context).colorScheme.tertiary,
                 ),
               ),
               FilledButton.icon(
-                onPressed: catalogTracks.isEmpty ? null : () => _syncOriginalArtistsFromArtists(),
+                onPressed: catalogTracks.isEmpty
+                    ? null
+                    : () => _syncOriginalArtistsFromArtists(),
                 icon: const Icon(ZalmanimIcons.sync),
                 label: const Text('Original Artist <- Brand'),
               ),
               FilledButton.icon(
-                onPressed: catalogTracks.isEmpty ? null : () => _createMissingOriginalArtists(),
+                onPressed: catalogTracks.isEmpty
+                    ? null
+                    : () => _createMissingOriginalArtists(),
                 icon: const Icon(ZalmanimIcons.personAdd),
                 label: const Text('Create missing artists'),
               ),
@@ -3774,11 +4392,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   child: TextField(
                     controller: _releasesSearchController,
                     decoration: InputDecoration(
-                      hintText: 'Search releases by catalog #, title, artist, ISRC, UPC, mix...',
+                      hintText:
+                          'Search releases by catalog #, title, artist, ISRC, UPC, mix...',
                       prefixIcon: const Icon(ZalmanimIcons.search),
                       border: const OutlineInputBorder(),
                       isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
                     ),
                   ),
                 ),
@@ -3787,7 +4407,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     padding: const EdgeInsets.only(left: 12),
                     child: Text(
                       '${_filteredCatalogTracks.length} of ${catalogTracks.length}',
-                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color:
+                              Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
                   ),
               ],
@@ -3797,7 +4420,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           if (catalogTracks.isEmpty)
             const Padding(
               padding: EdgeInsets.all(24),
-              child: Center(child: Text('No catalog tracks. Use Import CSV to load a Proton catalog export.')),
+              child: Center(
+                  child: Text(
+                      'No catalog tracks. Use Import CSV to load a Proton catalog export.')),
             )
           else
             SingleChildScrollView(
@@ -3822,15 +4447,22 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     final t = e as Map<String, dynamic>;
                     return DataRow(
                       cells: [
-                        DataCell(SelectableText((t['catalog_number'] as String?) ?? '')),
-                        DataCell(SelectableText((t['release_title'] as String?) ?? '')),
-                        DataCell(SelectableText((t['release_date'] as String?) ?? '')),
+                        DataCell(SelectableText(
+                            (t['catalog_number'] as String?) ?? '')),
+                        DataCell(SelectableText(
+                            (t['release_title'] as String?) ?? '')),
+                        DataCell(SelectableText(
+                            (t['release_date'] as String?) ?? '')),
                         DataCell(SelectableText((t['upc'] as String?) ?? '')),
                         DataCell(SelectableText((t['isrc'] as String?) ?? '')),
-                        DataCell(SelectableText((t['original_artists'] as String?) ?? '')),
-                        DataCell(SelectableText((t['track_title'] as String?) ?? '')),
-                        DataCell(SelectableText((t['mix_title'] as String?) ?? '')),
-                        DataCell(SelectableText((t['duration'] as String?) ?? '')),
+                        DataCell(SelectableText(
+                            (t['original_artists'] as String?) ?? '')),
+                        DataCell(SelectableText(
+                            (t['track_title'] as String?) ?? '')),
+                        DataCell(
+                            SelectableText((t['mix_title'] as String?) ?? '')),
+                        DataCell(
+                            SelectableText((t['duration'] as String?) ?? '')),
                       ],
                     );
                   }).toList(),
@@ -3840,9 +4472,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           const SizedBox(height: 24),
           Row(
             children: [
-              const Text('Releases (from API)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const Text('Releases (from API)',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(width: 16),
-              Text('Sort (after unassigned):', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              Text('Sort (after unassigned):',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
               const SizedBox(width: 8),
               DropdownButton<int>(
                 value: _releasesSortBy,
@@ -3854,22 +4490,30 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 onChanged: (v) => setState(() => _releasesSortBy = v ?? 0),
               ),
               IconButton(
-                icon: Icon(_releasesSortAsc ? ZalmanimIcons.arrowUp : ZalmanimIcons.arrowDown, size: 18),
+                icon: Icon(
+                    _releasesSortAsc
+                        ? ZalmanimIcons.arrowUp
+                        : ZalmanimIcons.arrowDown,
+                    size: 18),
                 tooltip: _releasesSortAsc ? 'Ascending' : 'Descending',
-                onPressed: () => setState(() => _releasesSortAsc = !_releasesSortAsc),
+                onPressed: () =>
+                    setState(() => _releasesSortAsc = !_releasesSortAsc),
               ),
             ],
           ),
           const SizedBox(height: 8),
           Text(
             'Releases without an artist are highlighted in orange. Use "Associate with artist" to link a release to an artist.',
-            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 12),
           if (adminReleases.isEmpty)
             const Padding(
               padding: EdgeInsets.only(bottom: 16),
-              child: Text('No releases yet. Import catalog above and use Sync to artists to create releases.'),
+              child: Text(
+                  'No releases yet. Import catalog above and use Sync to artists to create releases.'),
             )
           else
             ..._sortedAdminReleases.map<Widget>((r) {
@@ -3881,14 +4525,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 for (final a in artists) {
                   if (a is Map<String, dynamic> && a['id'] == id) {
                     final extra = a['extra'] as Map<String, dynamic>? ?? {};
-                    return (extra['artist_brand'] ?? a['name'] ?? 'Artist $id').toString();
+                    return (extra['artist_brand'] ?? a['name'] ?? 'Artist $id')
+                        .toString();
                   }
                 }
                 return 'Artist $id';
               }).join(', ');
               return Card(
                 margin: const EdgeInsets.only(bottom: 8),
-                color: hasNoArtist ? Colors.orange.withValues(alpha: 0.12) : null,
+                color:
+                    hasNoArtist ? Colors.orange.withValues(alpha: 0.12) : null,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                   side: hasNoArtist
@@ -3945,7 +4591,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     } catch (e) {
       final msg = e.toString();
       if (!mounted) return;
-      final isNetworkFailure = msg.contains('Failed to fetch') || msg.contains('ClientException');
+      final isNetworkFailure =
+          msg.contains('Failed to fetch') || msg.contains('ClientException');
       final hint = isNetworkFailure
           ? 'Request failed (network/CORS). Ensure the API is running at ${widget.apiClient.baseUrl} (e.g. run the backend or: docker compose up -d).\n\n$msg'
           : msg;
@@ -3968,7 +4615,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   Future<void> _syncReleasesFromCatalog() async {
     try {
       setState(() => loading = true);
-      final result = await widget.apiClient.syncReleasesFromCatalog(widget.token);
+      final result =
+          await widget.apiClient.syncReleasesFromCatalog(widget.token);
       await _load();
       if (!mounted) return;
       final message = result['message'] as String? ?? 'Sync completed.';
@@ -3992,7 +4640,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   Future<void> _syncOriginalArtistsFromArtists() async {
     try {
       setState(() => loading = true);
-      final result = await widget.apiClient.syncOriginalArtistsFromArtists(widget.token);
+      final result =
+          await widget.apiClient.syncOriginalArtistsFromArtists(widget.token);
       await _load();
       if (!mounted) return;
       final message = result['message'] as String? ?? 'Sync completed.';
@@ -4016,7 +4665,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   Future<void> _createMissingOriginalArtists() async {
     try {
       setState(() => loading = true);
-      final result = await widget.apiClient.createMissingOriginalArtists(widget.token);
+      final result =
+          await widget.apiClient.createMissingOriginalArtists(widget.token);
       await _load();
       if (!mounted) return;
       final message = result['message'] as String? ?? 'Done.';
@@ -4063,7 +4713,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 label: const Text('Create campaign'),
               ),
               const SizedBox(width: 24),
-              Text('Sort by:', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              Text('Sort by:',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
               const SizedBox(width: 8),
               DropdownButton<int>(
                 value: _campaignsSortBy,
@@ -4077,9 +4730,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 onChanged: (v) => setState(() => _campaignsSortBy = v ?? 0),
               ),
               IconButton(
-                icon: Icon(_campaignsSortAsc ? ZalmanimIcons.arrowUp : ZalmanimIcons.arrowDown, size: 18),
+                icon: Icon(
+                    _campaignsSortAsc
+                        ? ZalmanimIcons.arrowUp
+                        : ZalmanimIcons.arrowDown,
+                    size: 18),
                 tooltip: _campaignsSortAsc ? 'Ascending' : 'Descending',
-                onPressed: () => setState(() => _campaignsSortAsc = !_campaignsSortAsc),
+                onPressed: () =>
+                    setState(() => _campaignsSortAsc = !_campaignsSortAsc),
               ),
             ],
           ),
@@ -4087,7 +4745,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           if (campaigns.isEmpty)
             const Padding(
               padding: EdgeInsets.all(24),
-              child: Center(child: Text('No campaigns yet. Create one to get started.')),
+              child: Center(
+                  child: Text('No campaigns yet. Create one to get started.')),
             )
           else
             ..._sortedCampaigns.map((c) {
@@ -4122,13 +4781,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                           ),
                         if (status == 'draft' || status == 'scheduled')
                           IconButton(
-                            icon: const Icon(ZalmanimIcons.edit, color: Colors.orange),
+                            icon: const Icon(ZalmanimIcons.edit,
+                                color: Colors.orange),
                             tooltip: 'Edit',
                             onPressed: () => _showEditCampaignDialog(campaign),
                           ),
                         if (status == 'draft' || status == 'failed')
                           IconButton(
-                            icon: const Icon(ZalmanimIcons.delete, color: Colors.red),
+                            icon: const Icon(ZalmanimIcons.delete,
+                                color: Colors.red),
                             tooltip: 'Delete',
                             onPressed: () => _deleteCampaign(id, name),
                           ),
@@ -4172,6 +4833,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               selectedMailchimpListId = null;
             });
           }
+
           return AlertDialog(
             title: const Text('Create campaign'),
             content: SingleChildScrollView(
@@ -4183,12 +4845,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   children: [
                     TextField(
                       controller: nameController,
-                      decoration: const InputDecoration(labelText: 'Campaign name'),
+                      decoration:
+                          const InputDecoration(labelText: 'Campaign name'),
                     ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: titleController,
-                      decoration: const InputDecoration(labelText: 'Title (subject / post title)'),
+                      decoration: const InputDecoration(
+                          labelText: 'Title (subject / post title)'),
                     ),
                     const SizedBox(height: 8),
                     TextField(
@@ -4197,7 +4861,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       decoration: const InputDecoration(labelText: 'Body text'),
                     ),
                     const SizedBox(height: 8),
-                    const Text('Image (optional)', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('Image (optional)',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
                     Row(
                       children: [
@@ -4211,13 +4876,17 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                             final f = result.files.single;
                             if (f.bytes == null || f.bytes!.isEmpty) return;
                             try {
-                              final data = await widget.apiClient.uploadCampaignMedia(
+                              final data =
+                                  await widget.apiClient.uploadCampaignMedia(
                                 token: widget.token,
                                 fileBytes: f.bytes!,
-                                filename: (f.name.isEmpty ? 'image.jpg' : f.name),
+                                filename:
+                                    (f.name.isEmpty ? 'image.jpg' : f.name),
                               );
                               final url = data['url'] as String?;
-                              if (url != null && url.isNotEmpty && ctx.mounted) {
+                              if (url != null &&
+                                  url.isNotEmpty &&
+                                  ctx.mounted) {
                                 mediaUrlController.text = url;
                                 setDialogState(() {});
                               }
@@ -4238,7 +4907,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                               child: Image.network(
                                 mediaUrlController.text.trim(),
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => const Icon(ZalmanimIcons.brokenImage),
+                                errorBuilder: (_, __, ___) =>
+                                    const Icon(ZalmanimIcons.brokenImage),
                               ),
                             ),
                           ),
@@ -4264,13 +4934,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       onChanged: (_) => setDialogState(() {}),
                     ),
                     const SizedBox(height: 16),
-                    const Text('Social connections', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('Social connections',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                     ...connections
                         .where((c) => (c['status'] as String?) == 'connected')
                         .map((conn) {
                       final connMap = conn;
                       final connId = connMap['id'] as int;
-                      final label = '${connMap['provider']} | ${connMap['account_label']}';
+                      final label =
+                          '${connMap['provider']} | ${connMap['account_label']}';
                       return CheckboxListTile(
                         value: selectedSocialIds.contains(connId),
                         onChanged: (v) {
@@ -4282,24 +4954,29 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                             }
                           });
                         },
-                        title: Text(label, style: const TextStyle(fontSize: 14)),
+                        title:
+                            Text(label, style: const TextStyle(fontSize: 14)),
                       );
                     }),
                     const SizedBox(height: 8),
-                    const Text('Mailchimp', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('Mailchimp',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                     DropdownButton<int?>(
                       value: selectedMailchimpConnectorId,
                       isExpanded: true,
                       hint: const Text('Select Mailchimp connector'),
                       items: [
-                        const DropdownMenuItem(value: null, child: Text('None')),
+                        const DropdownMenuItem(
+                            value: null, child: Text('None')),
                         ...hubConnectors
-                            .where((c) => (c['connector_type'] as String?) == 'mailchimp')
+                            .where((c) =>
+                                (c['connector_type'] as String?) == 'mailchimp')
                             .map((conn) {
                           final id = conn['id'] as int;
                           return DropdownMenuItem(
                             value: id,
-                            child: Text(conn['account_label'] as String? ?? 'Connector $id'),
+                            child: Text(conn['account_label'] as String? ??
+                                'Connector $id'),
                           );
                         }),
                       ],
@@ -4310,14 +4987,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                         });
                       },
                     ),
-                    if (selectedMailchimpConnectorId != null && mailchimpLists.isNotEmpty) ...[
+                    if (selectedMailchimpConnectorId != null &&
+                        mailchimpLists.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       DropdownButton<String?>(
                         value: selectedMailchimpListId,
                         isExpanded: true,
                         hint: const Text('Select audience (list)'),
                         items: [
-                          const DropdownMenuItem(value: null, child: Text('None')),
+                          const DropdownMenuItem(
+                              value: null, child: Text('None')),
                           ...mailchimpLists.map((li) {
                             final listMap = li;
                             return DropdownMenuItem(
@@ -4329,35 +5008,44 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                             );
                           }),
                         ],
-                        onChanged: (v) => setDialogState(() => selectedMailchimpListId = v),
+                        onChanged: (v) =>
+                            setDialogState(() => selectedMailchimpListId = v),
                       ),
                     ],
                     const SizedBox(height: 8),
-                    const Text('WordPress', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('WordPress',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                     DropdownButton<int?>(
                       value: selectedWordPressConnectorId,
                       isExpanded: true,
                       hint: const Text('Select WordPress connector'),
                       items: [
-                        const DropdownMenuItem(value: null, child: Text('None')),
+                        const DropdownMenuItem(
+                            value: null, child: Text('None')),
                         ...hubConnectors
-                            .where((c) => (c['connector_type'] as String?) == 'wordpress_codex')
+                            .where((c) =>
+                                (c['connector_type'] as String?) ==
+                                'wordpress_codex')
                             .map((conn) {
                           final id = conn['id'] as int;
                           return DropdownMenuItem(
                             value: id,
-                            child: Text(conn['account_label'] as String? ?? 'Connector $id'),
+                            child: Text(conn['account_label'] as String? ??
+                                'Connector $id'),
                           );
                         }),
                       ],
-                      onChanged: (v) => setDialogState(() => selectedWordPressConnectorId = v),
+                      onChanged: (v) => setDialogState(
+                          () => selectedWordPressConnectorId = v),
                     ),
                   ],
                 ),
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel')),
               ValueListenableBuilder<bool>(
                 valueListenable: isSaving,
                 builder: (_, saving, __) => FilledButton(
@@ -4379,49 +5067,58 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                               'channel_payload': <String, dynamic>{},
                             });
                           }
-                          if (selectedMailchimpConnectorId != null && selectedMailchimpListId != null) {
+                          if (selectedMailchimpConnectorId != null &&
+                              selectedMailchimpListId != null) {
                             targets.add({
                               'channel_type': 'mailchimp',
-                              'external_id': selectedMailchimpConnectorId.toString(),
-                              'channel_payload': {'list_id': selectedMailchimpListId},
+                              'external_id':
+                                  selectedMailchimpConnectorId.toString(),
+                              'channel_payload': {
+                                'list_id': selectedMailchimpListId
+                              },
                             });
                           }
                           if (selectedWordPressConnectorId != null) {
                             targets.add({
                               'channel_type': 'wordpress',
-                              'external_id': selectedWordPressConnectorId.toString(),
+                              'external_id':
+                                  selectedWordPressConnectorId.toString(),
                               'channel_payload': <String, dynamic>{},
                             });
                           }
                           if (targets.isEmpty) {
-                            _showErrorSnackBar('Select at least one target (social, Mailchimp, or WordPress).');
+                            _showErrorSnackBar(
+                                'Select at least one target (social, Mailchimp, or WordPress).');
                             return;
                           }
                           isSaving.value = true;
                           setDialogState(() {});
                           try {
                             await widget.apiClient.createCampaign(
-                      token: widget.token,
-                      name: name,
-                      title: title,
-                      bodyText: bodyText,
-                      mediaUrl: mediaUrlController.text.trim().isEmpty
-                          ? null
-                          : mediaUrlController.text.trim(),
-                      artistId: preFilledArtistId,
-                      targets: targets,
-                    );
-                    if (!ctx.mounted) return;
-                    Navigator.pop(ctx, true);
-                  } catch (e) {
-                    if (ctx.mounted) _showErrorSnackBar(e.toString());
-                  } finally {
-                    isSaving.value = false;
-                    if (ctx.mounted) setDialogState(() {});
-                  }
+                              token: widget.token,
+                              name: name,
+                              title: title,
+                              bodyText: bodyText,
+                              mediaUrl: mediaUrlController.text.trim().isEmpty
+                                  ? null
+                                  : mediaUrlController.text.trim(),
+                              artistId: preFilledArtistId,
+                              targets: targets,
+                            );
+                            if (!ctx.mounted) return;
+                            Navigator.pop(ctx, true);
+                          } catch (e) {
+                            if (ctx.mounted) _showErrorSnackBar(e.toString());
+                          } finally {
+                            isSaving.value = false;
+                            if (ctx.mounted) setDialogState(() {});
+                          }
                         },
                   child: saving
-                      ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2))
                       : const Text('Create draft'),
                 ),
               ),
@@ -4435,10 +5132,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   Future<void> _showEditCampaignDialog(Map<String, dynamic> campaign) async {
     final id = campaign['id'] as int;
-    final nameController = TextEditingController(text: campaign['name'] as String?);
-    final titleController = TextEditingController(text: campaign['title'] as String?);
-    final bodyController = TextEditingController(text: campaign['body_text'] as String?);
-    final mediaUrlController = TextEditingController(text: campaign['media_url'] as String? ?? '');
+    final nameController =
+        TextEditingController(text: campaign['name'] as String?);
+    final titleController =
+        TextEditingController(text: campaign['title'] as String?);
+    final bodyController =
+        TextEditingController(text: campaign['body_text'] as String?);
+    final mediaUrlController =
+        TextEditingController(text: campaign['media_url'] as String? ?? '');
     final targetsIn = campaign['targets'] as List<dynamic>? ?? [];
     final selectedSocialIds = <int>{};
     int? selectedMailchimpConnectorId;
@@ -4467,7 +5168,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       });
     }
 
-    if (selectedMailchimpConnectorId != null) loadMailchimpLists(selectedMailchimpConnectorId);
+    if (selectedMailchimpConnectorId != null) {
+      loadMailchimpLists(selectedMailchimpConnectorId);
+    }
 
     if (!mounted) return;
     final isSavingEdit = ValueNotifier<bool>(false);
@@ -4486,7 +5189,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   children: [
                     TextField(
                       controller: nameController,
-                      decoration: const InputDecoration(labelText: 'Campaign name'),
+                      decoration:
+                          const InputDecoration(labelText: 'Campaign name'),
                     ),
                     const SizedBox(height: 8),
                     TextField(
@@ -4500,7 +5204,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       decoration: const InputDecoration(labelText: 'Body text'),
                     ),
                     const SizedBox(height: 8),
-                    const Text('Image (optional)', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('Image (optional)',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
                     Row(
                       children: [
@@ -4514,13 +5219,17 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                             final f = result.files.single;
                             if (f.bytes == null || f.bytes!.isEmpty) return;
                             try {
-                              final data = await widget.apiClient.uploadCampaignMedia(
+                              final data =
+                                  await widget.apiClient.uploadCampaignMedia(
                                 token: widget.token,
                                 fileBytes: f.bytes!,
-                                filename: (f.name.isEmpty ? 'image.jpg' : f.name),
+                                filename:
+                                    (f.name.isEmpty ? 'image.jpg' : f.name),
                               );
                               final url = data['url'] as String?;
-                              if (url != null && url.isNotEmpty && ctx.mounted) {
+                              if (url != null &&
+                                  url.isNotEmpty &&
+                                  ctx.mounted) {
                                 mediaUrlController.text = url;
                                 setDialogState(() {});
                               }
@@ -4541,7 +5250,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                               child: Image.network(
                                 mediaUrlController.text.trim(),
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => const Icon(ZalmanimIcons.brokenImage),
+                                errorBuilder: (_, __, ___) =>
+                                    const Icon(ZalmanimIcons.brokenImage),
                               ),
                             ),
                           ),
@@ -4567,13 +5277,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       onChanged: (_) => setDialogState(() {}),
                     ),
                     const SizedBox(height: 16),
-                    const Text('Social connections', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('Social connections',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                     ...connections
                         .where((c) => (c['status'] as String?) == 'connected')
                         .map((conn) {
                       final connMap = conn;
                       final connId = connMap['id'] as int;
-                      final label = '${connMap['provider']} | ${connMap['account_label']}';
+                      final label =
+                          '${connMap['provider']} | ${connMap['account_label']}';
                       return CheckboxListTile(
                         value: selectedSocialIds.contains(connId),
                         onChanged: (v) {
@@ -4585,24 +5297,29 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                             }
                           });
                         },
-                        title: Text(label, style: const TextStyle(fontSize: 14)),
+                        title:
+                            Text(label, style: const TextStyle(fontSize: 14)),
                       );
                     }),
                     const SizedBox(height: 8),
-                    const Text('Mailchimp', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('Mailchimp',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                     DropdownButton<int?>(
                       value: selectedMailchimpConnectorId,
                       isExpanded: true,
                       hint: const Text('Select Mailchimp connector'),
                       items: [
-                        const DropdownMenuItem(value: null, child: Text('None')),
+                        const DropdownMenuItem(
+                            value: null, child: Text('None')),
                         ...hubConnectors
-                            .where((c) => (c['connector_type'] as String?) == 'mailchimp')
+                            .where((c) =>
+                                (c['connector_type'] as String?) == 'mailchimp')
                             .map((conn) {
                           final id = conn['id'] as int;
                           return DropdownMenuItem(
                             value: id,
-                            child: Text(conn['account_label'] as String? ?? 'Connector $id'),
+                            child: Text(conn['account_label'] as String? ??
+                                'Connector $id'),
                           );
                         }),
                       ],
@@ -4613,14 +5330,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                         });
                       },
                     ),
-                    if (selectedMailchimpConnectorId != null && mailchimpLists.isNotEmpty) ...[
+                    if (selectedMailchimpConnectorId != null &&
+                        mailchimpLists.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       DropdownButton<String?>(
                         value: selectedMailchimpListId,
                         isExpanded: true,
                         hint: const Text('Select audience (list)'),
                         items: [
-                          const DropdownMenuItem(value: null, child: Text('None')),
+                          const DropdownMenuItem(
+                              value: null, child: Text('None')),
                           ...mailchimpLists.map((li) {
                             final listMap = li;
                             return DropdownMenuItem(
@@ -4632,35 +5351,44 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                             );
                           }),
                         ],
-                        onChanged: (v) => setDialogState(() => selectedMailchimpListId = v),
+                        onChanged: (v) =>
+                            setDialogState(() => selectedMailchimpListId = v),
                       ),
                     ],
                     const SizedBox(height: 8),
-                    const Text('WordPress', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('WordPress',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                     DropdownButton<int?>(
                       value: selectedWordPressConnectorId,
                       isExpanded: true,
                       hint: const Text('Select WordPress connector'),
                       items: [
-                        const DropdownMenuItem(value: null, child: Text('None')),
+                        const DropdownMenuItem(
+                            value: null, child: Text('None')),
                         ...hubConnectors
-                            .where((c) => (c['connector_type'] as String?) == 'wordpress_codex')
+                            .where((c) =>
+                                (c['connector_type'] as String?) ==
+                                'wordpress_codex')
                             .map((conn) {
                           final id = conn['id'] as int;
                           return DropdownMenuItem(
                             value: id,
-                            child: Text(conn['account_label'] as String? ?? 'Connector $id'),
+                            child: Text(conn['account_label'] as String? ??
+                                'Connector $id'),
                           );
                         }),
                       ],
-                      onChanged: (v) => setDialogState(() => selectedWordPressConnectorId = v),
+                      onChanged: (v) => setDialogState(
+                          () => selectedWordPressConnectorId = v),
                     ),
                   ],
                 ),
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel')),
               ValueListenableBuilder<bool>(
                 valueListenable: isSavingEdit,
                 builder: (_, saving, __) => FilledButton(
@@ -4682,17 +5410,22 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                               'channel_payload': <String, dynamic>{},
                             });
                           }
-                          if (selectedMailchimpConnectorId != null && selectedMailchimpListId != null) {
+                          if (selectedMailchimpConnectorId != null &&
+                              selectedMailchimpListId != null) {
                             targets.add({
                               'channel_type': 'mailchimp',
-                              'external_id': selectedMailchimpConnectorId.toString(),
-                              'channel_payload': {'list_id': selectedMailchimpListId},
+                              'external_id':
+                                  selectedMailchimpConnectorId.toString(),
+                              'channel_payload': {
+                                'list_id': selectedMailchimpListId
+                              },
                             });
                           }
                           if (selectedWordPressConnectorId != null) {
                             targets.add({
                               'channel_type': 'wordpress',
-                              'external_id': selectedWordPressConnectorId.toString(),
+                              'external_id':
+                                  selectedWordPressConnectorId.toString(),
                               'channel_payload': <String, dynamic>{},
                             });
                           }
@@ -4704,14 +5437,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                           setDialogState(() {});
                           try {
                             await widget.apiClient.updateCampaign(
-                      token: widget.token,
-                      id: id,
-                      name: name,
-                      title: title,
-                      bodyText: bodyText,
-                      mediaUrl: mediaUrlController.text.trim(),
-                      targets: targets,
-                    );
+                              token: widget.token,
+                              id: id,
+                              name: name,
+                              title: title,
+                              bodyText: bodyText,
+                              mediaUrl: mediaUrlController.text.trim(),
+                              targets: targets,
+                            );
                             if (!ctx.mounted) return;
                             Navigator.pop(ctx, true);
                           } catch (e) {
@@ -4722,7 +5455,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                           }
                         },
                   child: saving
-                      ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2))
                       : const Text('Save'),
                 ),
               ),
@@ -4745,7 +5481,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           'Send now (worker will pick it up within about a minute) or choose a date and time to schedule.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Send now'),
@@ -4764,7 +5501,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 initialTime: const TimeOfDay(hour: 10, minute: 0),
               );
               if (time == null || !ctx.mounted) return;
-              final scheduledAt = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+              final scheduledAt = DateTime(
+                  date.year, date.month, date.day, time.hour, time.minute);
               Navigator.pop(ctx, scheduledAt);
             },
             child: const Text('Schedule for later'),
@@ -4776,11 +5514,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     try {
       setState(() => loading = true);
       if (result == true) {
-        await widget.apiClient.scheduleCampaign(token: widget.token, id: campaignId);
+        await widget.apiClient
+            .scheduleCampaign(token: widget.token, id: campaignId);
         await _load();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: SelectableText('Campaign scheduled to send now. Worker will process it shortly.')),
+          const SnackBar(
+              content: SelectableText(
+                  'Campaign scheduled to send now. Worker will process it shortly.')),
         );
       } else if (result is DateTime) {
         await widget.apiClient.scheduleCampaign(
@@ -4812,11 +5553,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   Future<void> _cancelCampaignSchedule(int id) async {
     try {
       setState(() => loading = true);
-      await widget.apiClient.cancelCampaignSchedule(token: widget.token, id: id);
+      await widget.apiClient
+          .cancelCampaignSchedule(token: widget.token, id: id);
       await _load();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: SelectableText('Schedule cancelled. Campaign is draft again.')),
+        const SnackBar(
+            content:
+                SelectableText('Schedule cancelled. Campaign is draft again.')),
       );
       setState(() => loading = false);
     } catch (e) {
@@ -4833,7 +5577,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         title: const Text('Delete campaign'),
         content: Text('Delete campaign "$name"?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.pop(ctx, true),
@@ -4892,7 +5638,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                           IconButton(
                             icon: const Icon(ZalmanimIcons.copy),
                             tooltip: 'Copy error',
-                            onPressed: () => Clipboard.setData(ClipboardData(text: dialogError!)),
+                            onPressed: () => Clipboard.setData(
+                                ClipboardData(text: dialogError!)),
                           ),
                         ],
                       ),
@@ -4911,7 +5658,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     const SizedBox(height: 8),
                     TextField(
                       controller: passwordController,
-                      decoration: const InputDecoration(labelText: 'Password *'),
+                      decoration:
+                          const InputDecoration(labelText: 'Password *'),
                       obscureText: true,
                     ),
                     const SizedBox(height: 8),
@@ -4919,26 +5667,34 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       initialValue: role,
                       decoration: const InputDecoration(labelText: 'Role'),
                       items: _userRoles
-                          .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                          .map(
+                              (r) => DropdownMenuItem(value: r, child: Text(r)))
                           .toList(),
-                      onChanged: (value) => setDialogState(() => role = value ?? role),
+                      onChanged: (value) =>
+                          setDialogState(() => role = value ?? role),
                     ),
                     if (role == 'artist') ...[
                       const SizedBox(height: 8),
                       DropdownButtonFormField<int?>(
                         initialValue: artistId,
-                        decoration: const InputDecoration(labelText: 'Artist (optional)'),
+                        decoration: const InputDecoration(
+                            labelText: 'Artist (optional)'),
                         items: [
-                          const DropdownMenuItem<int?>(value: null, child: Text('— None —')),
+                          const DropdownMenuItem<int?>(
+                              value: null, child: Text('— None —')),
                           ...artists.map((a) {
                             final map = a as Map<String, dynamic>;
                             return DropdownMenuItem<int?>(
                               value: map['id'] as int,
-                              child: Text((map['name'] ?? map['email'] ?? '${map['id']}').toString()),
+                              child: Text((map['name'] ??
+                                      map['email'] ??
+                                      '${map['id']}')
+                                  .toString()),
                             );
                           }),
                         ],
-                        onChanged: (value) => setDialogState(() => artistId = value),
+                        onChanged: (value) =>
+                            setDialogState(() => artistId = value),
                       ),
                     ],
                     const SizedBox(height: 8),
@@ -4946,14 +5702,17 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       value: isActive,
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Active'),
-                      onChanged: (value) => setDialogState(() => isActive = value ?? true),
+                      onChanged: (value) =>
+                          setDialogState(() => isActive = value ?? true),
                     ),
                   ],
                 ),
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+              TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('Cancel')),
               FilledButton(
                 onPressed: () async {
                   final email = emailController.text.trim();
@@ -4963,7 +5722,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     return;
                   }
                   if (password.isEmpty) {
-                    setDialogState(() => dialogError = 'Password is required for new users.');
+                    setDialogState(() =>
+                        dialogError = 'Password is required for new users.');
                     return;
                   }
                   try {
@@ -4971,7 +5731,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       token: widget.token,
                       body: {
                         'email': email,
-                        'full_name': fullNameController.text.trim().isEmpty ? null : fullNameController.text.trim(),
+                        'full_name': fullNameController.text.trim().isEmpty
+                            ? null
+                            : fullNameController.text.trim(),
                         'password': password,
                         'role': role,
                         if (artistId != null) 'artist_id': artistId,
@@ -5007,8 +5769,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   Future<void> _showEditUserDialog(Map<String, dynamic> user) async {
     final id = user['id'] as int?;
     if (id == null) return;
-    final emailController = TextEditingController(text: (user['email'] ?? '').toString());
-    final fullNameController = TextEditingController(text: (user['full_name'] ?? '').toString());
+    final emailController =
+        TextEditingController(text: (user['email'] ?? '').toString());
+    final fullNameController =
+        TextEditingController(text: (user['full_name'] ?? '').toString());
     final passwordController = TextEditingController();
     String role = (user['role'] ?? 'manager').toString();
     if (!_userRoles.contains(role)) role = 'manager';
@@ -5041,7 +5805,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                           IconButton(
                             icon: const Icon(ZalmanimIcons.copy),
                             tooltip: 'Copy error',
-                            onPressed: () => Clipboard.setData(ClipboardData(text: dialogError!)),
+                            onPressed: () => Clipboard.setData(
+                                ClipboardData(text: dialogError!)),
                           ),
                         ],
                       ),
@@ -5071,26 +5836,34 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       initialValue: role,
                       decoration: const InputDecoration(labelText: 'Role'),
                       items: _userRoles
-                          .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                          .map(
+                              (r) => DropdownMenuItem(value: r, child: Text(r)))
                           .toList(),
-                      onChanged: (value) => setDialogState(() => role = value ?? role),
+                      onChanged: (value) =>
+                          setDialogState(() => role = value ?? role),
                     ),
                     if (role == 'artist') ...[
                       const SizedBox(height: 8),
                       DropdownButtonFormField<int?>(
                         initialValue: artistId,
-                        decoration: const InputDecoration(labelText: 'Artist (optional)'),
+                        decoration: const InputDecoration(
+                            labelText: 'Artist (optional)'),
                         items: [
-                          const DropdownMenuItem<int?>(value: null, child: Text('— None —')),
+                          const DropdownMenuItem<int?>(
+                              value: null, child: Text('— None —')),
                           ...artists.map((a) {
                             final map = a as Map<String, dynamic>;
                             return DropdownMenuItem<int?>(
                               value: map['id'] as int,
-                              child: Text((map['name'] ?? map['email'] ?? '${map['id']}').toString()),
+                              child: Text((map['name'] ??
+                                      map['email'] ??
+                                      '${map['id']}')
+                                  .toString()),
                             );
                           }),
                         ],
-                        onChanged: (value) => setDialogState(() => artistId = value),
+                        onChanged: (value) =>
+                            setDialogState(() => artistId = value),
                       ),
                     ],
                     const SizedBox(height: 8),
@@ -5098,14 +5871,17 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       value: isActive,
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Active'),
-                      onChanged: (value) => setDialogState(() => isActive = value ?? true),
+                      onChanged: (value) =>
+                          setDialogState(() => isActive = value ?? true),
                     ),
                   ],
                 ),
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+              TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('Cancel')),
               FilledButton(
                 onPressed: () async {
                   final email = emailController.text.trim();
@@ -5115,7 +5891,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   }
                   final body = <String, dynamic>{
                     'email': email,
-                    'full_name': fullNameController.text.trim().isEmpty ? null : fullNameController.text.trim(),
+                    'full_name': fullNameController.text.trim().isEmpty
+                        ? null
+                        : fullNameController.text.trim(),
                     'role': role,
                     'is_active': isActive,
                   };
@@ -5123,7 +5901,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   if (pwd.isNotEmpty) body['password'] = pwd;
                   body['artist_id'] = role == 'artist' ? artistId : null;
                   try {
-                    await widget.apiClient.updateUser(token: widget.token, id: id, body: body);
+                    await widget.apiClient
+                        .updateUser(token: widget.token, id: id, body: body);
                     if (!ctx.mounted) return;
                     Navigator.of(ctx).pop(true);
                   } catch (e) {
@@ -5150,7 +5929,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
   }
 
-  Future<void> _updateUserActive(Map<String, dynamic> user, bool isActive) async {
+  Future<void> _updateUserActive(
+      Map<String, dynamic> user, bool isActive) async {
     final id = user['id'] as int?;
     if (id == null) return;
     try {
@@ -5164,7 +5944,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: SelectableText(isActive ? 'User activated.' : 'User deactivated.'),
+          content: SelectableText(
+              isActive ? 'User activated.' : 'User deactivated.'),
         ),
       );
     } catch (e) {
@@ -5218,8 +5999,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   value: createNewList,
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Create a new mailing list'),
-                  subtitle: const Text('Turn off to import into the currently selected list.'),
-                  onChanged: (value) => setDialogState(() => createNewList = value),
+                  subtitle: const Text(
+                      'Turn off to import into the currently selected list.'),
+                  onChanged: (value) =>
+                      setDialogState(() => createNewList = value),
                 ),
                 if (createNewList) ...[
                   const SizedBox(height: 8),
@@ -5234,7 +6017,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   const SizedBox(height: 8),
                   DropdownButtonFormField<int>(
                     initialValue: selectedListId,
-                    decoration: const InputDecoration(labelText: 'Import into list'),
+                    decoration:
+                        const InputDecoration(labelText: 'Import into list'),
                     items: audiences.map((audience) {
                       final map = audience as Map<String, dynamic>;
                       return DropdownMenuItem<int>(
@@ -5242,15 +6026,20 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                         child: Text((map['name'] ?? '').toString()),
                       );
                     }).toList(),
-                    onChanged: (value) => setDialogState(() => selectedListId = value),
+                    onChanged: (value) =>
+                        setDialogState(() => selectedListId = value),
                   ),
                 ],
               ],
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Import')),
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Import')),
           ],
         ),
       ),
@@ -5278,40 +6067,66 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         await selectAudience(importedListId);
       }
       if (!mounted) return;
-      final message = (response['message'] ?? 'Mailchimp CSV imported.').toString();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      final message =
+          (response['message'] ?? 'Mailchimp CSV imported.').toString();
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
     } catch (e) {
       _showErrorSnackBar(e.toString());
     }
   }
-  Future<void> _showCreateAudienceDialog({Map<String, dynamic>? existingAudience}) async {
-    final nameController = TextEditingController(text: (existingAudience?['name'] ?? '').toString());
-    final descriptionController = TextEditingController(text: (existingAudience?['description'] ?? '').toString());
-    final fromNameController = TextEditingController(text: (existingAudience?['from_name'] ?? '').toString());
-    final replyToController = TextEditingController(text: (existingAudience?['reply_to_email'] ?? '').toString());
-    final companyController = TextEditingController(text: (existingAudience?['company_name'] ?? '').toString());
-    final addressController = TextEditingController(text: (existingAudience?['physical_address'] ?? '').toString());
-    final languageController = TextEditingController(text: (existingAudience?['default_language'] ?? 'en').toString());
+
+  Future<void> _showCreateAudienceDialog(
+      {Map<String, dynamic>? existingAudience}) async {
+    final nameController = TextEditingController(
+        text: (existingAudience?['name'] ?? '').toString());
+    final descriptionController = TextEditingController(
+        text: (existingAudience?['description'] ?? '').toString());
+    final fromNameController = TextEditingController(
+        text: (existingAudience?['from_name'] ?? '').toString());
+    final replyToController = TextEditingController(
+        text: (existingAudience?['reply_to_email'] ?? '').toString());
+    final companyController = TextEditingController(
+        text: (existingAudience?['company_name'] ?? '').toString());
+    final addressController = TextEditingController(
+        text: (existingAudience?['physical_address'] ?? '').toString());
+    final languageController = TextEditingController(
+        text: (existingAudience?['default_language'] ?? 'en').toString());
 
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(existingAudience == null ? 'Create mailing list' : 'Edit mailing list'),
+        title: Text(existingAudience == null
+            ? 'Create mailing list'
+            : 'Edit mailing list'),
         content: SingleChildScrollView(
           child: SizedBox(
             width: 420,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(controller: nameController, decoration: const InputDecoration(labelText: 'List name')),
+                TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(labelText: 'List name')),
                 const SizedBox(height: 8),
-                TextField(controller: descriptionController, decoration: const InputDecoration(labelText: 'Description')),
+                TextField(
+                    controller: descriptionController,
+                    decoration:
+                        const InputDecoration(labelText: 'Description')),
                 const SizedBox(height: 8),
-                TextField(controller: fromNameController, decoration: const InputDecoration(labelText: 'From name')),
+                TextField(
+                    controller: fromNameController,
+                    decoration: const InputDecoration(labelText: 'From name')),
                 const SizedBox(height: 8),
-                TextField(controller: replyToController, decoration: const InputDecoration(labelText: 'Reply-to email')),
+                TextField(
+                    controller: replyToController,
+                    decoration:
+                        const InputDecoration(labelText: 'Reply-to email')),
                 const SizedBox(height: 8),
-                TextField(controller: companyController, decoration: const InputDecoration(labelText: 'Company name')),
+                TextField(
+                    controller: companyController,
+                    decoration:
+                        const InputDecoration(labelText: 'Company name')),
                 const SizedBox(height: 8),
                 TextField(
                   controller: addressController,
@@ -5322,14 +6137,21 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   ),
                 ),
                 const SizedBox(height: 8),
-                TextField(controller: languageController, decoration: const InputDecoration(labelText: 'Default language (en/he)')),
+                TextField(
+                    controller: languageController,
+                    decoration: const InputDecoration(
+                        labelText: 'Default language (en/he)')),
               ],
             ),
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Save')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Save')),
         ],
       ),
     );
@@ -5343,11 +6165,21 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     final body = <String, dynamic>{
       'name': nameController.text.trim(),
       'description': descriptionController.text.trim(),
-      'from_name': fromNameController.text.trim().isEmpty ? null : fromNameController.text.trim(),
-      'reply_to_email': replyToController.text.trim().isEmpty ? null : replyToController.text.trim(),
-      'company_name': companyController.text.trim().isEmpty ? null : companyController.text.trim(),
-      'physical_address': addressController.text.trim().isEmpty ? null : addressController.text.trim(),
-      'default_language': languageController.text.trim().isEmpty ? 'en' : languageController.text.trim(),
+      'from_name': fromNameController.text.trim().isEmpty
+          ? null
+          : fromNameController.text.trim(),
+      'reply_to_email': replyToController.text.trim().isEmpty
+          ? null
+          : replyToController.text.trim(),
+      'company_name': companyController.text.trim().isEmpty
+          ? null
+          : companyController.text.trim(),
+      'physical_address': addressController.text.trim().isEmpty
+          ? null
+          : addressController.text.trim(),
+      'default_language': languageController.text.trim().isEmpty
+          ? 'en'
+          : languageController.text.trim(),
     };
 
     try {
@@ -5364,47 +6196,66 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       await _loadAudiences(reset: true, withOverlay: false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(existingAudience == null ? 'Mailing list created.' : 'Mailing list updated.')),
+        SnackBar(
+            content: Text(existingAudience == null
+                ? 'Mailing list created.'
+                : 'Mailing list updated.')),
       );
     } catch (e) {
       _showErrorSnackBar(e.toString());
     }
   }
 
-  Future<void> _showAudienceSubscriberDialog({Map<String, dynamic>? existingSubscriber}) async {
+  Future<void> _showAudienceSubscriberDialog(
+      {Map<String, dynamic>? existingSubscriber}) async {
     final audienceId = _selectedAudienceId;
     if (audienceId == null) {
       _showErrorSnackBar('Select a mailing list first.');
       return;
     }
-    final nameController = TextEditingController(text: (existingSubscriber?['full_name'] ?? '').toString());
-    final emailController = TextEditingController(text: (existingSubscriber?['email'] ?? '').toString());
-    final consentController = TextEditingController(text: (existingSubscriber?['consent_source'] ?? '').toString());
-    final notesController = TextEditingController(text: (existingSubscriber?['notes'] ?? '').toString());
-    String statusValue = (existingSubscriber?['status'] ?? 'subscribed').toString();
+    final nameController = TextEditingController(
+        text: (existingSubscriber?['full_name'] ?? '').toString());
+    final emailController = TextEditingController(
+        text: (existingSubscriber?['email'] ?? '').toString());
+    final consentController = TextEditingController(
+        text: (existingSubscriber?['consent_source'] ?? '').toString());
+    final notesController = TextEditingController(
+        text: (existingSubscriber?['notes'] ?? '').toString());
+    String statusValue =
+        (existingSubscriber?['status'] ?? 'subscribed').toString();
 
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text(existingSubscriber == null ? 'Add subscriber' : 'Edit subscriber'),
+          title: Text(existingSubscriber == null
+              ? 'Add subscriber'
+              : 'Edit subscriber'),
           content: SingleChildScrollView(
             child: SizedBox(
               width: 420,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Full name')),
+                  TextField(
+                      controller: nameController,
+                      decoration:
+                          const InputDecoration(labelText: 'Full name')),
                   const SizedBox(height: 8),
-                  TextField(controller: emailController, decoration: const InputDecoration(labelText: 'Email')),
+                  TextField(
+                      controller: emailController,
+                      decoration: const InputDecoration(labelText: 'Email')),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
                     initialValue: statusValue,
                     decoration: const InputDecoration(labelText: 'Status'),
                     items: const [
-                      DropdownMenuItem(value: 'subscribed', child: Text('Subscribed')),
-                      DropdownMenuItem(value: 'unsubscribed', child: Text('Unsubscribed')),
-                      DropdownMenuItem(value: 'cleaned', child: Text('Cleaned')),
+                      DropdownMenuItem(
+                          value: 'subscribed', child: Text('Subscribed')),
+                      DropdownMenuItem(
+                          value: 'unsubscribed', child: Text('Unsubscribed')),
+                      DropdownMenuItem(
+                          value: 'cleaned', child: Text('Cleaned')),
                     ],
                     onChanged: (value) {
                       if (value != null) {
@@ -5413,20 +6264,28 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     },
                   ),
                   const SizedBox(height: 8),
-                  TextField(controller: consentController, decoration: const InputDecoration(labelText: 'Consent source')),
+                  TextField(
+                      controller: consentController,
+                      decoration:
+                          const InputDecoration(labelText: 'Consent source')),
                   const SizedBox(height: 8),
                   TextField(
                     controller: notesController,
                     maxLines: 3,
-                    decoration: const InputDecoration(labelText: 'Notes', alignLabelWithHint: true),
+                    decoration: const InputDecoration(
+                        labelText: 'Notes', alignLabelWithHint: true),
                   ),
                 ],
               ),
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Save')),
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Save')),
           ],
         ),
       ),
@@ -5440,10 +6299,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
     final body = <String, dynamic>{
       'email': emailController.text.trim(),
-      'full_name': nameController.text.trim().isEmpty ? null : nameController.text.trim(),
+      'full_name': nameController.text.trim().isEmpty
+          ? null
+          : nameController.text.trim(),
       'status': statusValue,
-      'consent_source': consentController.text.trim().isEmpty ? null : consentController.text.trim(),
-      'notes': notesController.text.trim().isEmpty ? null : notesController.text.trim(),
+      'consent_source': consentController.text.trim().isEmpty
+          ? null
+          : consentController.text.trim(),
+      'notes': notesController.text.trim().isEmpty
+          ? null
+          : notesController.text.trim(),
     };
 
     try {
@@ -5466,18 +6331,23 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       await _loadAudiences(reset: true, withOverlay: false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(existingSubscriber == null ? 'Subscriber added.' : 'Subscriber updated.')),
+        SnackBar(
+            content: Text(existingSubscriber == null
+                ? 'Subscriber added.'
+                : 'Subscriber updated.')),
       );
     } catch (e) {
       _showErrorSnackBar(e.toString());
     }
   }
 
-  Future<void> _toggleAudienceSubscriberStatus(Map<String, dynamic> subscriber) async {
+  Future<void> _toggleAudienceSubscriberStatus(
+      Map<String, dynamic> subscriber) async {
     final audienceId = _selectedAudienceId;
     if (audienceId == null) return;
     final currentStatus = (subscriber['status'] ?? 'subscribed').toString();
-    final nextStatus = currentStatus == 'unsubscribed' ? 'subscribed' : 'unsubscribed';
+    final nextStatus =
+        currentStatus == 'unsubscribed' ? 'subscribed' : 'unsubscribed';
     try {
       setState(() => loading = true);
       await widget.apiClient.updateAudienceSubscriber(
@@ -5490,12 +6360,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       await _loadAudiences(reset: true, withOverlay: false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(nextStatus == 'subscribed' ? 'Subscriber resubscribed.' : 'Subscriber unsubscribed.')),
+        SnackBar(
+            content: Text(nextStatus == 'subscribed'
+                ? 'Subscriber resubscribed.'
+                : 'Subscriber unsubscribed.')),
       );
     } catch (e) {
       _showErrorSnackBar(e.toString());
     }
   }
+
   void _showErrorSnackBar(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -5529,7 +6403,8 @@ class _ArtistRemindersDialog extends StatefulWidget {
   final ApiClient apiClient;
   final String token;
   final double dialogWidth;
-  final void Function(List<dynamic> reportList, List<int> selectedIndices) onSendEmailToSelected;
+  final void Function(List<dynamic> reportList, List<int> selectedIndices)
+      onSendEmailToSelected;
   final void Function(String message) showErrorSnackBar;
 
   @override
@@ -5557,7 +6432,8 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
       _error = null;
     });
     try {
-      final list = await widget.apiClient.fetchArtistsNoTracksHalfYear(widget.token, months: _selectedMonths);
+      final list = await widget.apiClient
+          .fetchArtistsNoTracksHalfYear(widget.token, months: _selectedMonths);
       if (!mounted) return;
       setState(() {
         _reportList = list;
@@ -5580,8 +6456,10 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
   Future<void> _showMailSettings() async {
     final savedSubject = await getArtistReminderEmailSubject();
     final savedBody = await getArtistReminderEmailBody();
-    final subjectController = TextEditingController(text: savedSubject ?? _defaultReminderSubject);
-    final bodyController = TextEditingController(text: savedBody ?? _defaultReminderBody);
+    final subjectController =
+        TextEditingController(text: savedSubject ?? _defaultReminderSubject);
+    final bodyController =
+        TextEditingController(text: savedBody ?? _defaultReminderBody);
     if (!mounted) return;
     if (!context.mounted) return;
     final saved = await showDialog<bool>(
@@ -5595,13 +6473,18 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
               subjectController: subjectController,
               bodyController: bodyController,
               previewValues: _sampleReminderTemplateValues,
-              helperText: 'Default subject and body for artist reminder emails. The body editor supports HTML snippets and dynamic fields from the artist profile.',
+              helperText:
+                  'Default subject and body for artist reminder emails. The body editor supports HTML snippets and dynamic fields from the artist profile.',
             ),
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Save')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Save')),
         ],
       ),
     );
@@ -5614,7 +6497,8 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
       bodyController.dispose();
       if (!mounted) return;
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mail settings saved.')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Mail settings saved.')));
     } else {
       subjectController.dispose();
       bodyController.dispose();
@@ -5649,7 +6533,9 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel')),
           FilledButton.icon(
             icon: const Icon(ZalmanimIcons.send, size: 18),
             label: const Text('Send'),
@@ -5673,7 +6559,8 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
         bodyHtml: rendered.bodyHtml,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Test email sent to $toEmail.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Test email sent to $toEmail.')));
     } catch (e) {
       widget.showErrorSnackBar(e.toString());
     }
@@ -5687,7 +6574,8 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
       final extra = map['extra'] as Map<String, dynamic>? ?? {};
       final name = (map['name'] ?? '').toString().replaceAll('"', '""');
       final email = (map['email'] ?? '').toString().replaceAll('"', '""');
-      final brand = (extra['artist_brand'] ?? '').toString().replaceAll('"', '""');
+      final brand =
+          (extra['artist_brand'] ?? '').toString().replaceAll('"', '""');
       buffer.writeln('"$name","$email","$brand"');
     }
     return buffer.toString();
@@ -5713,7 +6601,9 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK')),
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK')),
         ],
       );
     }
@@ -5733,11 +6623,15 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
                 children: [
                   Row(
                     children: [
-                      const Text('Months without release:', style: TextStyle(fontSize: 12)),
+                      const Text('Months without release:',
+                          style: TextStyle(fontSize: 12)),
                       const SizedBox(width: 8),
                       DropdownButton<int>(
                         value: _selectedMonths,
-                        items: _monthsOptions.map((m) => DropdownMenuItem(value: m, child: Text('$m'))).toList(),
+                        items: _monthsOptions
+                            .map((m) =>
+                                DropdownMenuItem(value: m, child: Text('$m')))
+                            .toList(),
                         onChanged: (v) {
                           if (v != null) setState(() => _selectedMonths = v);
                         },
@@ -5756,7 +6650,8 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
                       ),
                       const SizedBox(width: 8),
                       TextButton.icon(
-                        icon: const Icon(ZalmanimIcons.campaignRequests, size: 18),
+                        icon: const Icon(ZalmanimIcons.campaignRequests,
+                            size: 18),
                         label: const Text('Send test email'),
                         onPressed: _showSendTestEmail,
                       ),
@@ -5765,7 +6660,9 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
                   const SizedBox(height: 8),
                   Text(
                     '${_reportList.length} artist(s) with no catalog track release in the last $_selectedMonths months. Select artists to send a personal email.',
-                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
                   const SizedBox(height: 8),
                   Row(
@@ -5779,7 +6676,8 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
                         child: const Text('Select all'),
                       ),
                       TextButton(
-                        onPressed: () => setState(() => _selectedIndices.clear()),
+                        onPressed: () =>
+                            setState(() => _selectedIndices.clear()),
                         child: const Text('Deselect all'),
                       ),
                     ],
@@ -5792,14 +6690,17 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
                       itemBuilder: (_, i) {
                         final a = _reportList[i] as Map<String, dynamic>;
                         final extra = a['extra'] as Map<String, dynamic>? ?? {};
-                        final name = (extra['artist_brand'] ?? a['name'] ?? '').toString();
+                        final name = (extra['artist_brand'] ?? a['name'] ?? '')
+                            .toString();
                         final email = (a['email'] ?? '').toString();
                         final lastReminderRaw = a['last_reminder_sent_at'];
                         String? lastReminderStr;
                         if (lastReminderRaw != null) {
                           try {
-                            final dt = DateTime.parse(lastReminderRaw.toString());
-                            lastReminderStr = '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+                            final dt =
+                                DateTime.parse(lastReminderRaw.toString());
+                            lastReminderStr =
+                                '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
                           } catch (_) {
                             lastReminderStr = lastReminderRaw.toString();
                           }
@@ -5813,18 +6714,24 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
                               _selectedIndices.remove(i);
                             }
                           }),
-                          title: Text(name, style: const TextStyle(fontSize: 13)),
+                          title:
+                              Text(name, style: const TextStyle(fontSize: 13)),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              SelectableText(email, style: const TextStyle(fontSize: 12)),
+                              SelectableText(email,
+                                  style: const TextStyle(fontSize: 12)),
                               if (lastReminderStr != null)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 2),
                                   child: Text(
                                     'Last reminder sent: $lastReminderStr',
-                                    style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant),
                                   ),
                                 )
                               else
@@ -5832,7 +6739,11 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
                                   padding: const EdgeInsets.only(top: 2),
                                   child: Text(
                                     'No reminder sent yet',
-                                    style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant),
                                   ),
                                 ),
                             ],
@@ -5849,20 +6760,26 @@ class _ArtistRemindersDialogState extends State<_ArtistRemindersDialog> {
                     label: const Text('Copy as CSV'),
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: _reportToCsv()));
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('CSV copied to clipboard.')));
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                          content: Text('CSV copied to clipboard.')));
                     },
                   ),
                 ],
               ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close')),
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close')),
         FilledButton.icon(
           icon: const Icon(ZalmanimIcons.email, size: 18),
-          label: Text(_selectedIndices.isEmpty ? 'Send email to selected' : 'Send email to ${_selectedIndices.length} artist(s)'),
+          label: Text(_selectedIndices.isEmpty
+              ? 'Send email to selected'
+              : 'Send email to ${_selectedIndices.length} artist(s)'),
           onPressed: _selectedIndices.isEmpty
               ? null
-              : () => widget.onSendEmailToSelected(_reportList, _selectedIndices.toList()..sort()),
+              : () => widget.onSendEmailToSelected(
+                  _reportList, _selectedIndices.toList()..sort()),
         ),
       ],
     );
@@ -5939,7 +6856,8 @@ class _ReminderTemplateEditor extends StatefulWidget {
   final String? footerText;
 
   @override
-  State<_ReminderTemplateEditor> createState() => _ReminderTemplateEditorState();
+  State<_ReminderTemplateEditor> createState() =>
+      _ReminderTemplateEditorState();
 }
 
 class _ReminderTemplateEditorState extends State<_ReminderTemplateEditor> {
@@ -6018,7 +6936,8 @@ class _ReminderTemplateEditorState extends State<_ReminderTemplateEditor> {
         const SizedBox(height: 16),
         Row(
           children: [
-            const Text('Body editor', style: TextStyle(fontWeight: FontWeight.w600)),
+            const Text('Body editor',
+                style: TextStyle(fontWeight: FontWeight.w600)),
             const Spacer(),
             ChoiceChip(
               label: const Text('Edit'),
@@ -6046,7 +6965,8 @@ class _ReminderTemplateEditorState extends State<_ReminderTemplateEditor> {
             focusNode: _bodyFocusNode,
             decoration: const InputDecoration(
               labelText: 'HTML body template',
-              hintText: 'Write plain text or HTML. Use the toolbar to insert styled sections.',
+              hintText:
+                  'Write plain text or HTML. Use the toolbar to insert styled sections.',
               border: OutlineInputBorder(),
               alignLabelWithHint: true,
             ),
@@ -6066,19 +6986,29 @@ class _ReminderTemplateEditorState extends State<_ReminderTemplateEditor> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Preview subject', style: Theme.of(context).textTheme.labelLarge),
+                  Text('Preview subject',
+                      style: Theme.of(context).textTheme.labelLarge),
                   const SizedBox(height: 4),
-                  SelectableText(preview.subject.isEmpty ? '(empty subject)' : preview.subject),
+                  SelectableText(preview.subject.isEmpty
+                      ? '(empty subject)'
+                      : preview.subject),
                   const SizedBox(height: 12),
-                  Text('Text fallback preview', style: Theme.of(context).textTheme.labelLarge),
+                  Text('Text fallback preview',
+                      style: Theme.of(context).textTheme.labelLarge),
                   const SizedBox(height: 4),
-                  SelectableText(preview.bodyText.isEmpty ? '(empty body)' : preview.bodyText),
+                  SelectableText(preview.bodyText.isEmpty
+                      ? '(empty body)'
+                      : preview.bodyText),
                   const SizedBox(height: 12),
-                  Text('HTML source', style: Theme.of(context).textTheme.labelLarge),
+                  Text('HTML source',
+                      style: Theme.of(context).textTheme.labelLarge),
                   const SizedBox(height: 4),
                   SelectableText(
-                    preview.bodyHtml.isEmpty ? '(empty html)' : preview.bodyHtml,
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                    preview.bodyHtml.isEmpty
+                        ? '(empty html)'
+                        : preview.bodyHtml,
+                    style:
+                        const TextStyle(fontFamily: 'monospace', fontSize: 12),
                   ),
                 ],
               ),
@@ -6227,6 +7157,7 @@ class _ReminderBodyToolbar extends StatelessWidget {
     );
   }
 }
+
 class _ArtistLogsTab extends StatefulWidget {
   const _ArtistLogsTab({
     required this.apiClient,
@@ -6259,7 +7190,8 @@ class _ArtistLogsTabState extends State<_ArtistLogsTab> {
       _error = null;
     });
     try {
-      final list = await widget.apiClient.fetchArtistActivity(widget.token, widget.artistId);
+      final list = await widget.apiClient
+          .fetchArtistActivity(widget.token, widget.artistId);
       if (!mounted) return;
       setState(() {
         _logs = list;
@@ -6285,7 +7217,8 @@ class _ArtistLogsTabState extends State<_ArtistLogsTab> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SelectableText(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+            SelectableText(_error!,
+                style: const TextStyle(color: Colors.red, fontSize: 12)),
             const SizedBox(height: 8),
             TextButton(onPressed: _load, child: const Text('Retry')),
           ],
@@ -6307,14 +7240,17 @@ class _ArtistLogsTabState extends State<_ArtistLogsTab> {
         if (createdAt != null) {
           try {
             final dt = DateTime.parse(createdAt.toString());
-            dateStr = '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+            dateStr =
+                '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
           } catch (_) {
             dateStr = createdAt.toString();
           }
         }
         return ListTile(
           leading: Icon(
-            type == 'reminder_email' ? ZalmanimIcons.email : ZalmanimIcons.history,
+            type == 'reminder_email'
+                ? ZalmanimIcons.email
+                : ZalmanimIcons.history,
             size: 22,
             color: Theme.of(context).colorScheme.primary,
           ),
@@ -6324,7 +7260,8 @@ class _ArtistLogsTabState extends State<_ArtistLogsTab> {
             mainAxisSize: MainAxisSize.min,
             children: [
               SelectableText(dateStr, style: const TextStyle(fontSize: 12)),
-              if (details.isNotEmpty) SelectableText(details, style: const TextStyle(fontSize: 11)),
+              if (details.isNotEmpty)
+                SelectableText(details, style: const TextStyle(fontSize: 11)),
             ],
           ),
           dense: true,
@@ -6334,27 +7271,9 @@ class _ArtistLogsTabState extends State<_ArtistLogsTab> {
   }
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 class UsersManagementPage extends StatefulWidget {
-  const UsersManagementPage({super.key, required this.apiClient, required this.token});
+  const UsersManagementPage(
+      {super.key, required this.apiClient, required this.token});
 
   final ApiClient apiClient;
   final String token;
@@ -6383,7 +7302,8 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
     try {
       final results = await Future.wait([
         widget.apiClient.fetchUsers(widget.token),
-        widget.apiClient.fetchArtists(widget.token, includeInactive: true, limit: 200, offset: 0),
+        widget.apiClient.fetchArtists(widget.token,
+            includeInactive: true, limit: 200, offset: 0),
       ]);
       if (!mounted) return;
       setState(() {
@@ -6402,8 +7322,10 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
 
   Future<void> _showUserDialog({Map<String, dynamic>? user}) async {
     final isEdit = user != null;
-    final emailController = TextEditingController(text: user?['email'] as String? ?? '');
-    final nameController = TextEditingController(text: user?['full_name'] as String? ?? '');
+    final emailController =
+        TextEditingController(text: user?['email'] as String? ?? '');
+    final nameController =
+        TextEditingController(text: user?['full_name'] as String? ?? '');
     final passwordController = TextEditingController();
     String role = (user?['role'] as String? ?? 'artist').toLowerCase();
     bool isActive = user?['is_active'] as bool? ?? true;
@@ -6422,18 +7344,22 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
                 children: [
                   TextField(
                     controller: emailController,
-                    decoration: const InputDecoration(labelText: 'Email', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(
+                        labelText: 'Email', border: OutlineInputBorder()),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: nameController,
-                    decoration: const InputDecoration(labelText: 'Full name', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(
+                        labelText: 'Full name', border: OutlineInputBorder()),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: passwordController,
                     decoration: InputDecoration(
-                      labelText: isEdit ? 'New password (optional)' : 'Password (optional)',
+                      labelText: isEdit
+                          ? 'New password (optional)'
+                          : 'Password (optional)',
                       border: const OutlineInputBorder(),
                     ),
                     obscureText: true,
@@ -6441,20 +7367,26 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
                     initialValue: role,
-                    decoration: const InputDecoration(labelText: 'Role', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(
+                        labelText: 'Role', border: OutlineInputBorder()),
                     items: const [
                       DropdownMenuItem(value: 'admin', child: Text('Admin')),
-                      DropdownMenuItem(value: 'manager', child: Text('Manager')),
+                      DropdownMenuItem(
+                          value: 'manager', child: Text('Manager')),
                       DropdownMenuItem(value: 'artist', child: Text('Artist')),
                     ],
-                    onChanged: (value) => setStateDialog(() => role = value ?? role),
+                    onChanged: (value) =>
+                        setStateDialog(() => role = value ?? role),
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<int?>(
                     initialValue: artistId,
-                    decoration: const InputDecoration(labelText: 'Linked artist', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(
+                        labelText: 'Linked artist',
+                        border: OutlineInputBorder()),
                     items: [
-                      const DropdownMenuItem<int?>(value: null, child: Text('No linked artist')),
+                      const DropdownMenuItem<int?>(
+                          value: null, child: Text('No linked artist')),
                       ..._artists.map((artist) {
                         final map = artist as Map<String, dynamic>;
                         return DropdownMenuItem<int?>(
@@ -6463,12 +7395,14 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
                         );
                       }),
                     ],
-                    onChanged: (value) => setStateDialog(() => artistId = value),
+                    onChanged: (value) =>
+                        setStateDialog(() => artistId = value),
                   ),
                   const SizedBox(height: 8),
                   SwitchListTile(
                     value: isActive,
-                    onChanged: (value) => setStateDialog(() => isActive = value),
+                    onChanged: (value) =>
+                        setStateDialog(() => isActive = value),
                     title: const Text('Active user'),
                     contentPadding: EdgeInsets.zero,
                   ),
@@ -6477,8 +7411,12 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.of(context).pop(true), child: Text(isEdit ? 'Save' : 'Create')),
+            TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: Text(isEdit ? 'Save' : 'Create')),
           ],
         ),
       ),
@@ -6504,7 +7442,8 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
 
     try {
       if (isEdit) {
-        await widget.apiClient.updateUser(token: widget.token, id: user['id'] as int, body: body);
+        await widget.apiClient
+            .updateUser(token: widget.token, id: user['id'] as int, body: body);
       } else {
         await widget.apiClient.createUser(token: widget.token, body: body);
       }
@@ -6536,8 +7475,12 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
-          IconButton(onPressed: _loading ? null : _load, icon: const Icon(ZalmanimIcons.refresh)),
-          IconButton(onPressed: _loading ? null : () => _showUserDialog(), icon: const Icon(ZalmanimIcons.personAdd)),
+          IconButton(
+              onPressed: _loading ? null : _load,
+              icon: const Icon(ZalmanimIcons.refresh)),
+          IconButton(
+              onPressed: _loading ? null : () => _showUserDialog(),
+              icon: const Icon(ZalmanimIcons.personAdd)),
         ],
       ),
       body: _buildBody(),
@@ -6562,24 +7505,32 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
         final user = _users[index] as Map<String, dynamic>;
         final identities = user['identities'] as List<dynamic>? ?? const [];
         final providers = identities
-            .map((item) => ((item as Map<String, dynamic>)['provider'] ?? '').toString())
+            .map((item) =>
+                ((item as Map<String, dynamic>)['provider'] ?? '').toString())
             .where((item) => item.isNotEmpty)
             .join(', ');
         return Card(
           child: ListTile(
             leading: CircleAvatar(
-              child: Text(((user['full_name'] ?? user['email'] ?? '?').toString()).substring(0, 1).toUpperCase()),
+              child: Text(
+                  ((user['full_name'] ?? user['email'] ?? '?').toString())
+                      .substring(0, 1)
+                      .toUpperCase()),
             ),
-            title: Text((user['full_name'] as String?)?.isNotEmpty == true ? user['full_name'] as String : user['email'] as String),
+            title: Text((user['full_name'] as String?)?.isNotEmpty == true
+                ? user['full_name'] as String
+                : user['email'] as String),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(user['email'] as String? ?? ''),
-                Text('Role: ${(user['role'] ?? '').toString()}${(user['is_active'] as bool? ?? false) ? '' : ' • inactive'}'),
+                Text(
+                    'Role: ${(user['role'] ?? '').toString()}${(user['is_active'] as bool? ?? false) ? '' : ' • inactive'}'),
                 if ((user['artist_name'] as String?)?.isNotEmpty == true)
                   Text('Artist: ${user['artist_name']}'),
-                Text('Providers: ${providers.isEmpty ? 'password/manual' : providers}'),
+                Text(
+                    'Providers: ${providers.isEmpty ? 'password/manual' : providers}'),
               ],
             ),
             trailing: IconButton(
@@ -6673,7 +7624,8 @@ class _SoundCloudEmbedWidgetState extends State<_SoundCloudEmbedWidget> {
   void initState() {
     super.initState();
     final encoded = Uri.encodeComponent(widget.soundCloudUrl);
-    final embedUrl = 'https://w.soundcloud.com/player/?url=$encoded&color=%23ff5500&auto_play=false&hide_related=false&show_comments=true&show_user=true&show_reposts=false&show_teaser=true';
+    final embedUrl =
+        'https://w.soundcloud.com/player/?url=$encoded&color=%23ff5500&auto_play=false&hide_related=false&show_comments=true&show_user=true&show_reposts=false&show_teaser=true';
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..loadRequest(Uri.parse(embedUrl));
@@ -6688,7 +7640,3 @@ class _SoundCloudEmbedWidgetState extends State<_SoundCloudEmbedWidget> {
     );
   }
 }
-
-
-
-

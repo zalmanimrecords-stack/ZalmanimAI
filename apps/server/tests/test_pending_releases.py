@@ -1,5 +1,15 @@
+import hashlib
+from datetime import datetime, timedelta, timezone
+
 from app.api import routes
-from app.models.models import Artist, ArtistActivityLog, PendingRelease, PendingReleaseToken
+from app.models.models import (
+    Artist,
+    ArtistActivityLog,
+    LabelInboxMessage,
+    LabelInboxThread,
+    PendingRelease,
+    PendingReleaseToken,
+)
 
 
 def test_send_pending_release_reminder_creates_token_and_logs_activity(
@@ -60,3 +70,78 @@ def test_send_pending_release_reminder_creates_token_and_logs_activity(
         ArtistActivityLog.activity_type == "pending_release_reminder_email",
     ).all()
     assert len(logs) == 1
+
+
+def test_pending_release_submit_creates_unread_admin_inbox_message(
+    client,
+    db_session,
+    admin_headers,
+):
+    artist = Artist(name="Maya Waves", email="maya@example.com", is_active=True)
+    db_session.add(artist)
+    db_session.commit()
+    db_session.refresh(artist)
+
+    pending_release = PendingRelease(
+        artist_id=artist.id,
+        artist_name=artist.name,
+        artist_email=artist.email,
+        artist_data_json="{}",
+        release_title="Ocean Lights",
+        release_data_json="{}",
+        status="pending",
+    )
+    db_session.add(pending_release)
+    db_session.commit()
+    db_session.refresh(pending_release)
+
+    raw_token = "pending-release-token"
+    db_session.add(
+        PendingReleaseToken(
+            token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),
+            pending_release_id=pending_release.id,
+            artist_id=artist.id,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+        )
+    )
+    db_session.commit()
+
+    response = client.post(
+        "/api/public/pending-release-submit",
+        json={
+            "token": raw_token,
+            "artist_name": "Maya Waves",
+            "artist_email": "maya@example.com",
+            "artist_data": {"instagram": "https://instagram.com/mayawaves"},
+            "release_title": "Ocean Lights",
+            "release_data": {"track_title": "Ocean Lights"},
+        },
+    )
+
+    assert response.status_code == 200
+
+    db_session.expire_all()
+    thread = (
+        db_session.query(LabelInboxThread)
+        .filter(LabelInboxThread.artist_id == artist.id)
+        .first()
+    )
+    assert thread is not None
+
+    messages = (
+        db_session.query(LabelInboxMessage)
+        .filter(LabelInboxMessage.thread_id == thread.id)
+        .all()
+    )
+    assert len(messages) == 1
+    assert messages[0].sender == "artist"
+    assert messages[0].admin_read_at is None
+    assert "Pending Release form submitted by the artist." in messages[0].body
+    assert "Ocean Lights" in messages[0].body
+
+    inbox_response = client.get("/api/admin/inbox", headers=admin_headers)
+
+    assert inbox_response.status_code == 200
+    inbox_payload = inbox_response.json()
+    assert len(inbox_payload) == 1
+    assert inbox_payload[0]["unread_count"] == 1

@@ -1,8 +1,10 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:labelops_client/core/api_client.dart';
 import 'package:labelops_client/features/admin/admin_dashboard_delegate.dart';
 
-class FakeAdminDashboardDelegate extends Fake implements AdminDashboardDelegate {
+class FakeAdminDashboardDelegate extends Fake
+    implements AdminDashboardDelegate {
   FakeAdminDashboardDelegate({
     this.inboxThreads = const [],
     this.pendingReleases = const [],
@@ -10,6 +12,7 @@ class FakeAdminDashboardDelegate extends Fake implements AdminDashboardDelegate 
 
   final List<dynamic> inboxThreads;
   final List<dynamic> pendingReleases;
+  final TextEditingController _artistSearchController = TextEditingController();
 
   int inboxLoadCalls = 0;
   int pendingLoadCalls = 0;
@@ -19,6 +22,69 @@ class FakeAdminDashboardDelegate extends Fake implements AdminDashboardDelegate 
   int? remindedPendingReleaseId;
   String? remindedArtistName;
   Map<String, dynamic>? messagedPendingRelease;
+  bool grooverInviteDialogShown = false;
+
+  @override
+  List<dynamic> get artistsList => const [];
+
+  @override
+  List<dynamic> get artistsListForReleases => const [];
+
+  @override
+  TextEditingController get artistSearchController => _artistSearchController;
+
+  @override
+  int get artistsSortColumn => 0;
+
+  @override
+  bool get artistsSortAsc => true;
+
+  @override
+  bool get artistsHasMore => false;
+
+  @override
+  bool get artistsLoadingMore => false;
+
+  @override
+  void setArtistsSort(int column, bool asc) {}
+
+  @override
+  Future<void> loadArtists() async {}
+
+  @override
+  Future<void> loadMoreArtists() async {}
+
+  @override
+  void showAddArtistDialog() {}
+
+  @override
+  void showEditArtistDialog(int id) {}
+
+  @override
+  void showSetArtistPasswordDialog(int artistId, String artistName) {}
+
+  @override
+  void sendArtistPortalInvite(
+      int artistId, String artistName, String artistEmail) {}
+
+  @override
+  void sendArtistPortalInviteToAll() {}
+
+  @override
+  void sendArtistUpdateProfileInvite(
+      int artistId, String artistName, String artistEmail) {}
+
+  @override
+  void showArtistDetailsDialog(int id) {}
+
+  @override
+  void removeArtist(int id, String name) {}
+
+  @override
+  void showMergeArtistsDialog() {}
+
+  @override
+  void showArtistReleases(int id, String name) {}
 
   @override
   ApiClient get apiClient => throw UnimplementedError();
@@ -63,7 +129,8 @@ class FakeAdminDashboardDelegate extends Fake implements AdminDashboardDelegate 
   }
 
   @override
-  Future<void> sendPendingReleaseReminder(int pendingReleaseId, String artistName) async {
+  Future<void> sendPendingReleaseReminder(
+      int pendingReleaseId, String artistName) async {
     remindedPendingReleaseId = pendingReleaseId;
     remindedArtistName = artistName;
   }
@@ -71,5 +138,10 @@ class FakeAdminDashboardDelegate extends Fake implements AdminDashboardDelegate 
   @override
   void showPendingReleaseMessageDialog(Map<String, dynamic> pendingRelease) {
     messagedPendingRelease = pendingRelease;
+  }
+
+  @override
+  void showGrooverInviteDialog() {
+    grooverInviteDialogShown = true;
   }
 }

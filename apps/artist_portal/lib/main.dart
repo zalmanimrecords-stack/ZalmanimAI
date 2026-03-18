@@ -16,6 +16,7 @@ import 'features/public/landing_page.dart';
 import 'features/public/linktree_page.dart';
 import 'features/public/demo_confirm_form_page.dart';
 import 'features/public/pending_release_form_page.dart';
+import 'features/public/artist_registration_form_page.dart';
 
 void main() {
   redirect.redirectPathToHash();
@@ -32,7 +33,8 @@ String get _apiBaseUrl {
 Color _primaryColor() {
   final hex = AppConfig.primaryColorHex.replaceFirst('#', '').trim();
   if (hex.length >= 6) {
-    return Color(int.parse('FF${hex.padRight(6, '0').substring(0, 6)}', radix: 16));
+    return Color(
+        int.parse('FF${hex.padRight(6, '0').substring(0, 6)}', radix: 16));
   }
   return const Color(0xFF1B7A5E);
 }
@@ -76,10 +78,12 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
   Widget build(BuildContext context) {
     redirect.redirectPathToHash();
     final primary = _primaryColor();
-    // Public forms: /pending-release?token=xxx, /demo-confirm?token=xxx, or hash URLs /#/pending-release?token=xxx, /#/demo-confirm?token=xxx
+    // Public forms: /pending-release?token=xxx, /demo-confirm?token=xxx, /artist-registration?token=xxx
+    // or hash URLs /#/pending-release?token=xxx, /#/demo-confirm?token=xxx, /#/artist-registration?token=xxx
     String? segment;
     String? token;
-    final pathSegments = Uri.base.pathSegments.where((s) => s.isNotEmpty).toList();
+    final pathSegments =
+        Uri.base.pathSegments.where((s) => s.isNotEmpty).toList();
     final frag = Uri.base.fragment;
     if (pathSegments.isNotEmpty && Uri.base.queryParameters['token'] != null) {
       segment = pathSegments[0].toLowerCase();
@@ -87,7 +91,9 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
     } else if (frag.startsWith('/')) {
       try {
         final u = Uri.parse('http://h$frag');
-        if (u.pathSegments.isNotEmpty) segment = u.pathSegments[0].toLowerCase();
+        if (u.pathSegments.isNotEmpty) {
+          segment = u.pathSegments[0].toLowerCase();
+        }
         token = u.queryParameters['token'];
       } catch (_) {}
     }
@@ -121,6 +127,23 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
             useMaterial3: true,
           ),
           home: DemoConfirmFormPage(
+            apiClient: ApiClient(baseUrl: _apiBaseUrl),
+            token: token.trim(),
+          ),
+        );
+      }
+      if (segment == 'artist-registration') {
+        return MaterialApp(
+          title: AppConfig.labelName,
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: primary,
+              primary: primary,
+              brightness: Brightness.light,
+            ),
+            useMaterial3: true,
+          ),
+          home: ArtistRegistrationFormPage(
             apiClient: ApiClient(baseUrl: _apiBaseUrl),
             token: token.trim(),
           ),
@@ -234,7 +257,8 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(ZalmanimIcons.block, size: 48, color: Colors.grey[600]),
+                      Icon(ZalmanimIcons.block,
+                          size: 48, color: Colors.grey[600]),
                       const SizedBox(height: 16),
                       Text(
                         'This portal is for artists only.',
@@ -244,7 +268,10 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
                       const SizedBox(height: 8),
                       Text(
                         'Please use the management app to sign in as admin or manager.',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(color: Colors.grey[600]),
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 24),

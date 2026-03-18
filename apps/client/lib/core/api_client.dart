@@ -17,9 +17,9 @@ class ApiClient {
   Future<bool> checkConnection() async {
     try {
       final r = await http.get(Uri.parse(healthUrl)).timeout(
-        const Duration(seconds: 3),
-        onTimeout: () => throw Exception('timeout'),
-      );
+            const Duration(seconds: 3),
+            onTimeout: () => throw Exception('timeout'),
+          );
       return r.statusCode == 200;
     } catch (_) {
       return false;
@@ -31,9 +31,9 @@ class ApiClient {
   Future<Map<String, dynamic>?> fetchHealth() async {
     try {
       final r = await http.get(Uri.parse(healthUrl)).timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => throw Exception('timeout'),
-      );
+            const Duration(seconds: 5),
+            onTimeout: () => throw Exception('timeout'),
+          );
       if (r.statusCode != 200) return null;
       final data = jsonDecode(r.body);
       return data is Map<String, dynamic> ? data : null;
@@ -42,7 +42,8 @@ class ApiClient {
     }
   }
 
-  Future<AuthSession> login({required String email, required String password}) async {
+  Future<AuthSession> login(
+      {required String email, required String password}) async {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/login'),
       headers: {'Content-Type': 'application/json'},
@@ -71,7 +72,8 @@ class ApiClient {
     );
     final response = await http.get(uri);
     if (response.statusCode != 200) {
-      throw Exception('$provider login setup failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
+      throw Exception(
+          '$provider login setup failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
     }
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     return data['auth_url'] as String;
@@ -93,12 +95,14 @@ class ApiClient {
       body: jsonEncode({'email': email.trim().toLowerCase()}),
     );
     if (response.statusCode != 200) {
-      throw Exception(response.body.isNotEmpty ? response.body : 'Request failed');
+      throw Exception(
+          response.body.isNotEmpty ? response.body : 'Request failed');
     }
   }
 
   /// Set new password using the token from the reset email.
-  Future<void> resetPassword({required String token, required String newPassword}) async {
+  Future<void> resetPassword(
+      {required String token, required String newPassword}) async {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/reset-password'),
       headers: {'Content-Type': 'application/json'},
@@ -124,7 +128,8 @@ class ApiClient {
     );
     final response = await http.get(uri, headers: _authHeaders(token));
     if (response.statusCode != 200) {
-      throw Exception('Google mail connect failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
+      throw Exception(
+          'Google mail connect failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
     }
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     return data['auth_url'] as String;
@@ -136,7 +141,8 @@ class ApiClient {
       headers: _authHeaders(token),
     );
     if (response.statusCode != 200) {
-      throw Exception('Users failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
+      throw Exception(
+          'Users failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
     }
     return jsonDecode(response.body) as List<dynamic>;
   }
@@ -147,7 +153,8 @@ class ApiClient {
       headers: _authHeaders(token),
     );
     if (response.statusCode != 200) {
-      throw Exception('Login stats failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
+      throw Exception(
+          'Login stats failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
@@ -159,7 +166,8 @@ class ApiClient {
       headers: _authHeaders(token),
     );
     if (response.statusCode != 200) {
-      throw Exception('Dashboard stats failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
+      throw Exception(
+          'Dashboard stats failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
@@ -174,7 +182,8 @@ class ApiClient {
       body: jsonEncode(body),
     );
     if (response.statusCode != 200) {
-      throw Exception('Create user failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
+      throw Exception(
+          'Create user failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
@@ -190,10 +199,12 @@ class ApiClient {
       body: jsonEncode(body),
     );
     if (response.statusCode != 200) {
-      throw Exception('Update user failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
+      throw Exception(
+          'Update user failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
+
   Future<List<dynamic>> fetchArtists(
     String token, {
     bool includeInactive = false,
@@ -215,7 +226,8 @@ class ApiClient {
       headers: _authHeaders(token),
     );
     if (response.statusCode != 200) {
-      throw Exception('Artists failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
+      throw Exception(
+          'Artists failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
     }
     return jsonDecode(response.body) as List<dynamic>;
   }
@@ -226,7 +238,8 @@ class ApiClient {
       headers: _authHeaders(token),
     );
     if (response.statusCode != 200) {
-      throw Exception('Artist failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
+      throw Exception(
+          'Artist failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
@@ -241,7 +254,8 @@ class ApiClient {
       body: jsonEncode(body),
     );
     if (response.statusCode != 200) {
-      throw Exception('Create artist failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
+      throw Exception(
+          'Create artist failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
@@ -257,7 +271,8 @@ class ApiClient {
       body: jsonEncode(body),
     );
     if (response.statusCode != 200) {
-      throw Exception('Update artist failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
+      throw Exception(
+          'Update artist failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
@@ -328,9 +343,11 @@ class ApiClient {
 
   /// Sync catalog Original Artists to artist Brand: for each catalog release matched to an artist,
   /// set catalog_tracks.original_artists to that artist's brand (artist_brand or name).
-  Future<Map<String, dynamic>> syncOriginalArtistsFromArtists(String token) async {
+  Future<Map<String, dynamic>> syncOriginalArtistsFromArtists(
+      String token) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/admin/catalog-tracks/sync-original-artists-from-artists'),
+      Uri.parse(
+          '$baseUrl/admin/catalog-tracks/sync-original-artists-from-artists'),
       headers: _authHeaders(token),
     );
     if (response.statusCode != 200) {
@@ -342,9 +359,11 @@ class ApiClient {
   }
 
   /// Create artist records for catalog Original Artists that have no matching Brand.
-  Future<Map<String, dynamic>> createMissingOriginalArtists(String token) async {
+  Future<Map<String, dynamic>> createMissingOriginalArtists(
+      String token) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/admin/catalog-tracks/create-missing-original-artists'),
+      Uri.parse(
+          '$baseUrl/admin/catalog-tracks/create-missing-original-artists'),
       headers: _authHeaders(token),
     );
     if (response.statusCode != 200) {
@@ -383,7 +402,8 @@ class ApiClient {
       headers: _authHeaders(token),
     );
     if (response.statusCode != 200) {
-      throw Exception('Delete artist failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
+      throw Exception(
+          'Delete artist failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
     }
   }
 
@@ -403,7 +423,8 @@ class ApiClient {
     );
     if (response.statusCode != 200) {
       final detail = ApiClient._detailFromErrorBody(response.body);
-      throw Exception('Set password failed (${response.statusCode}): ${detail.isNotEmpty ? detail : response.reasonPhrase}');
+      throw Exception(
+          'Set password failed (${response.statusCode}): ${detail.isNotEmpty ? detail : response.reasonPhrase}');
     }
   }
 
@@ -437,7 +458,35 @@ class ApiClient {
         .timeout(_portalInviteTimeout);
     if (response.statusCode != 200) {
       final detail = ApiClient._detailFromErrorBody(response.body);
-      throw Exception('Send portal invite failed (${response.statusCode}): ${detail.isNotEmpty ? detail : response.reasonPhrase}');
+      throw Exception(
+          'Send portal invite failed (${response.statusCode}): ${detail.isNotEmpty ? detail : response.reasonPhrase}');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> sendGrooverInvite({
+    required String token,
+    required String email,
+    String? artistName,
+    String? fullName,
+    String? notes,
+  }) async {
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/admin/artists/send-groover-invite'),
+          headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'email': email,
+            if (artistName != null) 'artist_name': artistName,
+            if (fullName != null) 'full_name': fullName,
+            if (notes != null) 'notes': notes,
+          }),
+        )
+        .timeout(_portalInviteTimeout);
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(response.body);
+      throw Exception(
+          'Send Groover invite failed (${response.statusCode}): ${detail.isNotEmpty ? detail : response.reasonPhrase}');
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
@@ -449,13 +498,15 @@ class ApiClient {
   }) async {
     final response = await http
         .post(
-          Uri.parse('$baseUrl/admin/artists/$artistId/send-update-profile-invite'),
+          Uri.parse(
+              '$baseUrl/admin/artists/$artistId/send-update-profile-invite'),
           headers: _authHeaders(token),
         )
         .timeout(_portalInviteTimeout);
     if (response.statusCode != 200) {
       final detail = ApiClient._detailFromErrorBody(response.body);
-      throw Exception('Send update profile invite failed (${response.statusCode}): ${detail.isNotEmpty ? detail : response.reasonPhrase}');
+      throw Exception(
+          'Send update profile invite failed (${response.statusCode}): ${detail.isNotEmpty ? detail : response.reasonPhrase}');
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
@@ -470,14 +521,16 @@ class ApiClient {
     }
     final uri = queryParams.isEmpty
         ? Uri.parse('$baseUrl/admin/campaign-requests')
-        : Uri.parse('$baseUrl/admin/campaign-requests').replace(queryParameters: queryParams);
+        : Uri.parse('$baseUrl/admin/campaign-requests')
+            .replace(queryParameters: queryParams);
     final response = await http.get(
       uri,
       headers: _authHeaders(token),
     );
     if (response.statusCode != 200) {
       final detail = ApiClient._detailFromErrorBody(response.body);
-      throw Exception('Campaign requests failed (${response.statusCode}): $detail');
+      throw Exception(
+          'Campaign requests failed (${response.statusCode}): $detail');
     }
     return jsonDecode(response.body) as List<dynamic>;
   }
@@ -498,7 +551,8 @@ class ApiClient {
     );
     if (response.statusCode != 200) {
       final detail = ApiClient._detailFromErrorBody(response.body);
-      throw Exception('Update campaign request failed (${response.statusCode}): $detail');
+      throw Exception(
+          'Update campaign request failed (${response.statusCode}): $detail');
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
@@ -517,11 +571,13 @@ class ApiClient {
     if (statusFilter != null && statusFilter.isNotEmpty) {
       queryParams['status_filter'] = statusFilter;
     }
-    final uri = Uri.parse('$baseUrl/admin/pending-releases').replace(queryParameters: queryParams);
+    final uri = Uri.parse('$baseUrl/admin/pending-releases')
+        .replace(queryParameters: queryParams);
     final response = await http.get(uri, headers: _authHeaders(token));
     if (response.statusCode != 200) {
       final detail = ApiClient._detailFromErrorBody(response.body);
-      throw Exception('Pending releases failed (${response.statusCode}): $detail');
+      throw Exception(
+          'Pending releases failed (${response.statusCode}): $detail');
     }
     return jsonDecode(response.body) as List<dynamic>;
   }
@@ -532,7 +588,8 @@ class ApiClient {
   }) async {
     final queryParams = <String, String>{};
     if (artistId != null) queryParams['artist_id'] = artistId.toString();
-    final uri = Uri.parse('$baseUrl/admin/inbox').replace(queryParameters: queryParams.isNotEmpty ? queryParams : null);
+    final uri = Uri.parse('$baseUrl/admin/inbox')
+        .replace(queryParameters: queryParams.isNotEmpty ? queryParams : null);
     final response = await http.get(uri, headers: _authHeaders(token));
     if (response.statusCode != 200) {
       final detail = ApiClient._detailFromErrorBody(response.body);
@@ -592,7 +649,9 @@ class ApiClient {
       Uri.parse('$baseUrl/artist/me/dashboard'),
       headers: _authHeaders(token),
     );
-    if (response.statusCode != 200) throw Exception('Failed to load artist dashboard');
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load artist dashboard');
+    }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
@@ -604,10 +663,12 @@ class ApiClient {
     required List<int> fileBytes,
     required String filename,
   }) async {
-    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/artist/me/releases/upload'));
+    final request = http.MultipartRequest(
+        'POST', Uri.parse('$baseUrl/artist/me/releases/upload'));
     request.headers.addAll(_authHeaders(token));
     request.fields['title'] = title;
-    request.files.add(http.MultipartFile.fromBytes('file', fileBytes, filename: filename));
+    request.files.add(
+        http.MultipartFile.fromBytes('file', fileBytes, filename: filename));
 
     final response = await request.send();
     if (response.statusCode != 200) {
@@ -781,7 +842,8 @@ class ApiClient {
     if (file != null) {
       request.files.add(await http.MultipartFile.fromPath('file', file.path));
     } else if (fileBytes != null) {
-      request.files.add(http.MultipartFile.fromBytes('file', fileBytes, filename: filename));
+      request.files.add(
+          http.MultipartFile.fromBytes('file', fileBytes, filename: filename));
     } else {
       throw Exception('Provide either file or fileBytes');
     }
@@ -790,7 +852,8 @@ class ApiClient {
     final body = await response.stream.bytesToString();
     if (response.statusCode != 200) {
       final detail = _detailFromErrorBody(body);
-      throw Exception('Import failed (${response.statusCode}): ${detail.isNotEmpty ? detail : response.reasonPhrase}');
+      throw Exception(
+          'Import failed (${response.statusCode}): ${detail.isNotEmpty ? detail : response.reasonPhrase}');
     }
     return jsonDecode(body) as Map<String, dynamic>;
   }
@@ -906,7 +969,8 @@ class ApiClient {
   }
 
   /// Delete a demo submission. Requires admin. Throws on failure.
-  Future<void> deleteDemoSubmission({required String token, required int id}) async {
+  Future<void> deleteDemoSubmission(
+      {required String token, required int id}) async {
     final response = await http.delete(
       Uri.parse('$baseUrl/admin/demo-submissions/$id'),
       headers: _authHeaders(token),
@@ -919,10 +983,12 @@ class ApiClient {
   }
 
   /// URL for streaming/downloading the demo MP3 file (admin). Use with Authorization header.
-  String demoSubmissionDownloadUrl(int id) => '$baseUrl/admin/demo-submissions/$id/download';
+  String demoSubmissionDownloadUrl(int id) =>
+      '$baseUrl/admin/demo-submissions/$id/download';
 
   /// Download demo MP3 file as bytes (admin). Use for "Download MP3" link.
-  Future<List<int>> downloadDemoSubmissionFile({required String token, required int id}) async {
+  Future<List<int>> downloadDemoSubmissionFile(
+      {required String token, required int id}) async {
     final response = await http.get(
       Uri.parse('$baseUrl/admin/demo-submissions/$id/download'),
       headers: _authHeaders(token),
@@ -983,8 +1049,10 @@ class ApiClient {
   }
 
   /// Report: artists who have not had any track (catalog release_date) in the last N months.
-  Future<List<dynamic>> fetchArtistsNoTracksHalfYear(String token, {int months = 6}) async {
-    final uri = Uri.parse('$baseUrl/admin/reports/artists-no-tracks-half-year').replace(
+  Future<List<dynamic>> fetchArtistsNoTracksHalfYear(String token,
+      {int months = 6}) async {
+    final uri =
+        Uri.parse('$baseUrl/admin/reports/artists-no-tracks-half-year').replace(
       queryParameters: {'months': '$months'},
     );
     final response = await http.get(
@@ -1004,7 +1072,8 @@ class ApiClient {
     required int pendingReleaseId,
   }) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/admin/pending-releases/$pendingReleaseId/send-reminder'),
+      Uri.parse(
+          '$baseUrl/admin/pending-releases/$pendingReleaseId/send-reminder'),
       headers: _authHeaders(token),
     );
     if (response.statusCode != 200) {
@@ -1045,7 +1114,8 @@ class ApiClient {
   /// Fetch system and mail logs for Settings > Logs. [limit] default 200, max 500.
   Future<List<dynamic>> fetchSystemLogs(String token, {int limit = 200}) async {
     final response = await http.get(
-      Uri.parse('$baseUrl/admin/logs').replace(queryParameters: {'limit': limit.toString()}),
+      Uri.parse('$baseUrl/admin/logs')
+          .replace(queryParameters: {'limit': limit.toString()}),
       headers: _authHeaders(token),
     );
     if (response.statusCode != 200) {
@@ -1079,7 +1149,10 @@ class ApiClient {
   }) async {
     final response = await http.get(
       Uri.parse('$baseUrl/admin/db/tables/$tableName').replace(
-        queryParameters: {'limit': limit.toString(), 'offset': offset.toString()},
+        queryParameters: {
+          'limit': limit.toString(),
+          'offset': offset.toString()
+        },
       ),
       headers: _authHeaders(token),
     );
@@ -1111,6 +1184,8 @@ class ApiClient {
     String? demoReceiptBody,
     String? portalInviteSubject,
     String? portalInviteBody,
+    String? grooverInviteSubject,
+    String? grooverInviteBody,
     String? updateProfileInviteSubject,
     String? updateProfileInviteBody,
     String? passwordResetSubject,
@@ -1126,18 +1201,48 @@ class ApiClient {
     if (smtpPassword != null) body['smtp_password'] = smtpPassword;
     if (emailsPerHour != null) body['emails_per_hour'] = emailsPerHour;
     if (emailFooter != null) body['email_footer'] = emailFooter;
-    if (demoRejectionSubject != null) body['demo_rejection_subject'] = demoRejectionSubject;
-    if (demoRejectionBody != null) body['demo_rejection_body'] = demoRejectionBody;
-    if (demoApprovalSubject != null) body['demo_approval_subject'] = demoApprovalSubject;
-    if (demoApprovalBody != null) body['demo_approval_body'] = demoApprovalBody;
-    if (demoReceiptSubject != null) body['demo_receipt_subject'] = demoReceiptSubject;
-    if (demoReceiptBody != null) body['demo_receipt_body'] = demoReceiptBody;
-    if (portalInviteSubject != null) body['portal_invite_subject'] = portalInviteSubject;
-    if (portalInviteBody != null) body['portal_invite_body'] = portalInviteBody;
-    if (updateProfileInviteSubject != null) body['update_profile_invite_subject'] = updateProfileInviteSubject;
-    if (updateProfileInviteBody != null) body['update_profile_invite_body'] = updateProfileInviteBody;
-    if (passwordResetSubject != null) body['password_reset_subject'] = passwordResetSubject;
-    if (passwordResetBody != null) body['password_reset_body'] = passwordResetBody;
+    if (demoRejectionSubject != null) {
+      body['demo_rejection_subject'] = demoRejectionSubject;
+    }
+    if (demoRejectionBody != null) {
+      body['demo_rejection_body'] = demoRejectionBody;
+    }
+    if (demoApprovalSubject != null) {
+      body['demo_approval_subject'] = demoApprovalSubject;
+    }
+    if (demoApprovalBody != null) {
+      body['demo_approval_body'] = demoApprovalBody;
+    }
+    if (demoReceiptSubject != null) {
+      body['demo_receipt_subject'] = demoReceiptSubject;
+    }
+    if (demoReceiptBody != null) {
+      body['demo_receipt_body'] = demoReceiptBody;
+    }
+    if (portalInviteSubject != null) {
+      body['portal_invite_subject'] = portalInviteSubject;
+    }
+    if (portalInviteBody != null) {
+      body['portal_invite_body'] = portalInviteBody;
+    }
+    if (grooverInviteSubject != null) {
+      body['groover_invite_subject'] = grooverInviteSubject;
+    }
+    if (grooverInviteBody != null) {
+      body['groover_invite_body'] = grooverInviteBody;
+    }
+    if (updateProfileInviteSubject != null) {
+      body['update_profile_invite_subject'] = updateProfileInviteSubject;
+    }
+    if (updateProfileInviteBody != null) {
+      body['update_profile_invite_body'] = updateProfileInviteBody;
+    }
+    if (passwordResetSubject != null) {
+      body['password_reset_subject'] = passwordResetSubject;
+    }
+    if (passwordResetBody != null) {
+      body['password_reset_body'] = passwordResetBody;
+    }
 
     final response = await http.patch(
       Uri.parse('$baseUrl/admin/settings/mail'),
@@ -1153,11 +1258,14 @@ class ApiClient {
   }
 
   /// Send portal access email to all active artists that have an email. Returns sent count, failed count, and errors.
-  Future<Map<String, dynamic>> sendArtistPortalInviteToAll({required String token}) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/admin/artists/send-portal-invite-all'),
-      headers: _authHeaders(token),
-    ).timeout(_portalInviteTimeout * 10);
+  Future<Map<String, dynamic>> sendArtistPortalInviteToAll(
+      {required String token}) async {
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/admin/artists/send-portal-invite-all'),
+          headers: _authHeaders(token),
+        )
+        .timeout(_portalInviteTimeout * 10);
     if (response.statusCode != 200) {
       final detail = ApiClient._detailFromErrorBody(response.body);
       throw Exception(
@@ -1188,7 +1296,9 @@ class ApiClient {
     if (smtpUser != null) body['smtp_user'] = smtpUser;
     if (smtpPassword != null) body['smtp_password'] = smtpPassword;
     if (emailsPerHour != null) body['emails_per_hour'] = emailsPerHour;
-    if (testEmail != null && testEmail.isNotEmpty) body['test_email'] = testEmail;
+    if (testEmail != null && testEmail.isNotEmpty) {
+      body['test_email'] = testEmail;
+    }
 
     final response = await http.post(
       Uri.parse('$baseUrl/admin/settings/mail/test'),
@@ -1324,7 +1434,9 @@ class ApiClient {
     DateTime? scheduledAt,
   }) async {
     final body = <String, dynamic>{};
-    if (scheduledAt != null) body['scheduled_at'] = scheduledAt.toUtc().toIso8601String();
+    if (scheduledAt != null) {
+      body['scheduled_at'] = scheduledAt.toUtc().toIso8601String();
+    }
     final response = await http.post(
       Uri.parse('$baseUrl/admin/campaigns/$id/schedule'),
       headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
@@ -1338,7 +1450,8 @@ class ApiClient {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> cancelCampaignSchedule({required String token, required int id}) async {
+  Future<Map<String, dynamic>> cancelCampaignSchedule(
+      {required String token, required int id}) async {
     final response = await http.post(
       Uri.parse('$baseUrl/admin/campaigns/$id/cancel'),
       headers: _authHeaders(token),
@@ -1350,7 +1463,6 @@ class ApiClient {
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
-
 
   Future<List<dynamic>> fetchAudiences(String token) async {
     final response = await http.get(
@@ -1441,7 +1553,8 @@ class ApiClient {
     required Map<String, dynamic> body,
   }) async {
     final response = await http.patch(
-      Uri.parse('$baseUrl/admin/audiences/$audienceId/subscribers/$subscriberId'),
+      Uri.parse(
+          '$baseUrl/admin/audiences/$audienceId/subscribers/$subscriberId'),
       headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
       body: jsonEncode(body),
     );
@@ -1471,7 +1584,8 @@ class ApiClient {
     if (listName != null && listName.isNotEmpty) {
       request.fields['list_name'] = listName;
     }
-    request.files.add(http.MultipartFile.fromBytes('file', fileBytes, filename: filename));
+    request.files.add(
+        http.MultipartFile.fromBytes('file', fileBytes, filename: filename));
     final streamed = await request.send();
     final response = await http.Response.fromStream(streamed);
     if (response.statusCode != 200) {
@@ -1483,7 +1597,8 @@ class ApiClient {
   }
 
   /// Download full DB backup as JSON. Returns (bytes, suggested filename).
-  Future<({List<int> bytes, String filename})> downloadBackup(String token) async {
+  Future<({List<int> bytes, String filename})> downloadBackup(
+      String token) async {
     final response = await http.get(
       Uri.parse('$baseUrl/admin/backup'),
       headers: _authHeaders(token),
@@ -1519,7 +1634,8 @@ class ApiClient {
       Uri.parse('$baseUrl/admin/restore'),
     );
     request.headers.addAll(_authHeaders(token));
-    request.files.add(http.MultipartFile.fromBytes('file', fileBytes, filename: filename));
+    request.files.add(
+        http.MultipartFile.fromBytes('file', fileBytes, filename: filename));
     final streamed = await request.send();
     final response = await http.Response.fromStream(streamed);
     if (response.statusCode != 200) {
@@ -1535,10 +1651,3 @@ class ApiClient {
     return {'Authorization': 'Bearer $token'};
   }
 }
-
-
-
-
-
-
-
