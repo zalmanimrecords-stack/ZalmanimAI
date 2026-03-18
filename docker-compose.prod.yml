@@ -27,6 +27,12 @@ services:
       context: ./apps/server
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     restart: unless-stopped
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.lmapi.entrypoints: "websecure"
+      traefik.http.routers.lmapi.rule: "Host(`lmapi.zalmanim.com`)"
+      traefik.http.routers.lmapi.tls.certresolver: "letsencrypt"
+      traefik.http.services.lmapi.loadbalancer.server.port: "8000"
     env_file:
       - ./deploy/.env.production
     environment:
