@@ -1265,36 +1265,51 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               final messages = threadData['messages'] as List<dynamic>? ?? [];
               final artistName = (threadData['artist_name'] ?? '').toString();
               final artistEmail = (threadData['artist_email'] ?? '').toString();
+              final screenSize = MediaQuery.sizeOf(ctx);
               return AlertDialog(
+                insetPadding: EdgeInsets.symmetric(
+                  horizontal: screenSize.width * 0.1,
+                  vertical: screenSize.height * 0.1,
+                ),
                 title: Text('Inbox: $artistName'),
-                content: SingleChildScrollView(
+                content: SizedBox(
+                  width: screenSize.width * 0.8,
+                  height: screenSize.height * 0.8,
                   child: Column(
-                    mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(artistEmail, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
                       const SizedBox(height: 16),
-                      for (final m in messages) ...[
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
+                      Expanded(
+                        child: SingleChildScrollView(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                (m['sender'] ?? '').toString() == 'label' ? 'Label (you)' : 'Artist',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  color: (m['sender'] ?? '').toString() == 'label'
-                                      ? Theme.of(ctx).colorScheme.primary
-                                      : Colors.grey[700],
+                              for (final m in messages) ...[
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        (m['sender'] ?? '').toString() == 'label' ? 'Label (you)' : 'Artist',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          color: (m['sender'] ?? '').toString() == 'label'
+                                              ? Theme.of(ctx).colorScheme.primary
+                                              : Colors.grey[700],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      SelectableText((m['body'] ?? '').toString()),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 4),
-                              SelectableText((m['body'] ?? '').toString()),
+                              ],
                             ],
                           ),
                         ),
-                      ],
+                      ),
                       const Divider(),
                       const Text('Reply (sends email to artist)', style: TextStyle(fontWeight: FontWeight.w600)),
                       const SizedBox(height: 8),
@@ -1305,7 +1320,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                           border: OutlineInputBorder(),
                           alignLabelWithHint: true,
                         ),
-                        maxLines: 4,
+                        maxLines: 8,
+                        minLines: 6,
                       ),
                     ],
                   ),
