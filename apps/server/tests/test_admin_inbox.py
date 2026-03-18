@@ -19,11 +19,12 @@ def test_admin_can_delete_inbox_thread_and_messages(client, db_session, admin_he
         ]
     )
     db_session.commit()
+    thread_id = thread.id
 
-    response = client.delete(f"/api/admin/inbox/threads/{thread.id}", headers=admin_headers)
+    response = client.delete(f"/api/admin/inbox/threads/{thread_id}", headers=admin_headers)
 
     assert response.status_code == 200
     assert response.json() == {"ok": True}
     db_session.expire_all()
-    assert db_session.query(LabelInboxThread).filter(LabelInboxThread.id == thread.id).count() == 0
-    assert db_session.query(LabelInboxMessage).filter(LabelInboxMessage.thread_id == thread.id).count() == 0
+    assert db_session.query(LabelInboxThread).filter(LabelInboxThread.id == thread_id).count() == 0
+    assert db_session.query(LabelInboxMessage).filter(LabelInboxMessage.thread_id == thread_id).count() == 0

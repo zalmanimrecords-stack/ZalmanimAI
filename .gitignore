@@ -13,6 +13,7 @@ reports/db_sync/
 
 apps/server/storage/uploads/*
 !apps/server/storage/uploads/.gitkeep
+apps/server/test_bootstrap.db
 
 apps/client/.dart_tool/
 apps/client/build/

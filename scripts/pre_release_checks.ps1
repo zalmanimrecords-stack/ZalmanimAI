@@ -17,16 +17,45 @@ function Invoke-Step {
   Write-Host ""
   Write-Host "==> $Name" -ForegroundColor Cyan
   & $Action
+  if ($LASTEXITCODE -ne 0) {
+    throw "$Name failed with exit code $LASTEXITCODE."
+  }
 }
 
 function Get-PythonCommand {
   if (Get-Command py -ErrorAction SilentlyContinue) {
-    return @("py", "-m")
+    try {
+      & py -m pytest --version *> $null
+    } catch {
+      $global:LASTEXITCODE = 1
+    }
+    if ($LASTEXITCODE -eq 0) {
+      return @{
+        Mode = "Local"
+        Command = @("py", "-m")
+      }
+    }
   }
   if (Get-Command python -ErrorAction SilentlyContinue) {
-    return @("python", "-m")
+    try {
+      & python -m pytest --version *> $null
+    } catch {
+      $global:LASTEXITCODE = 1
+    }
+    if ($LASTEXITCODE -eq 0) {
+      return @{
+        Mode = "Local"
+        Command = @("python", "-m")
+      }
+    }
   }
-  throw "Python is required to run server tests. Install Python 3 and retry."
+  if (Get-Command "C:\Program Files\Docker\Docker\resources\bin\docker.exe" -ErrorAction SilentlyContinue) {
+    return @{
+      Mode = "Docker"
+      Command = @("C:\Program Files\Docker\Docker\resources\bin\docker.exe")
+    }
+  }
+  throw "Server tests require Python 3 or Docker."
 }
 
 if (-not $SkipClient) {
@@ -51,13 +80,24 @@ if (-not $SkipArtistPortal) {
 
 if (-not $SkipServer) {
   $python = Get-PythonCommand
-  Push-Location (Join-Path $root "apps/server")
-  try {
-    Invoke-Step "Pytest (server)" {
-      & $python[0] $python[1] pytest
+  if ($python.Mode -eq "Local") {
+    Push-Location (Join-Path $root "apps/server")
+    try {
+      Invoke-Step "Pytest (server)" {
+        & $python.Command[0] $python.Command[1] pytest
+      }
+    } finally {
+      Pop-Location
     }
-  } finally {
-    Pop-Location
+  } else {
+    Invoke-Step "Pytest (server via Docker)" {
+      & $python.Command[0] run --rm `
+        -v "${root}:/work" `
+        -w /work/apps/server `
+        -e PYTHONPATH=/work/apps/server `
+        python:3.12-slim `
+        bash -lc "pip install -r requirements-dev.txt >/tmp/pip.log && pytest -q"
+    }
   }
 }
 
