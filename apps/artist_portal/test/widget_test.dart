@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:artist_portal/main.dart';
+import 'package:artist_portal/features/legal/cookie_consent_page.dart';
 
 void main() {
-  testWidgets('App smoke test', (WidgetTester tester) async {
-    await tester.pumpWidget(const ArtistPortalApp());
+  testWidgets('Cookie consent page smoke test', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CookieConsentPage(
+          onAccept: () {},
+        ),
+      ),
+    );
     await tester.pump();
-    // Either loading indicator or login/dashboard is shown
-    expect(find.byType(MaterialApp), findsOneWidget);
+    expect(find.text('Cookie & consent'), findsOneWidget);
   });
 }

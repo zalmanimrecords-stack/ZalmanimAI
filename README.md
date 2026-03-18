@@ -59,6 +59,34 @@ flutter pub get
 flutter run -d chrome
 ```
 
+## Pre-release checks
+
+Run all available pre-release validations from the repo root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\pre_release_checks.ps1
+```
+
+This runs:
+
+- `flutter analyze` + `flutter test` for `apps/client`
+- `flutter analyze` + `flutter test` for `apps/artist_portal`
+- `pytest` for `apps/server`
+
+If you only need part of the suite, you can skip sections:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\pre_release_checks.ps1 -SkipServer
+```
+
+Server test setup:
+
+```powershell
+cd apps\server
+py -m pip install -r requirements-dev.txt
+py -m pytest
+```
+
 ## Social Providers Configured in Code
 
 - Facebook Page
@@ -187,4 +215,3 @@ Useful flags:
 - `-WebHost 127.0.0.1` : host for `web-server`
 - `-WebPort 3000` : port for the admin app
 - `-ArtistPortalPort 3001` : port for the Artist Portal
-

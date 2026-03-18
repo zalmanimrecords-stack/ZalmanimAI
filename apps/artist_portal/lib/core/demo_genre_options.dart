@@ -1,4 +1,4 @@
-/// Shared musical style / genre options for demo submission (portal landing and artist dashboard).
+// Shared musical style / genre options for demo submission (portal landing and artist dashboard).
 
 class DemoGenreOption {
   const DemoGenreOption(this.group, this.value);

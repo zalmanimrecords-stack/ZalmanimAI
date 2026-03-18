@@ -954,7 +954,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                             ),
                             const SizedBox(height: 12),
                             DropdownButtonFormField<String>(
-                              value: _selectedDemoGenre,
+                              initialValue: _selectedDemoGenre,
                               decoration: const InputDecoration(
                                 labelText: 'Musical style',
                                 border: OutlineInputBorder(),
