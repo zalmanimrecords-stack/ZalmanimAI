@@ -573,6 +573,20 @@ class ApiClient {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  Future<void> deleteInboxThread({
+    required String token,
+    required int threadId,
+  }) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/admin/inbox/threads/$threadId'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(response.body);
+      throw Exception(detail.isNotEmpty ? detail : 'Delete failed');
+    }
+  }
+
   Future<Map<String, dynamic>> fetchArtistDashboard(String token) async {
     final response = await http.get(
       Uri.parse('$baseUrl/artist/me/dashboard'),

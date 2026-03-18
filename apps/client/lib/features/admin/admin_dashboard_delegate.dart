@@ -94,6 +94,7 @@ abstract class AdminDashboardDelegate {
   List<dynamic> get inboxThreadsList;
   Future<void> loadInbox();
   void showInboxThreadDialog(int threadId);
+  Future<void> deleteInboxThread(int threadId, String artistName);
 
   // Audience / email lists
   List<dynamic> get audiencesList;

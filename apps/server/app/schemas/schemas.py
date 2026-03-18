@@ -730,7 +730,6 @@ class PendingReleaseOut(BaseModel):
 class PendingReleaseReminderResponse(BaseModel):
     success: bool
     message: str
-    form_link: str
     expires_at: datetime
 
 

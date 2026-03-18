@@ -849,8 +849,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         SnackBar(
           content: Text(
             expiresAt.isEmpty
-                ? 'Reminder sent to $artistName.'
-                : 'Reminder sent to $artistName. Link valid until $expiresAt.',
+                ? 'Completion email sent to $artistName.'
+                : 'Completion email sent to $artistName. Link valid until $expiresAt.',
           ),
         ),
       );
@@ -1074,6 +1074,52 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   @override
   void showInboxThreadDialog(int threadId) => _showInboxThreadDialog(threadId);
 
+  @override
+  Future<void> deleteInboxThread(int threadId, String artistName) =>
+      _deleteInboxThread(threadId, artistName);
+
+  Future<bool> _deleteInboxThread(int threadId, String artistName) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete inbox thread?'),
+        content: Text(
+          'Delete the entire conversation with ${artistName.isEmpty ? 'this artist' : artistName}?\n\nThis cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return false;
+    try {
+      await widget.apiClient.deleteInboxThread(
+        token: widget.token,
+        threadId: threadId,
+      );
+      if (!mounted) return true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            artistName.isEmpty ? 'Inbox thread deleted.' : 'Deleted conversation with $artistName.',
+          ),
+        ),
+      );
+      await _loadInbox();
+      return true;
+    } catch (e) {
+      _showErrorSnackBar(e.toString());
+      return false;
+    }
+  }
+
   Future<void> _showInboxThreadDialog(int threadId) async {
     try {
       var threadData = await widget.apiClient.fetchInboxThread(token: widget.token, threadId: threadId);
@@ -1134,6 +1180,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   ),
                 ),
                 actions: [
+                  TextButton(
+                    onPressed: () async {
+                      final deleted = await _deleteInboxThread(threadId, artistName);
+                      if (deleted && ctx.mounted) {
+                        Navigator.of(ctx).pop();
+                      }
+                    },
+                    child: const Text('Delete'),
+                  ),
                   TextButton(
                     onPressed: () => Navigator.of(ctx).pop(),
                     child: const Text('Close'),

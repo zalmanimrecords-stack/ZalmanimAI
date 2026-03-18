@@ -66,9 +66,23 @@ class InboxTab extends StatelessWidget {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          trailing: hasReply
-                              ? const Chip(label: Text('Replied'), padding: EdgeInsets.symmetric(horizontal: 6, vertical: 0))
-                              : null,
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (hasReply)
+                                const Chip(
+                                  label: Text('Replied'),
+                                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+                                ),
+                              IconButton(
+                                tooltip: 'Delete thread',
+                                onPressed: threadId <= 0
+                                    ? null
+                                    : () => delegate.deleteInboxThread(threadId, artistName),
+                                icon: const Icon(Icons.delete_outline),
+                              ),
+                            ],
+                          ),
                           onTap: () => delegate.showInboxThreadDialog(threadId),
                         ),
                       );

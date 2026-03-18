@@ -3633,6 +3633,22 @@ def admin_reply_inbox_thread(
     return _label_inbox_thread_detail_out(thread, artist, messages)
 
 
+@router.delete("/admin/inbox/threads/{thread_id}")
+def admin_delete_inbox_thread(
+    thread_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> dict:
+    """Delete an inbox thread and all of its messages."""
+    require_admin(user)
+    thread = db.query(LabelInboxThread).filter(LabelInboxThread.id == thread_id).first()
+    if not thread:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+    db.delete(thread)
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/admin/pending-releases", response_model=list[PendingReleaseOut])
 def admin_list_pending_releases(
     status_filter: str | None = Query(None, description="pending | processed"),
@@ -3736,8 +3752,7 @@ def admin_send_pending_release_reminder(
     db.commit()
     return PendingReleaseReminderResponse(
         success=True,
-        message="Reminder email sent",
-        form_link=form_link,
+        message="Completion email sent",
         expires_at=expires_at,
     )
 

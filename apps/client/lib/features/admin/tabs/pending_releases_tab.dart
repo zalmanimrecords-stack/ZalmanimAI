@@ -17,40 +17,7 @@ class PendingReleasesTab extends StatefulWidget {
 }
 
 class _PendingReleasesTabState extends State<PendingReleasesTab> {
-  String? _portalBaseUrl;
-  bool _settingsLoaded = false;
   final Set<int> _sendingReminderIds = <int>{};
-
-  @override
-  void initState() {
-    super.initState();
-    _loadPortalUrl();
-  }
-
-  Future<void> _loadPortalUrl() async {
-    try {
-      final data = await widget.delegate.apiClient.fetchSystemSettings(widget.delegate.token);
-      final url = (data['artist_portal_base_url'] ?? '').toString().trim();
-      if (mounted) {
-        setState(() {
-          _portalBaseUrl = url.isEmpty ? 'https://artists.zalmanim.com' : url.replaceFirst(RegExp(r'/+$'), '');
-          _settingsLoaded = true;
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _portalBaseUrl = 'https://artists.zalmanim.com';
-          _settingsLoaded = true;
-        });
-      }
-    }
-  }
-
-  String _formLink() {
-    final base = _portalBaseUrl ?? 'https://artists.zalmanim.com';
-    return '$base/#/pending-release';
-  }
 
   Future<void> _sendReminder(Map<String, dynamic> item) async {
     final pendingReleaseId = item['id'];
@@ -152,7 +119,6 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
                       final fromDemo = demoSubmissionId != null;
                       final artistData = item['artist_data'] is Map ? item['artist_data'] as Map<String, dynamic> : <String, dynamic>{};
                       final releaseData = item['release_data'] is Map ? item['release_data'] as Map<String, dynamic> : <String, dynamic>{};
-                      final formLink = _settingsLoaded ? _formLink() : null;
                       final reminderBusy = item['id'] is int && _sendingReminderIds.contains(item['id']);
                       final wavLink = releaseData['wav_download_url']?.toString() ?? '';
                       final musicalStyle =
@@ -176,36 +142,6 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  if (formLink != null) ...[
-                                    const Text(
-                                      'Release details form',
-                                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    SelectableText(
-                                      formLink,
-                                      style: const TextStyle(fontSize: 12, fontFamily: 'monospace', decoration: TextDecoration.underline),
-                                    ),
-                                    Row(
-                                      children: [
-                                        TextButton.icon(
-                                          onPressed: () {
-                                            Clipboard.setData(ClipboardData(text: formLink));
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              const SnackBar(content: Text('Form link copied')),
-                                            );
-                                          },
-                                          icon: const Icon(Icons.copy, size: 18),
-                                          label: const Text('Copy link'),
-                                        ),
-                                      ],
-                                    ),
-                                    const Text(
-                                      'Artist receives the form link with a one-time token by email when their track is approved.',
-                                      style: TextStyle(fontSize: 11, color: Colors.grey),
-                                    ),
-                                    const SizedBox(height: 12),
-                                  ],
                                   const Text('Release details', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
                                   const SizedBox(height: 4),
                                   Text('Artist: $artistName', style: const TextStyle(fontSize: 13)),
@@ -229,7 +165,7 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
                                                 child: CircularProgressIndicator(strokeWidth: 2),
                                               )
                                             : const Icon(Icons.mark_email_unread_outlined),
-                                        label: Text(reminderBusy ? 'Sending...' : 'Send reminder'),
+                                        label: Text(reminderBusy ? 'Sending...' : 'Send completion email'),
                                       ),
                                     ],
                                   ),
