@@ -2,7 +2,13 @@ from app.models.models import Artist, ArtistRegistrationToken
 
 
 def test_admin_can_send_groover_invite_and_create_artist(client, db_session, admin_headers, monkeypatch):
-    monkeypatch.setattr("app.api.routes.send_email_service", lambda **kwargs: (True, "Sent"))
+    sent_payload = {}
+
+    def _fake_send_email(**kwargs):
+        sent_payload.update(kwargs)
+        return True, "Sent"
+
+    monkeypatch.setattr("app.api.routes.send_email_service", _fake_send_email)
 
     response = client.post(
         "/api/admin/artists/send-groover-invite",
@@ -26,6 +32,9 @@ def test_admin_can_send_groover_invite_and_create_artist(client, db_session, adm
     token = db_session.query(ArtistRegistrationToken).filter(ArtistRegistrationToken.artist_id == artist.id).first()
     assert token is not None
     assert token.source == "groover"
+    assert 'color:#c62828' in (sent_payload.get("body_html") or "")
+    assert 'Complete your artist registration form' in (sent_payload.get("body_html") or "")
+    assert 'href="https://artists.zalmanim.com/#/artist-registration?token=' in (sent_payload.get("body_html") or "")
 
 
 def test_public_artist_registration_completes_profile_and_password(client, db_session):

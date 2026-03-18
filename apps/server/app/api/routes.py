@@ -809,6 +809,50 @@ def _get_groover_invite_subject_and_body(
     return subject, body
 
 
+def _build_groover_invite_html(
+    *,
+    body_text: str,
+    registration_url: str,
+    portal_url: str,
+) -> str:
+    escaped = html.escape(body_text)
+    registration_prompt = html.escape("To continue, please complete your artist registration form here:")
+    portal_prompt = html.escape("Once you complete the form, you will be able to sign in to our artist portal:")
+    registration_placeholder = "__GROOVER_REGISTRATION_LINK__"
+    portal_placeholder = "__GROOVER_PORTAL_LINK__"
+
+    escaped = escaped.replace(
+        registration_prompt,
+        '<span style="color:#c62828;font-weight:700;">'
+        "To continue, please complete your artist registration form here:"
+        "</span>",
+    )
+    escaped = escaped.replace(
+        portal_prompt,
+        '<span style="color:#c62828;font-weight:700;">'
+        "Once you complete the form, you will be able to sign in to our artist portal:"
+        "</span>",
+    )
+    escaped = escaped.replace(html.escape(registration_url), registration_placeholder)
+    escaped = escaped.replace(html.escape(portal_url), portal_placeholder)
+
+    body_html = "<p>" + escaped.replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
+    body_html = body_html.replace(
+        registration_placeholder,
+        f'<a href="{html.escape(registration_url)}" '
+        'style="color:#c62828;font-weight:700;text-decoration:underline;">'
+        "Complete your artist registration form"
+        "</a>",
+    )
+    body_html = body_html.replace(
+        portal_placeholder,
+        f'<a href="{html.escape(portal_url)}" style="font-weight:600;text-decoration:underline;">'
+        "Sign in to the artist portal"
+        "</a>",
+    )
+    return body_html
+
+
 def _default_update_profile_invite_subject() -> str:
     return "Update your artist page and see your releases"
 
@@ -2641,12 +2685,11 @@ def admin_send_groover_invite(
     portal_url = _artist_portal_url()
     registration_url = _artist_registration_link(raw_token)
     subject, body_text = _get_groover_invite_subject_and_body(display_name, registration_url, portal_url)
-    body_html = "<p>" + html.escape(body_text).replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
-    for link in (registration_url, portal_url):
-        body_html = body_html.replace(
-            html.escape(link),
-            f'<a href="{html.escape(link)}">{html.escape(link)}</a>',
-        )
+    body_html = _build_groover_invite_html(
+        body_text=body_text,
+        registration_url=registration_url,
+        portal_url=portal_url,
+    )
 
     success, message = send_email_service(
         to_email=email,
