@@ -446,6 +446,24 @@ class ApiClient {
     }
   }
 
+  Future<Map<String, dynamic>> fetchEmailRecipientHistory({
+    required String token,
+    required String email,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/admin/email/history').replace(
+        queryParameters: {'email': email},
+      ),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(response.body);
+      throw Exception(
+          'Email history failed (${response.statusCode}): ${detail.isNotEmpty ? detail : response.reasonPhrase}');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> sendArtistPortalInvite({
     required String token,
     required int artistId,

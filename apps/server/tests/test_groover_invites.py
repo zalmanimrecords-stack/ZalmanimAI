@@ -1,4 +1,4 @@
-from app.models.models import Artist, ArtistRegistrationToken
+from app.models.models import Artist, ArtistRegistrationToken, SystemLog
 
 
 def test_admin_can_send_groover_invite_and_create_artist(client, db_session, admin_headers, monkeypatch):
@@ -86,3 +86,27 @@ def test_public_artist_registration_completes_profile_and_password(client, db_se
     assert artist.password_hash is not None
     assert token.used_at is not None
     assert "Maya Cohen" in (artist.extra_json or "")
+
+
+def test_admin_email_history_reports_previous_send(client, db_session, admin_headers):
+    db_session.add(
+        SystemLog(
+            level="info",
+            category="mail",
+            message="Email sent to maya@example.com",
+            details="Welcome to the portal",
+        )
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/api/admin/email/history",
+        headers=admin_headers,
+        params={"email": "maya@example.com"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["has_sent_before"] is True
+    assert data["send_count"] == 1
+    assert data["last_subject"] == "Welcome to the portal"

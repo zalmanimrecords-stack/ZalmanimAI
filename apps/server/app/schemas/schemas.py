@@ -550,6 +550,14 @@ class EmailRateLimitStatus(BaseModel):
     remaining_this_hour: int | None  # None when emails_per_hour is 0 (no limit)
 
 
+class EmailRecipientHistoryOut(BaseModel):
+    email: str
+    has_sent_before: bool
+    send_count: int = 0
+    last_sent_at: datetime | None = None
+    last_subject: str | None = None
+
+
 class ArtistActivityLogOut(BaseModel):
     id: int
     activity_type: str
@@ -599,6 +607,9 @@ class DemoSubmissionUpdate(BaseModel):
     admin_notes: str | None = None
     approval_subject: str | None = None
     approval_body: str | None = None
+    rejection_subject: str | None = None
+    rejection_body: str | None = None
+    send_rejection_email: bool | None = None
     artist_id: int | None = None
 
 
@@ -629,6 +640,8 @@ class DemoSubmissionOut(BaseModel):
     admin_notes: str | None
     approval_subject: str | None
     approval_body: str | None
+    rejection_subject: str | None
+    rejection_body: str | None
     approval_email_sent_at: datetime | None
     rejection_email_sent_at: datetime | None
     artist_id: int | None

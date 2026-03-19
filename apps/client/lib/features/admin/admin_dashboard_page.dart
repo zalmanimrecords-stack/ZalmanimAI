@@ -1984,9 +1984,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 text: 'Demos'),
             Tab(
                 child: InboxTabLabel(
-                  iconColor: Theme.of(context).colorScheme.onSurfaceVariant,
-                  unreadCount: _unreadInboxCount,
-                )),
+              iconColor: Theme.of(context).colorScheme.onSurfaceVariant,
+              unreadCount: _unreadInboxCount,
+            )),
             Tab(
                 icon: ZalmanimIcons.squidIcon(
                     size: 20,
@@ -2210,6 +2210,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   Future<void> _updateDemoStatus(
       Map<String, dynamic> submission, String status) async {
+    if (status == 'rejected') {
+      await _showRejectDemoDialog(submission);
+      return;
+    }
     final id = submission['id'] as int?;
     if (id == null) return;
     try {
@@ -2232,6 +2236,108 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           .showSnackBar(SnackBar(content: Text(message)));
     } catch (e) {
       _setError(e);
+    }
+  }
+
+  Future<void> _showRejectDemoDialog(Map<String, dynamic> submission) async {
+    final id = submission['id'] as int?;
+    if (id == null) return;
+    final artistName = (submission['artist_name'] ?? '').toString().trim();
+    final subjectController = TextEditingController(
+      text: (submission['rejection_subject'] ??
+              'Thank you for your demo submission, ${artistName.isEmpty ? 'there' : artistName}')
+          .toString(),
+    );
+    final bodyController = TextEditingController(
+      text: (submission['rejection_body'] ??
+              'Hi ${artistName.isEmpty ? 'there' : artistName},\n\n'
+                  'Thank you for sending us your music. We received it with respect and appreciate you thinking of us.\n\n'
+                  'After careful consideration, we feel it does not quite fit the musical direction of our labels at this time. '
+                  'We would be happy to receive more demos from you in the future in the hope they may align with our line.\n\n'
+                  'Best regards,\nZalmanim')
+          .toString(),
+    );
+    bool sendEmail = true;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setStateDialog) => AlertDialog(
+          title: const Text('Reject demo'),
+          content: SizedBox(
+            width: 720,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: subjectController,
+                    decoration:
+                        const InputDecoration(labelText: 'Rejection subject'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: bodyController,
+                    maxLines: 10,
+                    decoration: const InputDecoration(
+                      labelText: 'Rejection email body',
+                      alignLabelWithHint: true,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    value: sendEmail,
+                    onChanged: (value) =>
+                        setStateDialog(() => sendEmail = value),
+                    title: const Text('Send rejection email now'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Reject'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) {
+      subjectController.dispose();
+      bodyController.dispose();
+      return;
+    }
+    try {
+      await widget.apiClient.updateDemoSubmission(
+        token: widget.token,
+        id: id,
+        body: {
+          'status': 'rejected',
+          'rejection_subject': subjectController.text.trim(),
+          'rejection_body': bodyController.text,
+          'send_rejection_email': sendEmail,
+        },
+      );
+      await _loadDemoSubmissions(withOverlay: false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            sendEmail ? 'Demo rejected and email sent.' : 'Demo rejected.',
+          ),
+        ),
+      );
+    } catch (e) {
+      _setError(e);
+    } finally {
+      subjectController.dispose();
+      bodyController.dispose();
     }
   }
 
@@ -3099,6 +3205,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       await _showEmailNotConfiguredDialog(context);
       return;
     }
+    final allowSend = await _confirmSendToPreviouslyMailedAddress(
+      email: artistEmail,
+      actionLabel: 'portal access email',
+    );
+    if (!allowSend || !mounted) return;
     try {
       final result = await widget.apiClient.sendArtistPortalInvite(
         token: widget.token,
@@ -3229,6 +3340,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                           await _showEmailNotConfiguredDialog(context);
                           return;
                         }
+                        final allowSend =
+                            await _confirmSendToPreviouslyMailedAddress(
+                          email: emailController.text.trim(),
+                          actionLabel: 'Groover invite',
+                        );
+                        if (!allowSend || !mounted || !ctx.mounted) return;
                         setStateDialog(() {
                           sending = true;
                           errorText = null;
@@ -3408,6 +3525,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       await _showEmailNotConfiguredDialog(context);
       return;
     }
+    final allowSend = await _confirmSendToPreviouslyMailedAddress(
+      email: artistEmail,
+      actionLabel: 'update profile invite',
+    );
+    if (!allowSend || !mounted) return;
     try {
       final result = await widget.apiClient.sendArtistUpdateProfileInvite(
         token: widget.token,
@@ -3458,6 +3580,61 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     );
     if (openSettings == true && mounted) {
       _tabController.animateTo(6); // Settings tab
+    }
+  }
+
+  Future<bool> _confirmSendToPreviouslyMailedAddress({
+    required String email,
+    required String actionLabel,
+  }) async {
+    final normalizedEmail = email.trim().toLowerCase();
+    if (normalizedEmail.isEmpty) return true;
+    try {
+      final history = await widget.apiClient.fetchEmailRecipientHistory(
+        token: widget.token,
+        email: normalizedEmail,
+      );
+      if (history['has_sent_before'] != true) return true;
+      if (!mounted) return false;
+
+      final sendCount = history['send_count'] as int? ?? 0;
+      final lastSubject = (history['last_subject'] as String?)?.trim() ?? '';
+      final lastSentAtRaw = history['last_sent_at'] as String?;
+      var lastSentText = 'unknown time';
+      if (lastSentAtRaw != null && lastSentAtRaw.isNotEmpty) {
+        try {
+          final dt = DateTime.parse(lastSentAtRaw).toLocal();
+          lastSentText =
+              '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
+              '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+        } catch (_) {}
+      }
+
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Email already sent to this address'),
+          content: SelectableText(
+            'The system already sent $sendCount email(s) to $normalizedEmail.\n\n'
+            'Last sent: $lastSentText'
+            '${lastSubject.isNotEmpty ? '\nSubject: $lastSubject' : ''}\n\n'
+            'Send another $actionLabel anyway?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Send anyway'),
+            ),
+          ],
+        ),
+      );
+      return confirm == true;
+    } catch (_) {
+      return true;
     }
   }
 

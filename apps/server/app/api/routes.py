@@ -84,6 +84,7 @@ from app.schemas.schemas import (
     DemoSubmissionOut,
     DemoSubmissionUpdate,
     EmailRateLimitStatus,
+    EmailRecipientHistoryOut,
     ScheduleCampaignRequest,
     SendEmailRequest,
     SendEmailResponse,
@@ -655,6 +656,17 @@ def _default_demo_rejection_body(artist_name: str) -> str:
     )
 
 
+def _apply_demo_rejection_placeholders(text: str, item: DemoSubmission) -> str:
+    portal_url = _artist_portal_url()
+    website_url = (settings.zalmanim_website_url or "").strip() or "https://zalmanim.com"
+    safe_name = (item.artist_name or "there").strip()
+    return (
+        text.replace("{artist_name}", safe_name)
+        .replace("{artist_portal_url}", portal_url)
+        .replace("{zalmanim_website}", website_url)
+    )
+
+
 def _get_demo_approval_subject_and_body(artist_name: str) -> tuple[str, str]:
     """Resolve default demo approval subject and body from settings or built-in defaults. Placeholder: {artist_name}."""
     mail = get_effective_mail_config_for_api()
@@ -949,15 +961,12 @@ def _get_demo_rejection_subject_and_body(item: DemoSubmission) -> tuple[str, str
     body = (mail.get("demo_rejection_body") or "").strip()
     if not subject:
         subject = _default_demo_rejection_subject(item.artist_name)
+    else:
+        subject = _apply_demo_rejection_placeholders(subject, item)
     if not body:
         body = _default_demo_rejection_body(item.artist_name)
     else:
-        portal_url = _artist_portal_url()
-        website_url = (settings.zalmanim_website_url or "").strip() or "https://zalmanim.com"
-        safe_name = (item.artist_name or "there").strip()
-        body = body.replace("{artist_name}", safe_name).replace("{artist_portal_url}", portal_url).replace("{zalmanim_website}", website_url)
-    safe_name = (item.artist_name or "there").strip()
-    subject = subject.replace("{artist_name}", safe_name)
+        body = _apply_demo_rejection_placeholders(body, item)
     return subject, body
 
 
@@ -1101,6 +1110,7 @@ def _serialize_demo_submission(item: DemoSubmission) -> DemoSubmissionOut:
     has_demo_file = bool(fields.get("demo_file_path") and os.path.isfile(fields["demo_file_path"]))
     # Do not expose server path to client
     out_fields = {k: v for k, v in fields.items() if k != "demo_file_path"}
+    rejection_subject, rejection_body = _get_demo_rejection_subject_and_body(item)
     return DemoSubmissionOut(
         id=item.id,
         artist_name=item.artist_name,
@@ -1121,6 +1131,8 @@ def _serialize_demo_submission(item: DemoSubmission) -> DemoSubmissionOut:
         admin_notes=item.admin_notes,
         approval_subject=item.approval_subject,
         approval_body=item.approval_body,
+        rejection_subject=rejection_subject,
+        rejection_body=rejection_body,
         approval_email_sent_at=item.approval_email_sent_at,
         rejection_email_sent_at=item.rejection_email_sent_at,
         artist_id=item.artist_id,
@@ -2291,12 +2303,23 @@ def update_demo_submission(
 
     # When status changes to rejected, send rejection email once (if not already sent).
     if item.status == "rejected" and old_status != "rejected" and item.rejection_email_sent_at is None:
-        if is_email_configured():
-            subject, body = _get_demo_rejection_subject_and_body(item)
+        default_rejection_subject, default_rejection_body = _get_demo_rejection_subject_and_body(item)
+        rejection_subject = default_rejection_subject
+        rejection_body = default_rejection_body
+        if payload.rejection_subject is not None:
+            rejection_subject = payload.rejection_subject.strip() or default_rejection_subject
+            rejection_subject = _apply_demo_rejection_placeholders(rejection_subject, item)
+        if payload.rejection_body is not None:
+            rejection_body = payload.rejection_body.strip() or default_rejection_body
+            rejection_body = _apply_demo_rejection_placeholders(rejection_body, item)
+        should_send_rejection_email = payload.send_rejection_email
+        if should_send_rejection_email is None:
+            should_send_rejection_email = True
+        if should_send_rejection_email and is_email_configured():
             success, message = send_email_service(
                 to_email=item.email,
-                subject=subject,
-                body_text=body,
+                subject=rejection_subject,
+                body_text=rejection_body,
             )
             if success:
                 item.rejection_email_sent_at = datetime.now(timezone.utc)
@@ -4645,6 +4668,42 @@ def get_email_rate_limit_status(user: UserContext = Depends(get_current_user)) -
         emails_per_hour=limit,
         sent_this_hour=sent,
         remaining_this_hour=remaining,
+    )
+
+
+@router.get("/admin/email/history", response_model=EmailRecipientHistoryOut)
+def get_email_recipient_history(
+    email: str = Query(...),
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> EmailRecipientHistoryOut:
+    """Return whether the system already sent email to this recipient."""
+    require_admin(user)
+    email_value = (email or "").strip().lower()
+    if not email_value or "@" not in email_value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A valid email is required",
+        )
+
+    message_prefix = f"email sent to {email_value}"
+    rows = (
+        db.query(SystemLog)
+        .filter(
+            SystemLog.category == "mail",
+            SystemLog.level == "info",
+            func.lower(SystemLog.message).like(f"{message_prefix}%"),
+        )
+        .order_by(SystemLog.created_at.desc(), SystemLog.id.desc())
+        .all()
+    )
+    latest = rows[0] if rows else None
+    return EmailRecipientHistoryOut(
+        email=email_value,
+        has_sent_before=bool(rows),
+        send_count=len(rows),
+        last_sent_at=latest.created_at if latest else None,
+        last_subject=((latest.details or "").strip() or None) if latest else None,
     )
 
 
