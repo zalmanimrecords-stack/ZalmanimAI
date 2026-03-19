@@ -21,6 +21,10 @@ class FakeAdminDashboardDelegate extends Fake
   String? deletedArtistName;
   int? remindedPendingReleaseId;
   String? remindedArtistName;
+  int? archivedPendingReleaseId;
+  String? archivedReleaseTitle;
+  int? deletedPendingReleaseId;
+  String? deletedReleaseTitle;
   Map<String, dynamic>? messagedPendingRelease;
   bool grooverInviteDialogShown = false;
 
@@ -133,6 +137,22 @@ class FakeAdminDashboardDelegate extends Fake
       int pendingReleaseId, String artistName) async {
     remindedPendingReleaseId = pendingReleaseId;
     remindedArtistName = artistName;
+  }
+
+  @override
+  Future<void> archivePendingRelease(
+      int pendingReleaseId, String releaseTitle,
+      {String? statusFilter}) async {
+    archivedPendingReleaseId = pendingReleaseId;
+    archivedReleaseTitle = releaseTitle;
+  }
+
+  @override
+  Future<void> deletePendingRelease(
+      int pendingReleaseId, String releaseTitle,
+      {String? statusFilter}) async {
+    deletedPendingReleaseId = pendingReleaseId;
+    deletedReleaseTitle = releaseTitle;
   }
 
   @override

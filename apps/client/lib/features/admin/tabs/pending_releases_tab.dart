@@ -17,6 +17,7 @@ class PendingReleasesTab extends StatefulWidget {
 
 class _PendingReleasesTabState extends State<PendingReleasesTab> {
   final Set<int> _sendingReminderIds = <int>{};
+  String _selectedStatusFilter = 'active';
 
   Future<void> _sendReminder(Map<String, dynamic> item) async {
     final pendingReleaseId = item['id'];
@@ -39,6 +40,67 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
     if (uri == null) return;
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<void> _applyStatusFilter(String value) async {
+    setState(() => _selectedStatusFilter = value);
+    await widget.delegate.loadPendingReleases(
+      statusFilter: value == 'active' ? null : value,
+    );
+  }
+
+  Future<void> _showRemovePendingReleaseDialog(
+      Map<String, dynamic> item) async {
+    final pendingReleaseId = item['id'];
+    if (pendingReleaseId is! int) return;
+    final releaseTitle = _formatValue(item['release_title']);
+    final status = _formatValue(item['status']).toLowerCase();
+    final action = await showDialog<_PendingReleaseRemovalAction>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove pending release'),
+        content: Text(
+          releaseTitle.isEmpty
+              ? 'Choose whether to archive this pending release or delete it permanently.'
+              : 'Choose whether to archive "$releaseTitle" or delete it permanently.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          OutlinedButton(
+            onPressed: status == 'archived'
+                ? null
+                : () => Navigator.of(ctx).pop(_PendingReleaseRemovalAction.archive),
+            child: const Text('Archive'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () =>
+                Navigator.of(ctx).pop(_PendingReleaseRemovalAction.delete),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (action == _PendingReleaseRemovalAction.archive) {
+      await widget.delegate.archivePendingRelease(
+        pendingReleaseId,
+        releaseTitle,
+        statusFilter: _selectedStatusFilter == 'active'
+            ? null
+            : _selectedStatusFilter,
+      );
+    } else if (action == _PendingReleaseRemovalAction.delete) {
+      await widget.delegate.deletePendingRelease(
+        pendingReleaseId,
+        releaseTitle,
+        statusFilter: _selectedStatusFilter == 'active'
+            ? null
+            : _selectedStatusFilter,
+      );
     }
   }
 
@@ -117,10 +179,7 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
     required bool fromDemo,
   }) {
     final rows = <_DetailRow>[
-      _DetailRow(label: 'Artist', value: _formatValue(item['artist_name'])),
       _DetailRow(label: 'Email', value: _formatValue(item['artist_email']), isLink: _looksLikeUrl(_formatValue(item['artist_email']))),
-      _DetailRow(label: 'Release title', value: _formatValue(item['release_title'])),
-      _DetailRow(label: 'Status', value: _formatValue(item['status'])),
       _DetailRow(label: 'Submitted', value: _formatValue(item['created_at'])),
     ];
     final demoSubmissionId = _formatValue(item['demo_submission_id']);
@@ -226,13 +285,8 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
     addValue('Marketing text', releaseData['marketing_text'], consumeKey: 'marketing_text');
     addValue('Story / meaning', releaseData['release_story'], consumeKey: 'release_story');
     addValue('Notes', releaseData['notes'], consumeKey: 'notes');
-    addValue('Reference image file', releaseData['cover_reference_image_name'], consumeKey: 'cover_reference_image_name');
-
-    final coverImageUrl = _formatValue(releaseData['cover_reference_image_url']);
-    if (coverImageUrl.isNotEmpty) {
-      rows.add(_DetailRow(label: 'Cover reference image', value: coverImageUrl, isLink: true));
-      consumed.add('cover_reference_image_url');
-    }
+    consumed.addAll(
+        <String>{'cover_reference_image_name', 'cover_reference_image_url'});
 
     for (final entry in releaseData.entries) {
       if (consumed.contains(entry.key)) continue;
@@ -252,9 +306,12 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
     final previews = <_ImagePreview>[];
     final seen = <String>{};
 
-    void maybeAdd(String label, String url, {String? fileName}) {
+    void maybeAdd(String label, String url,
+        {String? fileName, bool allowAnyUrl = false}) {
       final normalized = url.trim();
-      if (normalized.isEmpty || seen.contains(normalized) || !_looksLikeImageUrl(normalized)) {
+      final canPreview =
+          allowAnyUrl ? _looksLikeUrl(normalized) : _looksLikeImageUrl(normalized);
+      if (normalized.isEmpty || seen.contains(normalized) || !canPreview) {
         return;
       }
       seen.add(normalized);
@@ -269,6 +326,7 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
       'Cover reference',
       _formatValue(releaseData['cover_reference_image_url']),
       fileName: _formatValue(releaseData['cover_reference_image_name']),
+      allowAnyUrl: true,
     );
 
     for (final entry in releaseData.entries) {
@@ -276,7 +334,7 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
       final value = _formatValue(entry.value);
       if (value.isEmpty) continue;
       if (key.contains('image') || key.contains('artwork') || key.contains('cover')) {
-        maybeAdd(_prettyLabel(entry.key), value);
+        maybeAdd(_prettyLabel(entry.key), value, allowAnyUrl: true);
       }
     }
     return previews;
@@ -312,7 +370,10 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
     final items = widget.delegate.pendingReleasesList;
     final scheme = Theme.of(context).colorScheme;
     return RefreshIndicator(
-      onRefresh: () => widget.delegate.loadPendingReleases(),
+      onRefresh: () => widget.delegate.loadPendingReleases(
+        statusFilter:
+            _selectedStatusFilter == 'active' ? null : _selectedStatusFilter,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -326,17 +387,25 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
                 ),
                 const SizedBox(width: 16),
                 DropdownButton<String>(
-                  value: null,
-                  hint: const Text('All statuses'),
+                  value: _selectedStatusFilter,
                   items: const [
+                    DropdownMenuItem(value: 'active', child: Text('Active')),
                     DropdownMenuItem(value: 'pending', child: Text('Pending')),
                     DropdownMenuItem(value: 'processed', child: Text('Processed')),
+                    DropdownMenuItem(value: 'archived', child: Text('Archived')),
                   ],
-                  onChanged: (v) => widget.delegate.loadPendingReleases(statusFilter: v),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    _applyStatusFilter(value);
+                  },
                 ),
                 const SizedBox(width: 8),
                 TextButton.icon(
-                  onPressed: () => widget.delegate.loadPendingReleases(),
+                  onPressed: () => widget.delegate.loadPendingReleases(
+                    statusFilter: _selectedStatusFilter == 'active'
+                        ? null
+                        : _selectedStatusFilter,
+                  ),
                   icon: const Icon(ZalmanimIcons.refresh),
                   label: const Text('Refresh'),
                 ),
@@ -409,21 +478,6 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
                             ),
                           ),
                           children: [
-                            if (artistEmail.isNotEmpty) ...[
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: Padding(
-                                  padding: const EdgeInsets.only(bottom: 12),
-                                  child: SelectableText(
-                                    artistEmail,
-                                    style: TextStyle(
-                                      color: scheme.onSurfaceVariant,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
                             Wrap(
                               spacing: 12,
                               runSpacing: 8,
@@ -446,9 +500,23 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
                                   icon: const Icon(Icons.email_outlined),
                                   label: const Text('Message artist'),
                                 ),
+                                OutlinedButton.icon(
+                                  onPressed: () =>
+                                      _showRemovePendingReleaseDialog(item),
+                                  icon: const Icon(Icons.delete_outline),
+                                  label: const Text('Remove'),
+                                ),
                               ],
                             ),
                             const SizedBox(height: 16),
+                            if (imagePreviews.isNotEmpty) ...[
+                              _ImageGalleryCard(
+                                title: 'Reference image',
+                                previews: imagePreviews,
+                                onOpenLink: _openExternalLink,
+                              ),
+                              const SizedBox(height: 12),
+                            ],
                             _DetailsTableCard(title: 'Overview', rows: overviewRows, onOpenLink: _openExternalLink),
                             if (artistRows.isNotEmpty) ...[
                               const SizedBox(height: 12),
@@ -463,14 +531,6 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
                               _DetailsTableCard(
                                 title: 'Release details',
                                 rows: releaseRows,
-                                onOpenLink: _openExternalLink,
-                              ),
-                            ],
-                            if (imagePreviews.isNotEmpty) ...[
-                              const SizedBox(height: 12),
-                              _ImageGalleryCard(
-                                title: 'Reference images',
-                                previews: imagePreviews,
                                 onOpenLink: _openExternalLink,
                               ),
                             ],
@@ -783,14 +843,6 @@ class _ImagePreviewTile extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 10),
-          SelectableText(
-            preview.url,
-            style: TextStyle(
-              color: scheme.onSurfaceVariant,
-              fontSize: 12,
-            ),
-          ),
         ],
       ),
     );
@@ -819,4 +871,9 @@ class _ImagePreview {
   final String label;
   final String url;
   final String subtitle;
+}
+
+enum _PendingReleaseRemovalAction {
+  archive,
+  delete,
 }

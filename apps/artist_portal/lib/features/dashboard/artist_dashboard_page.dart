@@ -1,13 +1,13 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../core/api_client.dart';
 import '../../core/app_config.dart';
 import '../../core/demo_genre_options.dart';
 import '../../core/url_launcher_util.dart';
 import '../../core/zalmanim_icons.dart';
+import '../../widgets/app_version_badge.dart';
 
 class ArtistDashboardPage extends StatefulWidget {
   const ArtistDashboardPage({
@@ -67,7 +67,6 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
   int mediaQuotaBytes = 50 * 1024 * 1024;
   List<dynamic> campaignRequests = [];
   List<dynamic> inboxThreads = [];
-  String? appVersion;
   int? _profileImageMediaId;
   int? _logoMediaId;
 
@@ -77,9 +76,6 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
     for (final e in _socialKeys) {
       socialControllers[e.key] = TextEditingController();
     }
-    PackageInfo.fromPlatform().then((info) {
-      if (mounted) setState(() => appVersion = 'v${info.version}+${info.buildNumber}');
-    });
     _load();
   }
 
@@ -632,16 +628,22 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
               height: compact ? 26 : 32,
               fit: BoxFit.contain,
             ),
-            if (appVersion != null) ...[
-              const SizedBox(height: 2),
-              Text(
-                appVersion!,
-                style: TextStyle(
-                  fontSize: compact ? 12 : 14,
-                  color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.9),
-                ),
-              ),
-            ],
+            const SizedBox(height: 4),
+            AppVersionBadge(
+              tooltipPrefix: 'Artist portal version',
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              backgroundColor:
+                  Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.10),
+              borderColor:
+                  Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.16),
+              textStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onPrimary
+                        .withValues(alpha: 0.92),
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
           ],
         ),
         actions: [

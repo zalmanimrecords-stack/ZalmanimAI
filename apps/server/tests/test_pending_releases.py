@@ -145,3 +145,86 @@ def test_pending_release_submit_creates_unread_admin_inbox_message(
     inbox_payload = inbox_response.json()
     assert len(inbox_payload) == 1
     assert inbox_payload[0]["unread_count"] == 1
+
+
+def test_archive_pending_release_hides_it_from_default_list(
+    client,
+    db_session,
+    admin_headers,
+):
+    pending_release = PendingRelease(
+        artist_name="Archive Artist",
+        artist_email="archive@example.com",
+        artist_data_json="{}",
+        release_title="Archive Target",
+        release_data_json="{}",
+        status="pending",
+    )
+    db_session.add(pending_release)
+    db_session.commit()
+    db_session.refresh(pending_release)
+
+    response = client.post(
+        f"/api/admin/pending-releases/{pending_release.id}/archive",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+
+    db_session.expire_all()
+    archived = (
+        db_session.query(PendingRelease)
+        .filter(PendingRelease.id == pending_release.id)
+        .first()
+    )
+    assert archived is not None
+    assert archived.status == "archived"
+
+    default_list_response = client.get(
+        "/api/admin/pending-releases",
+        headers=admin_headers,
+    )
+    assert default_list_response.status_code == 200
+    assert all(item["id"] != pending_release.id for item in default_list_response.json())
+
+    archived_list_response = client.get(
+        "/api/admin/pending-releases?status_filter=archived",
+        headers=admin_headers,
+    )
+    assert archived_list_response.status_code == 200
+    assert any(item["id"] == pending_release.id for item in archived_list_response.json())
+
+
+def test_delete_pending_release_removes_it(
+    client,
+    db_session,
+    admin_headers,
+):
+    pending_release = PendingRelease(
+        artist_name="Delete Artist",
+        artist_email="delete@example.com",
+        artist_data_json="{}",
+        release_title="Delete Target",
+        release_data_json="{}",
+        status="pending",
+    )
+    db_session.add(pending_release)
+    db_session.commit()
+    db_session.refresh(pending_release)
+
+    response = client.delete(
+        f"/api/admin/pending-releases/{pending_release.id}",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+
+    db_session.expire_all()
+    deleted = (
+        db_session.query(PendingRelease)
+        .filter(PendingRelease.id == pending_release.id)
+        .first()
+    )
+    assert deleted is None

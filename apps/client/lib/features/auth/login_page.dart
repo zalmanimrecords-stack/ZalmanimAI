@@ -5,6 +5,7 @@ import '../../core/api_client.dart';
 import '../../core/session.dart';
 import '../../core/zalmanim_icons.dart';
 import '../../widgets/ambient_underwater_shell.dart';
+import '../../widgets/app_version_badge.dart';
 import '../../widgets/api_connection_indicator.dart';
 import '../legal/privacy_policy_page.dart';
 import '../legal/terms_of_use_page.dart';
@@ -51,7 +52,17 @@ class _LoginPageState extends State<LoginPage> {
           height: 32,
           fit: BoxFit.contain,
         ),
-        actions: [ApiConnectionIndicator(apiClient: widget.apiClient)],
+        actions: [
+          const Padding(
+            padding: EdgeInsets.only(right: 8),
+            child: Center(
+              child: AppVersionBadge(
+                tooltipPrefix: 'LM app version',
+              ),
+            ),
+          ),
+          ApiConnectionIndicator(apiClient: widget.apiClient),
+        ],
       ),
       body: Stack(
         children: [

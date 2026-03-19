@@ -12,6 +12,7 @@ import '../../core/session_storage.dart';
 import '../../core/zalmanim_icons.dart';
 import '../account/user_settings_sheet.dart';
 import '../../widgets/ambient_underwater_shell.dart';
+import '../../widgets/app_version_badge.dart';
 import '../../widgets/api_connection_indicator.dart';
 import 'admin_dashboard_delegate.dart';
 import 'tabs/artists_tab.dart';
@@ -890,6 +891,55 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     }
   }
 
+  Future<void> _archivePendingRelease(
+      int pendingReleaseId, String releaseTitle,
+      {String? statusFilter}) async {
+    try {
+      final result = await widget.apiClient.archivePendingRelease(
+        token: widget.token,
+        pendingReleaseId: pendingReleaseId,
+      );
+      if (!mounted) return;
+      final message = (result['message'] ?? '').toString().trim();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            message.isEmpty
+                ? 'Pending release archived${releaseTitle.trim().isEmpty ? '.' : ': $releaseTitle'}'
+                : message,
+          ),
+        ),
+      );
+      await _loadPendingReleases(statusFilter: statusFilter);
+    } catch (e) {
+      _showErrorSnackBar(e.toString());
+    }
+  }
+
+  Future<void> _deletePendingRelease(
+      int pendingReleaseId, String releaseTitle,
+      {String? statusFilter}) async {
+    try {
+      await widget.apiClient.deletePendingRelease(
+        token: widget.token,
+        pendingReleaseId: pendingReleaseId,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            releaseTitle.trim().isEmpty
+                ? 'Pending release deleted.'
+                : 'Pending release deleted: $releaseTitle',
+          ),
+        ),
+      );
+      await _loadPendingReleases(statusFilter: statusFilter);
+    } catch (e) {
+      _showErrorSnackBar(e.toString());
+    }
+  }
+
   Future<void> _showPendingReleaseMessageDialog(
       Map<String, dynamic> pendingRelease) async {
     final artistName = (pendingRelease['artist_name'] ?? '').toString().trim();
@@ -1249,6 +1299,20 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   Future<void> sendPendingReleaseReminder(
           int pendingReleaseId, String artistName) =>
       _sendPendingReleaseReminder(pendingReleaseId, artistName);
+
+  @override
+  Future<void> archivePendingRelease(
+          int pendingReleaseId, String releaseTitle,
+          {String? statusFilter}) =>
+      _archivePendingRelease(pendingReleaseId, releaseTitle,
+          statusFilter: statusFilter);
+
+  @override
+  Future<void> deletePendingRelease(
+          int pendingReleaseId, String releaseTitle,
+          {String? statusFilter}) =>
+      _deletePendingRelease(pendingReleaseId, releaseTitle,
+          statusFilter: statusFilter);
 
   @override
   void showPendingReleaseMessageDialog(Map<String, dynamic> pendingRelease) =>
@@ -1896,6 +1960,18 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           ],
         ),
         actions: [
+          Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: Center(
+              child: AppVersionBadge(
+                tooltipPrefix: 'LM app version',
+                textStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurface,
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+            ),
+          ),
           if (_artistsCount != null || _releasesCount != null)
             Padding(
               padding: const EdgeInsets.only(left: 8),

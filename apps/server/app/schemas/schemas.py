@@ -740,6 +740,11 @@ class PendingReleaseOut(BaseModel):
     last_reminder_sent_at: datetime | None = None
 
 
+class PendingReleaseActionResponse(BaseModel):
+    success: bool
+    message: str
+
+
 class PendingReleaseReminderResponse(BaseModel):
     success: bool
     message: str

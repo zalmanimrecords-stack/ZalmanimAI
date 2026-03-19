@@ -6,6 +6,7 @@ import '../../core/app_config.dart';
 import '../../core/session.dart';
 import '../../core/session_storage.dart';
 import '../../core/zalmanim_icons.dart';
+import '../../widgets/app_version_badge.dart';
 import '../legal/privacy_policy_page.dart';
 import '../legal/terms_of_use_page.dart';
 import 'forgot_password_page.dart';
@@ -106,13 +107,30 @@ class _LoginPageState extends State<LoginPage> {
                     children: [
                       Align(
                         alignment: Alignment.centerLeft,
-                        child: widget.onBack == null
-                            ? const SizedBox(height: 24)
-                            : TextButton.icon(
-                                onPressed: widget.onBack,
-                                icon: const Icon(ZalmanimIcons.arrowBack),
-                                label: const Text('Back'),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: widget.onBack == null
+                                  ? const SizedBox(height: 24)
+                                  : Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: TextButton.icon(
+                                        onPressed: widget.onBack,
+                                        icon:
+                                            const Icon(ZalmanimIcons.arrowBack),
+                                        label: const Text('Back'),
+                                      ),
+                                    ),
+                            ),
+                            AppVersionBadge(
+                              tooltipPrefix: 'Artist portal version',
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
                               ),
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 12),
                       Image.asset(

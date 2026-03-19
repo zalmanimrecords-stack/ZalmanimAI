@@ -10,6 +10,7 @@ import 'features/admin/admin_dashboard_page.dart';
 import 'features/auth/login_page.dart';
 import 'features/auth/reset_password_page.dart';
 import 'features/legal/cookie_consent_page.dart';
+import 'widgets/app_version_badge.dart';
 import 'widgets/ambient_underwater_shell.dart';
 
 /// Message shown when an artist token is used in the LM app (artists use the artist portal only).
@@ -250,7 +251,19 @@ class _ArtistForbiddenPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('LabelOps')),
+      appBar: AppBar(
+        title: const Text('LabelOps'),
+        actions: const [
+          Padding(
+            padding: EdgeInsets.only(right: 12),
+            child: Center(
+              child: AppVersionBadge(
+                tooltipPrefix: 'LM app version',
+              ),
+            ),
+          ),
+        ],
+      ),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24.0),

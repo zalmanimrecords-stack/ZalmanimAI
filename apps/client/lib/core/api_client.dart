@@ -1101,6 +1101,37 @@ class ApiClient {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> archivePendingRelease({
+    required String token,
+    required int pendingReleaseId,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/admin/pending-releases/$pendingReleaseId/archive'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(response.body);
+      throw Exception(
+          'Archive pending release failed (${response.statusCode}): $detail');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<void> deletePendingRelease({
+    required String token,
+    required int pendingReleaseId,
+  }) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/admin/pending-releases/$pendingReleaseId'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(response.body);
+      throw Exception(
+          'Delete pending release failed (${response.statusCode}): $detail');
+    }
+  }
+
   /// Report: artists who have already signed in to the artist portal.
   Future<List<dynamic>> fetchArtistsSignedIn(String token) async {
     final response = await http.get(

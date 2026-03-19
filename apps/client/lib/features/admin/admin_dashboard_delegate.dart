@@ -99,6 +99,10 @@ abstract class AdminDashboardDelegate {
   Future<void> loadPendingReleases({String? statusFilter});
   Future<void> sendPendingReleaseReminder(
       int pendingReleaseId, String artistName);
+  Future<void> archivePendingRelease(int pendingReleaseId, String releaseTitle,
+      {String? statusFilter});
+  Future<void> deletePendingRelease(int pendingReleaseId, String releaseTitle,
+      {String? statusFilter});
   void showPendingReleaseMessageDialog(Map<String, dynamic> pendingRelease);
 
   // Inbox (artist messages to label; admin can reply, reply is emailed to artist)

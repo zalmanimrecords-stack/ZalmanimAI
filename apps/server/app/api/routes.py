@@ -113,6 +113,7 @@ from app.schemas.schemas import (
     LabelInboxThreadOut,
     LoginRequest,
     PendingReleaseFormInfo,
+    PendingReleaseActionResponse,
     PendingReleaseOut,
     PendingReleaseReferenceUploadOut,
     PendingReleaseReminderResponse,
@@ -4018,7 +4019,7 @@ def admin_delete_inbox_thread(
 
 @router.get("/admin/pending-releases", response_model=list[PendingReleaseOut])
 def admin_list_pending_releases(
-    status_filter: str | None = Query(None, description="pending | processed"),
+    status_filter: str | None = Query(None, description="pending | processed | archived"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -4042,8 +4043,10 @@ def admin_list_pending_releases(
     if approved_without_pr:
         db.commit()
     q = db.query(PendingRelease)
-    if status_filter in ("pending", "processed"):
+    if status_filter in ("pending", "processed", "archived"):
         q = q.filter(PendingRelease.status == status_filter)
+    else:
+        q = q.filter(PendingRelease.status != "archived")
     q = q.order_by(desc(PendingRelease.created_at)).offset(offset).limit(limit)
     items = q.all()
     reminder_rows = (
@@ -4057,6 +4060,37 @@ def admin_list_pending_releases(
     for pr in items:
         out.append(_serialize_pending_release(pr, last_reminder_sent_at=last_reminder_map.get(pr.artist_id)))
     return out
+
+
+@router.post("/admin/pending-releases/{pending_release_id}/archive", response_model=PendingReleaseActionResponse)
+def admin_archive_pending_release(
+    pending_release_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> PendingReleaseActionResponse:
+    require_admin(user)
+    pending_release = db.query(PendingRelease).filter(PendingRelease.id == pending_release_id).first()
+    if not pending_release:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pending release not found")
+    pending_release.status = "archived"
+    db.add(pending_release)
+    db.commit()
+    return PendingReleaseActionResponse(success=True, message="Pending release archived")
+
+
+@router.delete("/admin/pending-releases/{pending_release_id}", response_model=PendingReleaseActionResponse)
+def admin_delete_pending_release(
+    pending_release_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> PendingReleaseActionResponse:
+    require_admin(user)
+    pending_release = db.query(PendingRelease).filter(PendingRelease.id == pending_release_id).first()
+    if not pending_release:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pending release not found")
+    db.delete(pending_release)
+    db.commit()
+    return PendingReleaseActionResponse(success=True, message="Pending release deleted")
 
 
 @router.post("/admin/pending-releases/{pending_release_id}/send-reminder", response_model=PendingReleaseReminderResponse)

@@ -14,6 +14,7 @@ class ReleasesSectionTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
+      initialIndex: 1,
       length: 2,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
