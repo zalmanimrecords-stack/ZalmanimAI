@@ -485,7 +485,7 @@ class _PendingReleaseFormPageState extends State<PendingReleaseFormPage> {
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: Image.network(
-                _referenceImageUrl!,
+                widget.apiClient.resolveMediaUrl(_referenceImageUrl!),
                 height: 180,
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => Container(

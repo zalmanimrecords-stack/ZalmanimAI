@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'app_config.dart';
+import 'api_media_url.dart';
 import 'linktree_models.dart';
 import 'session.dart';
 
@@ -10,6 +11,9 @@ class ApiClient {
   ApiClient({required this.baseUrl});
 
   final String baseUrl;
+
+  /// Resolves stored media URLs to the configured API origin (see [resolveApiMediaUrl]).
+  String resolveMediaUrl(String? url) => resolveApiMediaUrl(baseUrl, url);
 
   String get _publicBaseUrl {
     final configured = AppConfig.publicBaseUrl.trim();

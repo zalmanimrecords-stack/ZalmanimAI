@@ -1,4 +1,4 @@
-﻿import 'package:file_picker/file_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -18,7 +18,86 @@ class PendingReleasesTab extends StatefulWidget {
 
 class _PendingReleasesTabState extends State<PendingReleasesTab> {
   final Set<int> _sendingReminderIds = <int>{};
+  final Set<String> _busyImageOps = <String>{};
   String _selectedStatusFilter = 'active';
+
+  String _imageBusyKey(int pendingReleaseId, String imageId, String op) =>
+      '$pendingReleaseId|$imageId|$op';
+
+  Future<void> _deletePendingReleaseImage(
+      int pendingReleaseId, String imageId) async {
+    final key = _imageBusyKey(pendingReleaseId, imageId, 'del');
+    setState(() => _busyImageOps.add(key));
+    try {
+      await widget.delegate.apiClient.deletePendingReleaseImageOption(
+        token: widget.delegate.token,
+        pendingReleaseId: pendingReleaseId,
+        imageId: imageId,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Image removed')),
+      );
+      await _reloadPendingReleases();
+    } catch (e) {
+      widget.delegate.showErrorSnackBar(e.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _busyImageOps.remove(key));
+      }
+    }
+  }
+
+  Future<void> _normalizePendingReleaseImage(
+      int pendingReleaseId, String imageId) async {
+    final key = _imageBusyKey(pendingReleaseId, imageId, 'jpg');
+    setState(() => _busyImageOps.add(key));
+    try {
+      await widget.delegate.apiClient.normalizePendingReleaseImageToJpg3000(
+        token: widget.delegate.token,
+        pendingReleaseId: pendingReleaseId,
+        imageId: imageId,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Image converted to 3000×3000 JPG')),
+      );
+      await _reloadPendingReleases();
+    } catch (e) {
+      widget.delegate.showErrorSnackBar(e.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _busyImageOps.remove(key));
+      }
+    }
+  }
+
+  Future<void> _confirmDeleteImage(int pendingReleaseId, String imageId) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove image'),
+        content: const Text(
+          'Remove this image option? The file will be deleted and artists will no longer see it.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await _deletePendingReleaseImage(pendingReleaseId, imageId);
+    }
+  }
 
   Future<void> _sendReminder(Map<String, dynamic> item) async {
     final pendingReleaseId = item['id'];
@@ -386,8 +465,14 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
     final seen = <String>{};
     final selectedImageId = _formatValue(item['selected_image_id']);
 
-    void maybeAdd(String label, String url,
-        {String? fileName, bool allowAnyUrl = false, bool isSelected = false}) {
+    void maybeAdd(
+      String label,
+      String url, {
+      String? fileName,
+      bool allowAnyUrl = false,
+      bool isSelected = false,
+      String? managementImageId,
+    }) {
       final normalized = url.trim();
       final canPreview =
           allowAnyUrl ? _looksLikeUrl(normalized) : _looksLikeImageUrl(normalized);
@@ -402,6 +487,8 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
           (fileName ?? '').trim(),
           if (isSelected) 'Artist selected',
         ].where((part) => part.isNotEmpty).join(' - '),
+        managementImageId:
+            (managementImageId ?? '').trim().isEmpty ? null : managementImageId!.trim(),
       ));
     }
 
@@ -416,6 +503,7 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
           fileName: _formatValue(rawItem['filename']),
           allowAnyUrl: true,
           isSelected: imageId == selectedImageId,
+          managementImageId: imageId.isNotEmpty ? imageId : null,
         );
       }
     }
@@ -618,6 +706,13 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
                               title: 'Release images',
                               previews: imagePreviews,
                               onOpenLink: _openExternalLink,
+                              resolveMediaUrl:
+                                  widget.delegate.apiClient.resolveMediaUrl,
+                              pendingReleaseId: item['id'] as int,
+                              busyImageOps: _busyImageOps,
+                              imageBusyKey: _imageBusyKey,
+                              onDeleteImage: _confirmDeleteImage,
+                              onNormalizeImage: _normalizePendingReleaseImage,
                               action: OutlinedButton.icon(
                                 onPressed: () =>
                                     _uploadPendingReleaseImage(item),
@@ -837,12 +932,27 @@ class _ImageGalleryCard extends StatelessWidget {
     required this.title,
     required this.previews,
     required this.onOpenLink,
+    required this.resolveMediaUrl,
+    required this.pendingReleaseId,
+    required this.busyImageOps,
+    required this.imageBusyKey,
+    required this.onDeleteImage,
+    required this.onNormalizeImage,
     this.action,
   });
 
   final String title;
   final List<_ImagePreview> previews;
   final Future<void> Function(String value) onOpenLink;
+  final String Function(String? url) resolveMediaUrl;
+  final int pendingReleaseId;
+  final Set<String> busyImageOps;
+  final String Function(int pendingReleaseId, String imageId, String op)
+      imageBusyKey;
+  final Future<void> Function(int pendingReleaseId, String imageId)
+      onDeleteImage;
+  final Future<void> Function(int pendingReleaseId, String imageId)
+      onNormalizeImage;
   final Widget? action;
 
   @override
@@ -892,6 +1002,12 @@ class _ImageGalleryCard extends StatelessWidget {
                         _ImagePreviewTile(
                           preview: previews[i],
                           onOpenLink: onOpenLink,
+                          displayUrl: resolveMediaUrl(previews[i].url),
+                          pendingReleaseId: pendingReleaseId,
+                          busyImageOps: busyImageOps,
+                          imageBusyKey: imageBusyKey,
+                          onDeleteImage: onDeleteImage,
+                          onNormalizeImage: onNormalizeImage,
                         ),
                       ],
                     ],
@@ -1017,14 +1133,34 @@ class _ImagePreviewTile extends StatelessWidget {
   const _ImagePreviewTile({
     required this.preview,
     required this.onOpenLink,
+    required this.displayUrl,
+    required this.pendingReleaseId,
+    required this.busyImageOps,
+    required this.imageBusyKey,
+    required this.onDeleteImage,
+    required this.onNormalizeImage,
   });
 
   final _ImagePreview preview;
   final Future<void> Function(String value) onOpenLink;
+  final String displayUrl;
+  final int pendingReleaseId;
+  final Set<String> busyImageOps;
+  final String Function(int pendingReleaseId, String imageId, String op)
+      imageBusyKey;
+  final Future<void> Function(int pendingReleaseId, String imageId)
+      onDeleteImage;
+  final Future<void> Function(int pendingReleaseId, String imageId)
+      onNormalizeImage;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final mid = preview.managementImageId;
+    final busyDel = mid != null &&
+        busyImageOps.contains(imageBusyKey(pendingReleaseId, mid, 'del'));
+    final busyJpg = mid != null &&
+        busyImageOps.contains(imageBusyKey(pendingReleaseId, mid, 'jpg'));
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
@@ -1065,13 +1201,50 @@ class _ImagePreviewTile extends StatelessWidget {
               ),
             ],
           ),
+          if (mid != null) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: busyDel || busyJpg
+                      ? null
+                      : () => onDeleteImage(pendingReleaseId, mid),
+                  icon: busyDel
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.delete_outline, size: 18),
+                  label: Text(busyDel ? 'Removing…' : 'Delete'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: busyDel || busyJpg
+                      ? null
+                      : () => onNormalizeImage(pendingReleaseId, mid),
+                  icon: busyJpg
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.photo_size_select_large_outlined,
+                          size: 18),
+                  label: Text(
+                      busyJpg ? 'Converting…' : 'JPG 3000×3000'),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 12),
           ClipRRect(
             borderRadius: BorderRadius.circular(14),
             child: AspectRatio(
               aspectRatio: 16 / 9,
               child: Image.network(
-                preview.url,
+                displayUrl,
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => Container(
                   color: scheme.surfaceContainerHighest,
@@ -1104,11 +1277,14 @@ class _ImagePreview {
     required this.label,
     required this.url,
     this.subtitle = '',
+    this.managementImageId,
   });
 
   final String label;
   final String url;
   final String subtitle;
+  /// Label-uploaded option id (delete / normalize); null for reference URLs only.
+  final String? managementImageId;
 }
 
 enum _PendingReleaseRemovalAction {

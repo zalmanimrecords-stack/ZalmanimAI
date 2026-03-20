@@ -5,10 +5,15 @@ import 'package:http/http.dart' as http;
 
 import 'session.dart';
 
+import 'api_media_url.dart';
+
 class ApiClient {
   ApiClient({required this.baseUrl});
 
   final String baseUrl;
+
+  /// Resolves stored media URLs to the configured API origin (see [resolveApiMediaUrl]).
+  String resolveMediaUrl(String? url) => resolveApiMediaUrl(baseUrl, url);
 
   /// Base URL origin for health checks (e.g. http://localhost:8000).
   String get healthUrl => '${Uri.parse(baseUrl).origin}/health';
@@ -1157,6 +1162,44 @@ class ApiClient {
           'Upload pending release image failed (${response.statusCode}): $detail');
     }
     return jsonDecode(body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> deletePendingReleaseImageOption({
+    required String token,
+    required int pendingReleaseId,
+    required String imageId,
+  }) async {
+    final encoded = Uri.encodeComponent(imageId);
+    final response = await http.delete(
+      Uri.parse(
+          '$baseUrl/admin/pending-releases/$pendingReleaseId/images/$encoded'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(response.body);
+      throw Exception(
+          'Delete pending release image failed (${response.statusCode}): $detail');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> normalizePendingReleaseImageToJpg3000({
+    required String token,
+    required int pendingReleaseId,
+    required String imageId,
+  }) async {
+    final encoded = Uri.encodeComponent(imageId);
+    final response = await http.post(
+      Uri.parse(
+          '$baseUrl/admin/pending-releases/$pendingReleaseId/images/$encoded/normalize-jpg'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(response.body);
+      throw Exception(
+          'Normalize image failed (${response.statusCode}): $detail');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> archivePendingRelease({

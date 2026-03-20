@@ -1,4 +1,4 @@
-﻿import 'package:file_picker/file_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -876,7 +876,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: Image.network(
-                  imageUrl,
+                  widget.apiClient.resolveMediaUrl(imageUrl),
                   height: 180,
                   width: double.infinity,
                   fit: BoxFit.cover,

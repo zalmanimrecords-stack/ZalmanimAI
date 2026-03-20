@@ -219,8 +219,8 @@ void main() {
     expect(find.text('Release forum'), findsOneWidget);
     expect(find.text('Artist brand'), findsOneWidget);
     expect(find.text('Catalog number'), findsOneWidget);
-    expect(find.text('cover-option.png'), findsOneWidget);
-    expect(find.text('Artist selected'), findsOneWidget);
+    expect(find.textContaining('cover-option.png'), findsOneWidget);
+    expect(find.textContaining('Artist selected'), findsOneWidget);
     expect(find.text('Artwork draft is ready for review.'), findsOneWidget);
     expect(find.textContaining('"track_title"'), findsNothing);
     expect(find.byType(Image), findsOneWidget);

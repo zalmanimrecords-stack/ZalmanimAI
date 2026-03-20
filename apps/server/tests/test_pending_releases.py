@@ -1,7 +1,14 @@
 import hashlib
+import json
+import os
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
+from urllib.parse import urlparse
+
+from PIL import Image
 
 from app.api import routes
+from app.core.config import settings
 from app.models.models import (
     Artist,
     ArtistActivityLog,
@@ -212,9 +219,10 @@ def test_delete_pending_release_removes_it(
     db_session.add(pending_release)
     db_session.commit()
     db_session.refresh(pending_release)
+    pending_id = pending_release.id
 
     response = client.delete(
-        f"/api/admin/pending-releases/{pending_release.id}",
+        f"/api/admin/pending-releases/{pending_id}",
         headers=admin_headers,
     )
 
@@ -224,7 +232,111 @@ def test_delete_pending_release_removes_it(
     db_session.expire_all()
     deleted = (
         db_session.query(PendingRelease)
-        .filter(PendingRelease.id == pending_release.id)
+        .filter(PendingRelease.id == pending_id)
         .first()
     )
     assert deleted is None
+
+
+def test_admin_delete_pending_release_image_option_removes_file_and_updates_json(
+    client,
+    db_session,
+    admin_headers,
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "upload_dir", str(tmp_path))
+    label_dir = tmp_path / "pending_release_label_images"
+    label_dir.mkdir(parents=True)
+    stored = "abc123face.png"
+    (label_dir / stored).write_bytes(b"x")
+
+    image_id = "img-option-1"
+    url = f"http://testserver/api/public/pending-release-label-image/{stored}"
+    pending_release = PendingRelease(
+        artist_name="Img Artist",
+        artist_email="img@example.com",
+        artist_data_json="{}",
+        release_title="Has Images",
+        release_data_json=json.dumps(
+            {
+                "image_options": [
+                    {"id": image_id, "url": url, "filename": "cover.png"},
+                ],
+                "selected_image_id": image_id,
+            }
+        ),
+        status="pending",
+    )
+    db_session.add(pending_release)
+    db_session.commit()
+    db_session.refresh(pending_release)
+
+    response = client.delete(
+        f"/api/admin/pending-releases/{pending_release.id}/images/{image_id}",
+        headers=admin_headers,
+    )
+    assert response.status_code == 200
+    assert not os.path.isfile(str(label_dir / stored))
+
+    db_session.expire_all()
+    row = db_session.query(PendingRelease).filter(PendingRelease.id == pending_release.id).first()
+    data = json.loads(row.release_data_json or "{}")
+    assert data.get("image_options") == []
+    assert data.get("selected_image_id") in (None, "")
+
+
+def test_admin_normalize_pending_release_image_writes_jpg_3000(
+    client,
+    db_session,
+    admin_headers,
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "upload_dir", str(tmp_path))
+    label_dir = tmp_path / "pending_release_label_images"
+    label_dir.mkdir(parents=True)
+    stored = "before.png"
+    buf = BytesIO()
+    Image.new("RGB", (400, 200), color=(10, 20, 30)).save(buf, format="PNG")
+    png_bytes = buf.getvalue()
+    (label_dir / stored).write_bytes(png_bytes)
+
+    image_id = "img-to-convert"
+    url = f"http://testserver/api/public/pending-release-label-image/{stored}"
+    pending_release = PendingRelease(
+        artist_name="Convert Artist",
+        artist_email="conv@example.com",
+        artist_data_json="{}",
+        release_title="Convert",
+        release_data_json=json.dumps(
+            {
+                "image_options": [
+                    {"id": image_id, "url": url, "filename": "before.png"},
+                ],
+                "selected_image_id": image_id,
+            }
+        ),
+        status="pending",
+    )
+    db_session.add(pending_release)
+    db_session.commit()
+    db_session.refresh(pending_release)
+
+    response = client.post(
+        f"/api/admin/pending-releases/{pending_release.id}/images/{image_id}/normalize-jpg",
+        headers=admin_headers,
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["image_options"]
+    new_url = payload["image_options"][0]["url"]
+    assert new_url.endswith(".jpg")
+    assert not os.path.isfile(str(label_dir / stored))
+
+    tail = urlparse(new_url).path.split("/")[-1]
+    jpg_path = label_dir / tail
+    assert jpg_path.is_file()
+    out = Image.open(jpg_path)
+    assert out.size == (3000, 3000)
+    assert out.format == "JPEG"

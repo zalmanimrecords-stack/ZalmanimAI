@@ -91,7 +91,7 @@ class FakeAdminDashboardDelegate extends Fake
   void showArtistReleases(int id, String name) {}
 
   @override
-  ApiClient get apiClient => throw UnimplementedError();
+  final ApiClient apiClient = ApiClient(baseUrl: 'http://localhost:8000/api');
 
   @override
   String get token => 'test-token';

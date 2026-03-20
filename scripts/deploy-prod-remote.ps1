@@ -7,7 +7,16 @@
 $ErrorActionPreference = "Stop"
 $repoPathOnVps = if ($env:PROD_REPO_PATH) { $env:PROD_REPO_PATH } else { "/root/ZalmanimAI" }
 $sshKey = if ($env:LMUPDATE_SSH_KEY) { $env:LMUPDATE_SSH_KEY } else { Join-Path (Join-Path $env:USERPROFILE ".ssh") "hostinger_vps" }
-$emptyConfig = (Resolve-Path (Join-Path (Join-Path $PSScriptRoot "..") "deploy\ssh_config_empty") -ErrorAction Stop).Path
+$scriptPath = if ($PSCommandPath) {
+    $PSCommandPath
+} elseif ($MyInvocation.MyCommand.Path) {
+    $MyInvocation.MyCommand.Path
+} else {
+    throw "Could not determine script path."
+}
+$scriptDir = Split-Path -Parent $scriptPath
+$repoRoot = (Resolve-Path -LiteralPath (Join-Path $scriptDir "..") -ErrorAction Stop).Path
+$emptyConfig = (Resolve-Path -LiteralPath (Join-Path $repoRoot "deploy\ssh_config_empty") -ErrorAction Stop).Path
 
 if (-not (Test-Path -LiteralPath $sshKey)) {
     Write-Error "SSH key not found: $sshKey"

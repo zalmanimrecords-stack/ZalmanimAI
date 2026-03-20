@@ -8,9 +8,10 @@ import os
 import secrets
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import httpx
+from PIL import Image, ImageOps
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
@@ -1279,6 +1280,43 @@ def _pending_release_image_options(release_data: dict) -> list[PendingReleaseIma
             )
         )
     return out
+
+
+def _pending_release_upload_path_from_public_url(url: str) -> tuple[str, str] | None:
+    """Map a stored public URL to (absolute filesystem path, kind: label|reference)."""
+    try:
+        parsed = urlparse(url)
+        path = (parsed.path or url).split("?")[0]
+    except Exception:
+        path = url.split("?")[0]
+    label_marker = "/public/pending-release-label-image/"
+    ref_marker = "/public/pending-release-reference-image/"
+    if label_marker in path:
+        filename = path.split(label_marker, 1)[1].strip("/")
+        sub = "pending_release_label_images"
+    elif ref_marker in path:
+        filename = path.split(ref_marker, 1)[1].strip("/")
+        sub = "pending_release_references"
+    else:
+        return None
+    if not filename or filename != os.path.basename(filename) or ".." in filename:
+        return None
+    if "/" in filename or "\\" in filename:
+        return None
+    full = os.path.join(settings.upload_dir, sub, filename)
+    kind = "label" if sub == "pending_release_label_images" else "reference"
+    return (full, kind)
+
+
+def _bytes_to_jpg_3000_square(data: bytes) -> bytes:
+    """Resize/crop to 3000x3000 JPEG (RGB, high quality)."""
+    raw = Image.open(io.BytesIO(data))
+    raw = ImageOps.exif_transpose(raw)
+    raw = raw.convert("RGB")
+    out_img = ImageOps.fit(raw, (3000, 3000), method=Image.Resampling.LANCZOS)
+    buf = io.BytesIO()
+    out_img.save(buf, format="JPEG", quality=92, optimize=True)
+    return buf.getvalue()
 
 
 def _pending_release_selected_image_id(release_data: dict) -> str | None:
@@ -4430,6 +4468,163 @@ def admin_upload_pending_release_image(
             "Open the pending release page in the artist portal to review and choose the image you want.",
         ],
     )
+    return _serialize_pending_release_detail(pending_release)
+
+
+@router.delete(
+    "/admin/pending-releases/{pending_release_id}/images/{image_id}",
+    response_model=PendingReleaseDetailOut,
+)
+def admin_delete_pending_release_image_option(
+    pending_release_id: int,
+    image_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> PendingReleaseDetailOut:
+    require_admin(user)
+    image_id = (image_id or "").strip()
+    if not image_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="image_id is required")
+    pending_release = (
+        db.query(PendingRelease)
+        .options(joinedload(PendingRelease.comments))
+        .filter(PendingRelease.id == pending_release_id)
+        .first()
+    )
+    if not pending_release:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pending release not found")
+    release_data = _safe_json_dict(pending_release.release_data_json)
+    image_options = release_data.get("image_options")
+    if not isinstance(image_options, list):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+    target: dict | None = None
+    for item in image_options:
+        if isinstance(item, dict) and (item.get("id") or "").strip() == image_id:
+            target = item
+            break
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+    url = (target.get("url") or "").strip() if isinstance(target.get("url"), str) else ""
+    resolved = _pending_release_upload_path_from_public_url(url)
+    if resolved is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only images uploaded to this system can be removed.",
+        )
+    fs_path, kind = resolved
+    if kind != "label":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This image can only be removed from the label upload list.",
+        )
+    if os.path.isfile(fs_path):
+        try:
+            os.remove(fs_path)
+        except OSError:
+            pass
+    new_options = [
+        item
+        for item in image_options
+        if not (isinstance(item, dict) and (item.get("id") or "").strip() == image_id)
+    ]
+    release_data["image_options"] = new_options
+    sel = (release_data.get("selected_image_id") or "").strip() if isinstance(release_data.get("selected_image_id"), str) else ""
+    if sel == image_id:
+        release_data["selected_image_id"] = (
+            (new_options[0].get("id") or "").strip()
+            if new_options and isinstance(new_options[0], dict)
+            else None
+        )
+    _save_pending_release_data(pending_release, release_data)
+    db.commit()
+    db.refresh(pending_release)
+    return _serialize_pending_release_detail(pending_release)
+
+
+@router.post(
+    "/admin/pending-releases/{pending_release_id}/images/{image_id}/normalize-jpg",
+    response_model=PendingReleaseDetailOut,
+)
+def admin_normalize_pending_release_image_jpg_3000(
+    request: Request,
+    pending_release_id: int,
+    image_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> PendingReleaseDetailOut:
+    require_admin(user)
+    image_id = (image_id or "").strip()
+    if not image_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="image_id is required")
+    pending_release = (
+        db.query(PendingRelease)
+        .options(joinedload(PendingRelease.comments))
+        .filter(PendingRelease.id == pending_release_id)
+        .first()
+    )
+    if not pending_release:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pending release not found")
+    release_data = _safe_json_dict(pending_release.release_data_json)
+    image_options = release_data.get("image_options")
+    if not isinstance(image_options, list):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+    target: dict | None = None
+    for item in image_options:
+        if isinstance(item, dict) and (item.get("id") or "").strip() == image_id:
+            target = item
+            break
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+    url = (target.get("url") or "").strip() if isinstance(target.get("url"), str) else ""
+    resolved = _pending_release_upload_path_from_public_url(url)
+    if resolved is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only images uploaded to this system can be converted.",
+        )
+    fs_path, kind = resolved
+    if kind != "label":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only label-uploaded images can be converted.",
+        )
+    if not os.path.isfile(fs_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image file missing on disk")
+    try:
+        with open(fs_path, "rb") as fh:
+            raw_bytes = fh.read()
+        jpg_bytes = _bytes_to_jpg_3000_square(raw_bytes)
+    except Exception as exc:
+        logging.getLogger(__name__).warning("normalize pending release image failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not read or convert this image.",
+        ) from exc
+    image_dir = os.path.join(settings.upload_dir, "pending_release_label_images")
+    os.makedirs(image_dir, exist_ok=True)
+    new_name = f"{uuid.uuid4().hex}.jpg"
+    new_path = os.path.join(image_dir, new_name)
+    with open(new_path, "wb") as out:
+        out.write(jpg_bytes)
+    try:
+        if os.path.abspath(fs_path) != os.path.abspath(new_path):
+            os.remove(fs_path)
+    except OSError:
+        pass
+    try:
+        old_base = (target.get("filename") or "").strip() or os.path.basename(fs_path)
+        stem = os.path.splitext(old_base)[0] or "cover"
+        new_filename = f"{stem}.jpg"
+    except Exception:
+        new_filename = new_name
+    target["url"] = str(request.url_for("public_pending_release_label_image_file", filename=new_name))
+    target["filename"] = new_filename
+    if isinstance(target.get("created_at"), str):
+        target["created_at"] = datetime.now(timezone.utc).isoformat()
+    release_data["image_options"] = image_options
+    _save_pending_release_data(pending_release, release_data)
+    db.commit()
+    db.refresh(pending_release)
     return _serialize_pending_release_detail(pending_release)
 
 
