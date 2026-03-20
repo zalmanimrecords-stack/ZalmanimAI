@@ -34,6 +34,7 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
   bool _testingBackupMail = false;
   bool _sendingBackupTestMail = false;
   bool _connectingGoogle = false;
+  bool _refreshingSettings = false;
   String? _mailSaveError;
   String? _mailTestMessage;
 
@@ -105,6 +106,28 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
         setState(() {
           _error = e.toString();
           _loading = false;
+        });
+      }
+    }
+  }
+
+  /// Reload settings from API without the full-page loading spinner (e.g. after Gmail OAuth).
+  Future<void> _refreshMailSettingsSilently() async {
+    setState(() => _refreshingSettings = true);
+    try {
+      final data = await widget.apiClient.fetchSystemSettings(widget.token);
+      if (mounted) {
+        setState(() {
+          _settings = data;
+          _refreshingSettings = false;
+          _fillMailFormFromSettings(data);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _refreshingSettings = false;
+          _mailSaveError = e.toString();
         });
       }
     }
@@ -443,7 +466,6 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
     final s = _settings!;
     final googleConfigured = s['google_oauth_configured'] as bool? ?? false;
     final gmailConnected = s['gmail_connected'] as bool? ?? false;
-    final facebookConfigured = s['facebook_oauth_configured'] as bool? ?? false;
     final gmailConnectedEmail = s['gmail_connected_email'] as String? ?? '';
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -451,9 +473,94 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _sectionTitle('Mail server (SMTP)'),
+          _sectionTitle('Outgoing mail'),
+          Card(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Send order',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '1. Gmail API — if you connect Gmail below and it has send permission.\n'
+                    '2. Primary SMTP — host and credentials below.\n'
+                    '3. Backup SMTP — used if Gmail fails or primary SMTP rejects the message.',
+                    style: TextStyle(fontSize: 13, height: 1.35),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Database backup / restore is under Settings → Backup (different from SMTP backup).',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          _sectionTitle('Gmail (Google Mail API)'),
           const Text(
-            'Edit mail server details below. Values are stored in the server database and override environment variables.',
+            'Connect a Google account so LM can send mail through Gmail when OAuth is configured on the server. Requires GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET in server env.',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _row('Google OAuth', googleConfigured ? 'Configured on server' : 'Missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET'),
+                  _row('Gmail connection', gmailConnected ? 'Connected' : 'Not connected'),
+                  _row('Connected account', gmailConnectedEmail),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: googleConfigured && !_connectingGoogle ? _connectGoogleMail : null,
+                          icon: _connectingGoogle
+                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(ZalmanimIcons.alternateEmail),
+                          label: Text(
+                            _connectingGoogle
+                                ? 'Opening Google...'
+                                : (gmailConnected ? 'Reconnect Gmail account' : 'Connect Gmail account'),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: 'Reload connection status from server',
+                        onPressed: _refreshingSettings ? null : _refreshMailSettingsSilently,
+                        icon: _refreshingSettings
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.refresh_rounded),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          _sectionTitle('Primary SMTP'),
+          const Text(
+            'Used when Gmail is not used or after Gmail fails. Stored in the server database and overrides environment variables.',
             style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
           const SizedBox(height: 12),
@@ -578,9 +685,9 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
           ],
         ),
         const SizedBox(height: 24),
-        _sectionTitle('Backup SMTP (optional)'),
+        _sectionTitle('Backup SMTP (fallback server)'),
         const Text(
-          'If the primary server rejects the message (or Gmail API fails), LM tries this SMTP next. Leave empty to disable.',
+          'If the primary SMTP rejects the message (or Gmail API fails first), LM tries this server next. Leave host empty to disable. Not related to Settings → Backup (database).',
           style: TextStyle(fontSize: 12, color: Colors.grey),
         ),
         const SizedBox(height: 12),
@@ -741,18 +848,6 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
         ),
         const SizedBox(height: 8),
         _row('Status', (s['email_configured'] as bool? ?? false) ? 'Configured' : 'Not configured'),
-        const SizedBox(height: 24),
-        _sectionTitle('Google Mail'),
-        _row('Google OAuth', googleConfigured ? 'Configured on server' : 'Missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET'),
-        _row('Facebook OAuth', facebookConfigured ? 'Configured on server' : 'Missing META_CLIENT_ID / META_CLIENT_SECRET'),
-        _row('Gmail connection', gmailConnected ? 'Connected' : 'Not connected'),
-        _row('Connected account', gmailConnectedEmail),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: googleConfigured && !_connectingGoogle ? _connectGoogleMail : null,
-          icon: _connectingGoogle ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(ZalmanimIcons.alternateEmail),
-          label: Text(_connectingGoogle ? 'Opening Google...' : (gmailConnected ? 'Reconnect Gmail account' : 'Connect Gmail account')),
-        ),
         ],
       ),
     );

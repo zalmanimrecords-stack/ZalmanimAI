@@ -1,0 +1,37 @@
+---
+description: Unified UI flow, settings IA, and polish for Flutter client screens
+globs: apps/client/**/*.dart
+alwaysApply: false
+---
+
+# UI flow, settings architecture, and quality bar
+
+Apply when adding or changing screens, sheets, dialogs, tabs, or settings in the Flutter client (`apps/client`).
+
+## Information architecture (no duplication)
+
+- **Single source of truth**: Each setting or piece of config must live in **one** canonical surface. If two places need the same control, extract a shared widget or deep-link to the canonical screen (e.g. “Manage in Settings > Mail”) instead of copying fields.
+- **Separate domains by role**: **Account / profile / password / session** → user-facing surfaces (e.g. `UserSettingsSheet`). **Tenant or system config** (mail, templates, DB, backup, admin users) → admin areas. Do not mirror admin SMTP fields in the account sheet or vice versa.
+- **Avoid duplicate labels**: Same user-facing name must map to one backend field. If copy repeats instructions, consolidate into one short helper line or a single “Learn more” link.
+
+## Flow and layout (no endless settings pages)
+
+- **Hub, then detail**: Prefer a **short hub** (summary + primary actions) and **progressive disclosure**—sub-tabs (see `SettingsTab`), nested routes, or dialogs for long forms—not one uninterrupted vertical page of every field.
+- **Chunking**: Group related controls under a clear **section title** (and optional short description). Use **Cards** for visual grouping; keep sections scannable.
+- **Consistent depth**: Use the same patterns app-wide: tabs for peer sections, dialogs/sheets for focused edits that would clutter the parent, `SingleChildScrollView` only inside a deliberate bounded region (not the whole dashboard as one scroll).
+- **Navigation**: Preserve predictable entry points (e.g. admin sidebar/tab → Settings → sub-tab). New settings must attach to the correct hub; do not add orphan pages off the main flow.
+
+## Visual and interaction consistency
+
+- **Theming**: Use `Theme.of(context)`—`colorScheme`, `textTheme`, component themes from `main.dart`—not raw `Colors.*` except where the codebase already uses greys for secondary hints. Icons: prefer `ZalmanimIcons` where the app already does.
+- **Spacing rhythm**: Prefer **8 / 12 / 16 / 20 / 24** logical pixels for padding and gaps; align with existing cards and tab padding (e.g. `EdgeInsets.fromLTRB(16, 12, 16, 0)`).
+- **Density**: Prefer readable defaults over cramming; on wide layouts use constraints or `Align` so lines do not stretch unbounded on web.
+- **States**: Loading, empty, and error states should match existing patterns; errors follow **Copyable Error Messages** (`.cursor/rules/error-messages-copyable.mdc`).
+
+## Quality bar
+
+- **Scannable**: User can answer “where do I change X?” without reading the whole page.
+- **Accessible**: Sufficient contrast, meaningful labels on inputs and icon-only buttons (`tooltip` / `Semantics` where needed).
+- **Focused diffs**: New UI should reuse existing components and patterns; introduce a new layout primitive only when multiple screens need it.
+
+When in doubt, mirror **Settings** (sub-tabs + cards + dialogs) and **UserSettingsSheet** (compact sheet, grouped actions)—do not invent a third unrelated pattern for the same kind of task.
