@@ -1101,6 +1101,64 @@ class ApiClient {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> fetchPendingReleaseDetail({
+    required String token,
+    required int pendingReleaseId,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/admin/pending-releases/$pendingReleaseId'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(response.body);
+      throw Exception(
+          'Fetch pending release failed (${response.statusCode}): $detail');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> addPendingReleaseComment({
+    required String token,
+    required int pendingReleaseId,
+    required String body,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/admin/pending-releases/$pendingReleaseId/comments'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode({'body': body}),
+    );
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(response.body);
+      throw Exception(
+          'Add pending release comment failed (${response.statusCode}): $detail');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> uploadPendingReleaseImage({
+    required String token,
+    required int pendingReleaseId,
+    required List<int> fileBytes,
+    required String filename,
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/admin/pending-releases/$pendingReleaseId/images'),
+    );
+    request.headers.addAll(_authHeaders(token));
+    request.files.add(
+      http.MultipartFile.fromBytes('file', fileBytes, filename: filename),
+    );
+    final response = await request.send();
+    final body = await response.stream.bytesToString();
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(body);
+      throw Exception(
+          'Upload pending release image failed (${response.statusCode}): $detail');
+    }
+    return jsonDecode(body) as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> archivePendingRelease({
     required String token,
     required int pendingReleaseId,

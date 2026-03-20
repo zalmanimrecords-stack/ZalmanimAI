@@ -218,6 +218,29 @@ class PendingRelease(Base):
     campaign_request: Mapped["CampaignRequest | None"] = relationship()
     demo_submission: Mapped["DemoSubmission | None"] = relationship()
     artist: Mapped["Artist | None"] = relationship()
+    comments: Mapped[list["PendingReleaseComment"]] = relationship(
+        back_populates="pending_release",
+        order_by="PendingReleaseComment.created_at",
+        cascade="all, delete-orphan",
+    )
+
+
+class PendingReleaseComment(Base):
+    __tablename__ = "pending_release_comments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    pending_release_id: Mapped[int] = mapped_column(
+        ForeignKey("pending_releases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    sender: Mapped[str] = mapped_column(String(20), nullable=False, index=True)  # artist | label
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    pending_release: Mapped["PendingRelease"] = relationship(back_populates="comments")
 
 
 class LabelInboxThread(Base):

@@ -139,6 +139,67 @@ class ApiClient {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> fetchPendingReleaseDetail(
+      String token, int pendingReleaseId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/artist/me/pending-releases/$pendingReleaseId'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load pending release (${response.statusCode})');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> addPendingReleaseComment(
+    String token, {
+    required int pendingReleaseId,
+    required String body,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/artist/me/pending-releases/$pendingReleaseId/comments'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode({'body': body}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to post comment (${response.statusCode})');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> selectPendingReleaseImage(
+    String token, {
+    required int pendingReleaseId,
+    required String imageId,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/artist/me/pending-releases/$pendingReleaseId/select-image'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode({'image_id': imageId}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to select image (${response.statusCode})');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updatePendingReleaseNotifications(
+    String token, {
+    required int pendingReleaseId,
+    required bool notificationsMuted,
+  }) async {
+    final response = await http.patch(
+      Uri.parse('$baseUrl/artist/me/pending-releases/$pendingReleaseId/notifications'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode({'notifications_muted': notificationsMuted}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+          'Failed to update pending release notifications (${response.statusCode})');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   Future<void> uploadRelease({
     required String token,
     required String title,

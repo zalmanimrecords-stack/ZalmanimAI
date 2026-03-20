@@ -1,4 +1,4 @@
-import 'package:file_picker/file_picker.dart';
+﻿import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -606,6 +606,456 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
     }
   }
 
+  String _pendingReleaseValue(dynamic value) {
+    if (value == null) return '';
+    if (value is bool) return value ? 'Yes' : 'No';
+    if (value is Iterable) {
+      return value.map((item) => item?.toString() ?? '').join(', ');
+    }
+      return value.toString().trim();
+  }
+
+  String _pendingReleaseLabel(String key) {
+    const labels = <String, String>{
+      'artist_name': 'Artist name',
+      'artist_email': 'Artist email',
+      'artist_brand': 'Artist brand',
+      'full_name': 'Full name',
+      'created_at': 'Submitted',
+      'updated_at': 'Updated',
+      'track_title': 'Track title',
+      'catalog_number': 'Catalog number',
+      'release_number': 'Release number',
+      'release_date': 'Release date',
+      'wav_download_url': 'WAV download link',
+      'musical_style': 'Musical style',
+      'genre': 'Genre',
+      'marketing_text': 'Marketing text',
+      'release_story': 'Story / meaning',
+      'notes': 'Notes',
+      'mastering_required': 'Mastering required',
+      'mastering_headroom_confirmed': '6 dB headroom confirmed',
+    };
+    return labels[key] ??
+        key
+            .split('_')
+            .where((part) => part.isNotEmpty)
+            .map((part) => part[0].toUpperCase() + part.substring(1))
+            .join(' ');
+  }
+
+  Map<String, dynamic> _pendingReleaseMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) {
+      return value.map((key, value) => MapEntry(key.toString(), value));
+    }
+    return <String, dynamic>{};
+  }
+
+  bool _isHttpUrl(String value) {
+    final uri = Uri.tryParse(value.trim());
+    return uri != null &&
+        (uri.scheme == 'http' || uri.scheme == 'https') &&
+        uri.host.isNotEmpty;
+  }
+
+  Widget _pendingReleaseField(
+    BuildContext context, {
+    required String label,
+    required String value,
+  }) {
+    final isLink = _isHttpUrl(value);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SelectableText(
+            '$label: $value',
+            style: const TextStyle(height: 1.35),
+          ),
+          if (isLink)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: OutlinedButton.icon(
+                onPressed: () => openUrlOrCopy(context, value),
+                icon: const Icon(Icons.open_in_new, size: 16),
+                label: const Text('Open link'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _pendingReleaseFieldsFromMap(
+    BuildContext context,
+    Map<String, dynamic> source, {
+    Set<String> excludedKeys = const <String>{},
+  }) {
+    final widgets = <Widget>[];
+    for (final entry in source.entries) {
+      if (excludedKeys.contains(entry.key)) continue;
+      final value = _pendingReleaseValue(entry.value);
+      if (value.isEmpty) continue;
+      widgets.add(
+        _pendingReleaseField(
+          context,
+          label: _pendingReleaseLabel(entry.key),
+          value: value,
+        ),
+      );
+    }
+    return widgets;
+  }
+
+  Future<void> _selectPendingReleaseImage(
+      Map<String, dynamic> item, String imageId) async {
+    try {
+      await widget.apiClient.selectPendingReleaseImage(
+        widget.token,
+        pendingReleaseId: item['id'] as int,
+        imageId: imageId,
+      );
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Image selection updated')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => error = e.toString().replaceFirst('Exception: ', ''));
+      }
+    }
+  }
+
+  Future<void> _togglePendingReleaseNotifications(
+      Map<String, dynamic> item, bool muted) async {
+    try {
+      await widget.apiClient.updatePendingReleaseNotifications(
+        widget.token,
+        pendingReleaseId: item['id'] as int,
+        notificationsMuted: muted,
+      );
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              muted
+                  ? 'Further release update emails muted'
+                  : 'Release update emails enabled',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => error = e.toString().replaceFirst('Exception: ', ''));
+      }
+    }
+  }
+
+  Future<void> _addPendingReleaseComment(Map<String, dynamic> item) async {
+    final controller = TextEditingController();
+    try {
+      final body = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Add message to release'),
+          content: TextField(
+            controller: controller,
+            maxLines: 5,
+            decoration: const InputDecoration(
+              labelText: 'Message',
+              border: OutlineInputBorder(),
+              alignLabelWithHint: true,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+              child: const Text('Post'),
+            ),
+          ],
+        ),
+      );
+      if (body == null || body.trim().isEmpty) return;
+      await widget.apiClient.addPendingReleaseComment(
+        widget.token,
+        pendingReleaseId: item['id'] as int,
+        body: body.trim(),
+      );
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Message posted to release')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => error = e.toString().replaceFirst('Exception: ', ''));
+      }
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  Future<void> _openPendingReleaseDialog(Map<String, dynamic> item) async {
+    if (!mounted) return;
+    var detail = item;
+    final pendingReleaseId = item['id'];
+    if (pendingReleaseId is int) {
+      try {
+        detail = await widget.apiClient.fetchPendingReleaseDetail(
+          widget.token,
+          pendingReleaseId,
+        );
+      } catch (_) {}
+    }
+    if (!context.mounted) return;
+    final pageContext = context;
+    final releaseData = _pendingReleaseMap(detail['release_data']);
+    final artistData = _pendingReleaseMap(detail['artist_data']);
+    final comments = detail['comments'] as List<dynamic>? ?? const [];
+    final imageOptions = detail['image_options'] as List<dynamic>? ?? const [];
+    final selectedImageId = (detail['selected_image_id'] ?? '').toString();
+    final notificationsMuted = detail['notifications_muted'] == true;
+    final overviewFields = <Widget>[
+      if (_pendingReleaseValue(detail['artist_name']).isNotEmpty)
+        _pendingReleaseField(
+          pageContext,
+          label: 'Artist name',
+          value: _pendingReleaseValue(detail['artist_name']),
+        ),
+      if (_pendingReleaseValue(detail['artist_email']).isNotEmpty)
+        _pendingReleaseField(
+          pageContext,
+          label: 'Artist email',
+          value: _pendingReleaseValue(detail['artist_email']),
+        ),
+      if (_pendingReleaseValue(detail['created_at']).isNotEmpty)
+        _pendingReleaseField(
+          pageContext,
+          label: 'Submitted',
+          value: _pendingReleaseValue(detail['created_at']),
+        ),
+    ];
+    final artistFields = _pendingReleaseFieldsFromMap(pageContext, artistData);
+    final releaseFields = _pendingReleaseFieldsFromMap(
+      pageContext,
+      releaseData,
+      excludedKeys: const <String>{
+        'image_options',
+        'selected_image_id',
+        'notifications_muted',
+      },
+    );
+    final imageCards = imageOptions.map((rawImage) {
+      final image = _pendingReleaseMap(rawImage);
+      if (image.isEmpty) return const SizedBox.shrink();
+      final imageId = (image['id'] ?? '').toString();
+      final imageUrl = (image['url'] ?? '').toString();
+      final isSelected = imageId == selectedImageId;
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (imageUrl.isNotEmpty)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(
+                  imageUrl,
+                  height: 180,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 120,
+                    color: Colors.grey.shade200,
+                    alignment: Alignment.center,
+                    child: const Text('Could not preview image'),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 8),
+            Text(
+              (image['filename'] ?? 'Image').toString(),
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            if (isSelected)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  'Current selection',
+                  style: TextStyle(
+                    color: Theme.of(pageContext).colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: isSelected
+                  ? null
+                  : () async {
+                      Navigator.of(pageContext).pop();
+                      await _selectPendingReleaseImage(detail, imageId);
+                    },
+              icon: const Icon(Icons.check_circle_outline),
+              label: Text(isSelected ? 'Selected' : 'Choose this image'),
+            ),
+          ],
+        ),
+      );
+    }).toList();
+    final commentCards = comments.map((rawComment) {
+      final comment = _pendingReleaseMap(rawComment);
+      if (comment.isEmpty) return const SizedBox.shrink();
+      final sender = (comment['sender'] ?? '').toString() == 'artist' ? 'You' : 'Label';
+      final createdAt = (comment['created_at'] ?? '').toString();
+      return Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              createdAt.isEmpty ? sender : '$sender - $createdAt',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[700],
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text((comment['body'] ?? '').toString()),
+          ],
+        ),
+      );
+    }).toList();
+
+    await showDialog<void>(
+      context: pageContext,
+      builder: (dialogContext) => AlertDialog(
+        title: Text((detail['release_title'] ?? 'Pending release').toString()),
+        content: SizedBox(
+          width: 560,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Status: ${(detail['status'] ?? 'pending').toString()}',
+                  style: TextStyle(color: Colors.grey[700]),
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Mute update emails'),
+                  subtitle: const Text(
+                    'Turn this on if you do not want more emails for changes on this release page.',
+                  ),
+                  value: notificationsMuted,
+                  onChanged: (value) async {
+                    Navigator.of(dialogContext).pop();
+                    await _togglePendingReleaseNotifications(detail, value);
+                  },
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Overview',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+                const SizedBox(height: 8),
+                ...overviewFields,
+                if (artistFields.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Artist details',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                  ),
+                  const SizedBox(height: 8),
+                  ...artistFields,
+                ],
+                const SizedBox(height: 8),
+                const Text(
+                  'Release images',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+                const SizedBox(height: 8),
+                if (imageCards.where((widget) => widget is! SizedBox).isEmpty)
+                  Text(
+                    'No image options yet. Once the label uploads artwork here, you will be able to choose your preferred image.',
+                    style: TextStyle(color: Colors.grey[600]),
+                  )
+                else
+                  ...imageCards,
+                if (releaseFields.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Release details',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                  ),
+                  const SizedBox(height: 8),
+                  ...releaseFields,
+                ],
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Release forum',
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        Navigator.of(dialogContext).pop();
+                        await _addPendingReleaseComment(detail);
+                      },
+                      icon: const Icon(Icons.forum_outlined),
+                      label: const Text('Add message'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (commentCards.where((widget) => widget is! SizedBox).isEmpty)
+                  Text(
+                    'No messages yet.',
+                    style: TextStyle(color: Colors.grey[600]),
+                  )
+                else
+                  ...commentCards,
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
@@ -613,8 +1063,146 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
     final horizontalPadding = compact ? 16.0 : 20.0;
     final releases = (dashboard?['releases'] as List<dynamic>? ?? const []);
     final tasks = (dashboard?['tasks'] as List<dynamic>? ?? const []);
+    final pendingReleases =
+        (dashboard?['pending_releases'] as List<dynamic>? ?? const []);
     final artistMap = dashboard?['artist'] as Map<String, dynamic>?;
     final artistName = artistMap?['name']?.toString() ?? 'Artist';
+
+    if (!loading && error == null) {
+      return Scaffold(
+        appBar: AppBar(
+          titleSpacing: compact ? 12 : null,
+          title: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Image.asset(
+                'assets/images/zalmanim_logo.png',
+                height: compact ? 26 : 32,
+                fit: BoxFit.contain,
+              ),
+              const SizedBox(height: 4),
+              AppVersionBadge(
+                tooltipPrefix: 'Artist portal version',
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                backgroundColor: Theme.of(context)
+                    .colorScheme
+                    .onPrimary
+                    .withValues(alpha: 0.10),
+                borderColor: Theme.of(context)
+                    .colorScheme
+                    .onPrimary
+                    .withValues(alpha: 0.16),
+                textStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onPrimary
+                          .withValues(alpha: 0.92),
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(ZalmanimIcons.logout),
+              tooltip: 'Sign out',
+              onPressed: () async {
+                await widget.onLogout?.call();
+              },
+            ),
+          ],
+        ),
+        body: DefaultTabController(
+          length: 4,
+          child: Column(
+            children: [
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  horizontalPadding,
+                  compact ? 12 : 16,
+                  horizontalPadding,
+                  0,
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: TabBar(
+                    isScrollable: true,
+                    indicator: BoxDecoration(
+                      color: primary,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    labelColor: Colors.white,
+                    unselectedLabelColor: primary,
+                    dividerColor: Colors.transparent,
+                    tabAlignment: TabAlignment.start,
+                    tabs: const [
+                      Tab(text: 'Overview'),
+                      Tab(text: 'Releases'),
+                      Tab(text: 'Messages'),
+                      Tab(text: 'Profile'),
+                    ],
+                  ),
+                ),
+              ),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    _tabListView(
+                      context,
+                      horizontalPadding: horizontalPadding,
+                      compact: compact,
+                      children: _overviewTabChildren(
+                        context,
+                        primary: primary,
+                        artistName: artistName,
+                        releases: releases,
+                        tasks: tasks,
+                        pendingReleases: pendingReleases,
+                      ),
+                    ),
+                    _tabListView(
+                      context,
+                      horizontalPadding: horizontalPadding,
+                      compact: compact,
+                      children: _releasesTabChildren(
+                        context,
+                        primary: primary,
+                        releases: releases,
+                        pendingReleases: pendingReleases,
+                      ),
+                    ),
+                    _tabListView(
+                      context,
+                      horizontalPadding: horizontalPadding,
+                      compact: compact,
+                      children: _messagesTabChildren(
+                        context,
+                        primary: primary,
+                      ),
+                    ),
+                    _tabListView(
+                      context,
+                      horizontalPadding: horizontalPadding,
+                      compact: compact,
+                      children: _profileTabChildren(
+                        context,
+                        primary: primary,
+                        artistMap: artistMap,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -764,7 +1352,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                                 return ListTile(
                                   leading: Icon(ZalmanimIcons.campaign, color: primary),
                                   title: Text(item['release_title']?.toString() ?? 'No release'),
-                                  subtitle: Text('${item['status']}${(item['message']?.toString().trim() ?? '').isNotEmpty ? ' Â· ${item['message']}' : ''}'),
+                                  subtitle: Text('${item['status']}${(item['message']?.toString().trim() ?? '').isNotEmpty ? ' Ã‚Â· ${item['message']}' : ''}'),
                                 );
                               }),
                             ],
@@ -788,7 +1376,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                               controller: messageToLabelController,
                               decoration: const InputDecoration(
                                 labelText: 'Your message',
-                                hintText: 'Ideas, requests, complaints and any other topic are welcome—you are invited to contact us.',
+                                hintText: 'Ideas, requests, complaints and any other topic are welcomeâ€”you are invited to contact us.',
                                 border: OutlineInputBorder(),
                                 alignLabelWithHint: true,
                               ),
@@ -827,7 +1415,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                               style: const TextStyle(fontSize: 14),
                             ),
                             subtitle: Text(
-                              hasReply ? 'Replied · $updated' : updated,
+                              hasReply ? 'Replied Â· $updated' : updated,
                               style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                             ),
                             onTap: () => _openInboxThread(id),
@@ -1142,6 +1730,38 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
                           );
                         }),
                       const SizedBox(height: 24),
+                      _sectionTitle(context, 'Pending releases', primary),
+                      if (pendingReleases.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            'No pending releases right now.',
+                            style: TextStyle(color: Colors.grey[600]),
+                          ),
+                        )
+                      else
+                        ...pendingReleases.map((r) {
+                          final item = r as Map<String, dynamic>;
+                          final comments =
+                              item['comments'] as List<dynamic>? ?? const [];
+                          final images = item['image_options'] as List<dynamic>? ??
+                              const [];
+                          return ListTile(
+                            leading: Icon(ZalmanimIcons.music, color: primary),
+                            title: Text(
+                              (item['release_title'] ?? 'Pending release')
+                                  .toString(),
+                            ),
+                            subtitle: Text(
+                              'Status: ${(item['status'] ?? 'pending').toString()} - ${comments.length} message(s) - ${images.length} image option(s)',
+                            ),
+                            trailing: OutlinedButton(
+                              onPressed: () => _openPendingReleaseDialog(item),
+                              child: const Text('Open release page'),
+                            ),
+                          );
+                        }),
+                      const SizedBox(height: 24),
                       _sectionTitle(context, 'My releases', primary),
                       if (releases.isEmpty)
                         Padding(
@@ -1189,6 +1809,770 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage> {
               fontWeight: FontWeight.bold,
               color: primary,
             ),
+      ),
+    );
+  }
+
+  Widget _tabListView(
+    BuildContext context, {
+    required List<Widget> children,
+    required double horizontalPadding,
+    required bool compact,
+  }) {
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(
+          horizontalPadding,
+          compact ? 16 : 20,
+          horizontalPadding,
+          28,
+        ),
+        children: children,
+      ),
+    );
+  }
+
+  List<Widget> _overviewTabChildren(
+    BuildContext context, {
+    required Color primary,
+    required String artistName,
+    required List<dynamic> releases,
+    required List<dynamic> tasks,
+    required List<dynamic> pendingReleases,
+  }) {
+    return [
+      _card(
+        context,
+        primary,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Welcome, $artistName',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: primary,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Manage your profile, releases, demos, media and messages from one clean dashboard.',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: Colors.grey[700], height: 1.4),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _summaryChip(context, primary, '${releases.length} releases'),
+                _summaryChip(context, primary, '${demos.length} demos'),
+                _summaryChip(
+                    context, primary, '${pendingReleases.length} pending'),
+                _summaryChip(context, primary, '${tasks.length} tasks'),
+                _summaryChip(
+                    context, primary, '${inboxThreads.length} messages'),
+              ],
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 20),
+      _sectionTitle(context, 'Pending releases', primary),
+      if (pendingReleases.isEmpty)
+        _emptyStateCard(
+          context,
+          primary,
+          'No pending releases right now.',
+        )
+      else
+        _card(
+          context,
+          primary,
+          Column(
+            children: [
+              for (final r in pendingReleases) ...[
+                _pendingReleaseTile(context, primary, r as Map<String, dynamic>),
+                if (r != pendingReleases.last) const Divider(height: 20),
+              ],
+            ],
+          ),
+        ),
+      const SizedBox(height: 24),
+      _sectionTitle(context, 'Tasks', primary),
+      if (tasks.isEmpty)
+        _emptyStateCard(context, primary, 'No tasks right now.')
+      else
+        _card(
+          context,
+          primary,
+          Column(
+            children: [
+              for (final t in tasks) ...[
+                _taskTile(context, primary, t as Map<String, dynamic>),
+                if (t != tasks.last) const Divider(height: 20),
+              ],
+            ],
+          ),
+        ),
+      const SizedBox(height: 24),
+      _sectionTitle(context, 'Campaign requests', primary),
+      _card(
+        context,
+        primary,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Ask the label to run a campaign for one of your releases.',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: requestingCampaign ? null : _requestCampaign,
+              child: Text(
+                requestingCampaign
+                    ? 'Sending...'
+                    : 'Request campaign for a release',
+              ),
+            ),
+            if (campaignRequests.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Text(
+                'My requests',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              for (final request in campaignRequests)
+                _campaignRequestTile(
+                  context,
+                  primary,
+                  request as Map<String, dynamic>,
+                ),
+            ],
+          ],
+        ),
+      ),
+      const SizedBox(height: 32),
+    ];
+  }
+
+  List<Widget> _releasesTabChildren(
+    BuildContext context, {
+    required Color primary,
+    required List<dynamic> releases,
+    required List<dynamic> pendingReleases,
+  }) {
+    return [
+      _sectionTitle(context, 'Send demo', primary),
+      _card(
+        context,
+        primary,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Your name and email are taken from your profile. Enter track name and musical style, then add a message or file.',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: demoTrackNameController,
+              decoration: const InputDecoration(
+                labelText: 'Track name',
+                hintText: 'Name of the track',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _selectedDemoGenre,
+              decoration: const InputDecoration(
+                labelText: 'Musical style',
+                border: OutlineInputBorder(),
+              ),
+              hint: const Text('Select style'),
+              items: [
+                for (final group in demoGenreGroups) ...[
+                  DropdownMenuItem<String>(
+                    enabled: false,
+                    value: '__$group',
+                    child: Text(
+                      group,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  for (final option
+                      in demoGenreOptions.where((item) => item.group == group))
+                    DropdownMenuItem<String>(
+                      value: option.value,
+                      child: Text(option.value),
+                    ),
+                ],
+              ],
+              onChanged: (value) => setState(() => _selectedDemoGenre = value),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: demoMessageController,
+              decoration: const InputDecoration(
+                labelText: 'Message (optional)',
+                hintText: 'Describe your demo...',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: submittingDemo ? null : _submitDemo,
+              child: Text(
+                submittingDemo
+                    ? 'Submitting...'
+                    : 'Pick file and submit demo',
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 24),
+      _sectionTitle(context, 'My demos', primary),
+      if (demos.isEmpty)
+        _emptyStateCard(context, primary, 'No demos yet.')
+      else
+        _card(
+          context,
+          primary,
+          Column(
+            children: [
+              for (final d in demos) ...[
+                _demoTile(context, primary, d as Map<String, dynamic>),
+                if (d != demos.last) const Divider(height: 20),
+              ],
+            ],
+          ),
+        ),
+      const SizedBox(height: 24),
+      _sectionTitle(context, 'Pending releases', primary),
+      if (pendingReleases.isEmpty)
+        _emptyStateCard(context, primary, 'No pending releases right now.')
+      else
+        _card(
+          context,
+          primary,
+          Column(
+            children: [
+              for (final r in pendingReleases) ...[
+                _pendingReleaseTile(context, primary, r as Map<String, dynamic>),
+                if (r != pendingReleases.last) const Divider(height: 20),
+              ],
+            ],
+          ),
+        ),
+      const SizedBox(height: 24),
+      _sectionTitle(context, 'My releases', primary),
+      if (releases.isEmpty)
+        _emptyStateCard(context, primary, 'No releases yet.')
+      else
+        _card(
+          context,
+          primary,
+          Column(
+            children: [
+              for (final r in releases) ...[
+                _releaseTile(context, primary, r as Map<String, dynamic>),
+                if (r != releases.last) const Divider(height: 20),
+              ],
+            ],
+          ),
+        ),
+      const SizedBox(height: 32),
+    ];
+  }
+
+  List<Widget> _messagesTabChildren(
+    BuildContext context, {
+    required Color primary,
+  }) {
+    return [
+      _sectionTitle(context, 'Message the label', primary),
+      _card(
+        context,
+        primary,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Send a message to the label. You will see replies here and can continue the conversation.',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: messageToLabelController,
+              decoration: const InputDecoration(
+                labelText: 'Your message',
+                hintText:
+                    'Ideas, requests, complaints and any other topic are welcome. You are invited to contact us.',
+                border: OutlineInputBorder(),
+                alignLabelWithHint: true,
+              ),
+              maxLines: 4,
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: sendingMessageToLabel ? null : _sendMessageToLabel,
+              child: sendingMessageToLabel
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('Send message'),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 24),
+      _sectionTitle(context, 'Your messages', primary),
+      if (inboxThreads.isEmpty)
+        _emptyStateCard(context, primary, 'No messages yet.')
+      else
+        _card(
+          context,
+          primary,
+          Column(
+            children: [
+              for (final t in inboxThreads) ...[
+                _inboxThreadTile(context, primary, t as Map<String, dynamic>),
+                if (t != inboxThreads.last) const Divider(height: 20),
+              ],
+            ],
+          ),
+        ),
+      const SizedBox(height: 32),
+    ];
+  }
+
+  List<Widget> _profileTabChildren(
+    BuildContext context, {
+    required Color primary,
+    required Map<String, dynamic>? artistMap,
+  }) {
+    return [
+      _sectionTitle(context, 'My profile', primary),
+      _card(
+        context,
+        primary,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: profileNameController,
+              decoration: const InputDecoration(
+                labelText: 'Display name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: profileFullNameController,
+              decoration: const InputDecoration(
+                labelText: 'Full name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: profileWebsiteController,
+              decoration: const InputDecoration(
+                labelText: 'Website',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.url,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: profileNotesController,
+              decoration: const InputDecoration(
+                labelText: 'Notes',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Social & links (for your Linktree page)',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            ..._socialKeys.map(
+              (e) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: TextField(
+                  controller: socialControllers[e.key],
+                  decoration: InputDecoration(
+                    labelText: e.value,
+                    border: const OutlineInputBorder(),
+                    hintText: 'https://...',
+                  ),
+                  keyboardType: TextInputType.url,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: savingProfile ? null : _saveProfile,
+              child: Text(savingProfile ? 'Saving...' : 'Save profile'),
+            ),
+          ],
+        ),
+      ),
+      if (artistMap != null && artistMap['id'] != null) ...[
+        const SizedBox(height: 24),
+        _sectionTitle(context, 'Linktree', primary),
+        _card(
+          context,
+          primary,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'My Linktree page',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Builder(
+                builder: (context) {
+                  final link = _linktreeUrlFor(artistMap['id']);
+                  return InkWell(
+                    onTap: () => openUrlOrCopy(context, link),
+                    child: _isCompactLayout(context)
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SelectableText(
+                                link,
+                                style: TextStyle(
+                                  color: primary,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Icon(
+                                Icons.open_in_new,
+                                size: 18,
+                                color: primary,
+                              ),
+                            ],
+                          )
+                        : Row(
+                            children: [
+                              Expanded(
+                                child: SelectableText(
+                                  link,
+                                  style: TextStyle(
+                                    color: primary,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                ),
+                              ),
+                              Icon(
+                                Icons.open_in_new,
+                                size: 18,
+                                color: primary,
+                              ),
+                            ],
+                          ),
+                  );
+                },
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Share this link for a styled page with all your links.',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Profile image & logo (shown on your Linktree page)',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              _LinktreeImageRow(
+                label: 'Profile image',
+                currentMediaId: _profileImageMediaId,
+                mediaList: mediaList,
+                onSet: _setProfileImageForLinktree,
+              ),
+              const SizedBox(height: 8),
+              _LinktreeImageRow(
+                label: 'Logo',
+                currentMediaId: _logoMediaId,
+                mediaList: mediaList,
+                onSet: _setLogoForLinktree,
+              ),
+            ],
+          ),
+        ),
+      ],
+      const SizedBox(height: 24),
+      _sectionTitle(context, 'My media', primary),
+      _card(
+        context,
+        primary,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Your media folder (up to 50 MB total). Used: ${(mediaUsedBytes / (1024 * 1024)).toStringAsFixed(1)} / ${(mediaQuotaBytes / (1024 * 1024)).toStringAsFixed(0)} MB.',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              icon: uploadingMedia
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(ZalmanimIcons.upload),
+              label: Text(
+                uploadingMedia ? 'Uploading...' : 'Upload image or file',
+              ),
+              onPressed: uploadingMedia || mediaUsedBytes >= mediaQuotaBytes
+                  ? null
+                  : _uploadMedia,
+            ),
+            if (mediaUsedBytes >= mediaQuotaBytes)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Quota reached. Delete files to free space.',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+      if (mediaList.isEmpty)
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: _emptyStateCard(
+            context,
+            primary,
+            'No media uploaded yet.',
+          ),
+        )
+      else ...[
+        const SizedBox(height: 12),
+        _card(
+          context,
+          primary,
+          Column(
+            children: [
+              for (final m in mediaList) ...[
+                _mediaTile(context, primary, m as Map<String, dynamic>),
+                if (m != mediaList.last) const Divider(height: 20),
+              ],
+            ],
+          ),
+        ),
+      ],
+      const SizedBox(height: 24),
+      _sectionTitle(context, 'Security', primary),
+      _card(
+        context,
+        primary,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Change portal password'),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: changingPassword ? null : _changePassword,
+              child: Text(changingPassword ? 'Updating...' : 'Change password'),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 32),
+    ];
+  }
+
+  Widget _emptyStateCard(BuildContext context, Color primary, String text) {
+    return _card(
+      context,
+      primary,
+      Text(
+        text,
+        style: TextStyle(color: Colors.grey[600]),
+      ),
+    );
+  }
+
+  Widget _campaignRequestTile(
+    BuildContext context,
+    Color primary,
+    Map<String, dynamic> item,
+  ) {
+    final message = (item['message']?.toString().trim() ?? '');
+    final subtitle = message.isEmpty
+        ? item['status']?.toString() ?? ''
+        : '${item['status']} - $message';
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(ZalmanimIcons.campaign, color: primary),
+      title: Text(item['release_title']?.toString() ?? 'No release'),
+      subtitle: Text(subtitle),
+    );
+  }
+
+  Widget _inboxThreadTile(
+    BuildContext context,
+    Color primary,
+    Map<String, dynamic> thread,
+  ) {
+    final id = thread['id'] as int? ?? 0;
+    final preview = (thread['last_message_preview'] ?? '').toString();
+    final updated =
+        (thread['last_message_at'] ?? thread['updated_at'] ?? '').toString();
+    final hasReply = thread['has_label_reply'] == true;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        hasReply ? Icons.mark_email_read : Icons.mail_outline,
+        color: primary,
+      ),
+      title: Text(
+        preview.isEmpty
+            ? 'No subject'
+            : preview.length > 60
+                ? '${preview.substring(0, 60)}...'
+                : preview,
+        style: const TextStyle(fontSize: 14),
+      ),
+      subtitle: Text(
+        hasReply ? 'Replied - $updated' : updated,
+        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+      ),
+      onTap: () => _openInboxThread(id),
+    );
+  }
+
+  Widget _demoTile(
+    BuildContext context,
+    Color primary,
+    Map<String, dynamic> item,
+  ) {
+    final msg = item['message']?.toString().trim() ?? '';
+    final title = msg.isEmpty
+        ? 'Demo #${item['id']}'
+        : (msg.length > 50 ? '${msg.substring(0, 50)}...' : msg);
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(ZalmanimIcons.send, color: primary),
+      title: Text(title),
+      subtitle: Text('Status: ${item['status']}'),
+    );
+  }
+
+  Widget _pendingReleaseTile(
+    BuildContext context,
+    Color primary,
+    Map<String, dynamic> item,
+  ) {
+    final comments = item['comments'] as List<dynamic>? ?? const [];
+    final images = item['image_options'] as List<dynamic>? ?? const [];
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(ZalmanimIcons.music, color: primary),
+      title: Text((item['release_title'] ?? 'Pending release').toString()),
+      subtitle: Text(
+        'Status: ${(item['status'] ?? 'pending').toString()} - ${comments.length} message(s) - ${images.length} image option(s)',
+      ),
+      trailing: OutlinedButton(
+        onPressed: () => _openPendingReleaseDialog(item),
+        child: const Text('Open release page'),
+      ),
+    );
+  }
+
+  Widget _releaseTile(
+    BuildContext context,
+    Color primary,
+    Map<String, dynamic> item,
+  ) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(ZalmanimIcons.music, color: primary),
+      title: Text(item['title'] as String),
+      subtitle: Text('Status: ${item['status']}'),
+    );
+  }
+
+  Widget _taskTile(
+    BuildContext context,
+    Color primary,
+    Map<String, dynamic> item,
+  ) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(ZalmanimIcons.taskAlt, color: primary),
+      title: Text(item['title'] as String),
+      subtitle: Text('${item['status']} | ${item['details']}'),
+    );
+  }
+
+  Widget _mediaTile(
+    BuildContext context,
+    Color primary,
+    Map<String, dynamic> item,
+  ) {
+    final id = item['id'] as int;
+    final filename = item['filename'] as String? ?? 'file';
+    final size = item['size_bytes'] as int? ?? 0;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(ZalmanimIcons.folder, color: primary),
+      title: Text(filename),
+      subtitle: Text('${(size / 1024).toStringAsFixed(1)} KB'),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(ZalmanimIcons.download),
+            tooltip: 'Download',
+            onPressed: () => _downloadMedia(id, filename),
+          ),
+          IconButton(
+            icon: const Icon(ZalmanimIcons.delete),
+            tooltip: 'Delete',
+            onPressed: () => _deleteMedia(id),
+          ),
+        ],
       ),
     );
   }
@@ -1321,3 +2705,4 @@ class _LinktreeImageRow extends StatelessWidget {
     );
   }
 }
+

@@ -47,6 +47,7 @@ from app.models.models import (
     MailingSubscriber,
     PasswordResetToken,
     PendingRelease,
+    PendingReleaseComment,
     PendingReleaseToken,
     Release,
     release_artists_table,
@@ -114,9 +115,15 @@ from app.schemas.schemas import (
     LoginRequest,
     PendingReleaseFormInfo,
     PendingReleaseActionResponse,
+    PendingReleaseCommentCreate,
+    PendingReleaseCommentOut,
+    PendingReleaseDetailOut,
+    PendingReleaseImageOptionOut,
+    PendingReleaseNotificationSettingsUpdate,
     PendingReleaseOut,
     PendingReleaseReferenceUploadOut,
     PendingReleaseReminderResponse,
+    PendingReleaseSelectImageRequest,
     PendingReleaseSubmit,
     ReleaseOut,
     ResetPasswordRequest,
@@ -1238,6 +1245,114 @@ def _serialize_pending_release(
         updated_at=pr.updated_at,
         last_reminder_sent_at=last_reminder_sent_at,
     )
+
+
+def _pending_release_image_options(release_data: dict) -> list[PendingReleaseImageOptionOut]:
+    raw_items = release_data.get("image_options")
+    if not isinstance(raw_items, list):
+        return []
+    out: list[PendingReleaseImageOptionOut] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        image_id = (item.get("id") or "").strip() if isinstance(item.get("id"), str) else ""
+        url = (item.get("url") or "").strip() if isinstance(item.get("url"), str) else ""
+        if not image_id or not url:
+            continue
+        created_at = None
+        raw_created_at = item.get("created_at")
+        if isinstance(raw_created_at, str):
+            try:
+                created_at = (
+                    datetime.fromisoformat(raw_created_at.replace("Z", "+00:00"))
+                    if raw_created_at
+                    else None
+                )
+            except ValueError:
+                created_at = None
+        out.append(
+            PendingReleaseImageOptionOut(
+                id=image_id,
+                url=url,
+                filename=(item.get("filename") or "").strip() or None,
+                created_at=created_at,
+            )
+        )
+    return out
+
+
+def _pending_release_selected_image_id(release_data: dict) -> str | None:
+    raw = release_data.get("selected_image_id")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return None
+
+
+def _pending_release_notifications_muted(release_data: dict) -> bool:
+    return release_data.get("notifications_muted") is True
+
+
+def _pending_release_comment_out(comment: PendingReleaseComment) -> PendingReleaseCommentOut:
+    return PendingReleaseCommentOut.model_validate(comment)
+
+
+def _serialize_pending_release_detail(
+    pr: PendingRelease,
+    *,
+    last_reminder_sent_at: datetime | None = None,
+) -> PendingReleaseDetailOut:
+    base = _serialize_pending_release(pr, last_reminder_sent_at=last_reminder_sent_at)
+    release_data = _safe_json_dict(pr.release_data_json)
+    comments = [_pending_release_comment_out(item) for item in (pr.comments or [])]
+    return PendingReleaseDetailOut(
+        **base.model_dump(),
+        image_options=_pending_release_image_options(release_data),
+        selected_image_id=_pending_release_selected_image_id(release_data),
+        notifications_muted=_pending_release_notifications_muted(release_data),
+        comments=comments,
+    )
+
+
+def _save_pending_release_data(pr: PendingRelease, release_data: dict) -> None:
+    pr.release_data_json = json.dumps(release_data if isinstance(release_data, dict) else {})
+
+
+def _notify_pending_release_artist(
+    pr: PendingRelease,
+    *,
+    subject: str,
+    body_lines: list[str],
+) -> None:
+    release_data = _safe_json_dict(pr.release_data_json)
+    if _pending_release_notifications_muted(release_data):
+        return
+    to_email = (pr.artist_email or "").strip().lower()
+    if not to_email or not is_email_configured():
+        return
+    portal_url = (_artist_portal_url()).rstrip("/")
+    body = "\n".join(
+        [
+            *body_lines,
+            "",
+            f"Artist portal: {portal_url}",
+            "",
+            "You can mute future pending release update emails from the release page in the artist portal.",
+            "",
+            "Best regards,",
+            "Zalmanim",
+        ]
+    )
+    success, message = send_email_service(
+        to_email=to_email,
+        subject=subject,
+        body_text=body,
+    )
+    if not success:
+        logging.getLogger(__name__).warning(
+            "Failed to send pending release update email to %s: %s",
+            to_email,
+            message,
+        )
 
 
 def _resolve_pending_release_from_token(db: Session, row: PendingReleaseToken) -> PendingRelease | None:
@@ -2977,11 +3092,19 @@ def artist_dashboard(
         .order_by(desc(AutomationTask.created_at))
         .all()
     )
+    pending_releases = (
+        db.query(PendingRelease)
+        .options(joinedload(PendingRelease.comments))
+        .filter(PendingRelease.artist_id == artist.id, PendingRelease.status != "archived")
+        .order_by(desc(PendingRelease.created_at))
+        .all()
+    )
 
     return ArtistDashboard(
         artist=ArtistOut.from_artist(artist),
         releases=[ReleaseOut.from_release(item) for item in releases],
         tasks=[TaskOut.model_validate(item) for item in tasks],
+        pending_releases=[_serialize_pending_release_detail(item) for item in pending_releases],
     )
 
 
@@ -3858,6 +3981,25 @@ def public_pending_release_reference_image_file(filename: str) -> FileResponse:
     return FileResponse(path, media_type=media_types.get(os.path.splitext(filename)[1].lower(), "application/octet-stream"))
 
 
+@router.get(
+    "/public/pending-release-label-image/{filename}",
+    response_class=FileResponse,
+    name="public_pending_release_label_image_file",
+)
+def public_pending_release_label_image_file(filename: str) -> FileResponse:
+    path = os.path.join(settings.upload_dir, "pending_release_label_images", filename)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+    media_types = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+    }
+    return FileResponse(path, media_type=media_types.get(os.path.splitext(filename)[1].lower(), "application/octet-stream"))
+
+
 @router.get("/admin/inbox", response_model=list[LabelInboxThreadOut])
 def admin_list_inbox(
     artist_id: int | None = Query(None, description="Filter by artist id"),
@@ -4017,14 +4159,127 @@ def admin_delete_inbox_thread(
     return {"ok": True}
 
 
-@router.get("/admin/pending-releases", response_model=list[PendingReleaseOut])
+@router.get("/artist/me/pending-releases/{pending_release_id}", response_model=PendingReleaseDetailOut)
+def artist_get_pending_release_detail(
+    pending_release_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> PendingReleaseDetailOut:
+    require_artist(user)
+    pending_release = (
+        db.query(PendingRelease)
+        .options(joinedload(PendingRelease.comments))
+        .filter(
+            PendingRelease.id == pending_release_id,
+            PendingRelease.artist_id == user.artist_id,
+        )
+        .first()
+    )
+    if not pending_release:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pending release not found")
+    return _serialize_pending_release_detail(pending_release)
+
+
+@router.post("/artist/me/pending-releases/{pending_release_id}/comments", response_model=PendingReleaseDetailOut)
+def artist_add_pending_release_comment(
+    pending_release_id: int,
+    payload: PendingReleaseCommentCreate,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> PendingReleaseDetailOut:
+    require_artist(user)
+    pending_release = (
+        db.query(PendingRelease)
+        .options(joinedload(PendingRelease.comments))
+        .filter(
+            PendingRelease.id == pending_release_id,
+            PendingRelease.artist_id == user.artist_id,
+        )
+        .first()
+    )
+    if not pending_release:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pending release not found")
+    body = (payload.body or "").strip()
+    if not body:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Comment body is required")
+    db.add(PendingReleaseComment(pending_release_id=pending_release.id, sender="artist", body=body))
+    db.commit()
+    pending_release = (
+        db.query(PendingRelease)
+        .options(joinedload(PendingRelease.comments))
+        .filter(PendingRelease.id == pending_release_id)
+        .first()
+    )
+    if not pending_release:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Pending release not found after comment")
+    return _serialize_pending_release_detail(pending_release)
+
+
+@router.post("/artist/me/pending-releases/{pending_release_id}/select-image", response_model=PendingReleaseDetailOut)
+def artist_select_pending_release_image(
+    pending_release_id: int,
+    payload: PendingReleaseSelectImageRequest,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> PendingReleaseDetailOut:
+    require_artist(user)
+    pending_release = (
+        db.query(PendingRelease)
+        .options(joinedload(PendingRelease.comments))
+        .filter(
+            PendingRelease.id == pending_release_id,
+            PendingRelease.artist_id == user.artist_id,
+        )
+        .first()
+    )
+    if not pending_release:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pending release not found")
+    release_data = _safe_json_dict(pending_release.release_data_json)
+    image_ids = {item.id for item in _pending_release_image_options(release_data)}
+    if payload.image_id not in image_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image option not found")
+    release_data["selected_image_id"] = payload.image_id
+    _save_pending_release_data(pending_release, release_data)
+    db.commit()
+    db.refresh(pending_release)
+    return _serialize_pending_release_detail(pending_release)
+
+
+@router.patch("/artist/me/pending-releases/{pending_release_id}/notifications", response_model=PendingReleaseDetailOut)
+def artist_update_pending_release_notification_settings(
+    pending_release_id: int,
+    payload: PendingReleaseNotificationSettingsUpdate,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> PendingReleaseDetailOut:
+    require_artist(user)
+    pending_release = (
+        db.query(PendingRelease)
+        .options(joinedload(PendingRelease.comments))
+        .filter(
+            PendingRelease.id == pending_release_id,
+            PendingRelease.artist_id == user.artist_id,
+        )
+        .first()
+    )
+    if not pending_release:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pending release not found")
+    release_data = _safe_json_dict(pending_release.release_data_json)
+    release_data["notifications_muted"] = payload.notifications_muted
+    _save_pending_release_data(pending_release, release_data)
+    db.commit()
+    db.refresh(pending_release)
+    return _serialize_pending_release_detail(pending_release)
+
+
+@router.get("/admin/pending-releases", response_model=list[PendingReleaseDetailOut])
 def admin_list_pending_releases(
     status_filter: str | None = Query(None, description="pending | processed | archived"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_lm_user),
-) -> list[PendingReleaseOut]:
+ ) -> list[PendingReleaseDetailOut]:
     """List pending-for-release items (tracks with full details submitted, waiting for treatment)."""
     require_admin(user)
     # Backfill: ensure every approved demo has a PendingRelease (fixes demos approved before we created PendingRelease on approve).
@@ -4042,7 +4297,7 @@ def admin_list_pending_releases(
         _create_pending_release_for_demo(db, item)
     if approved_without_pr:
         db.commit()
-    q = db.query(PendingRelease)
+    q = db.query(PendingRelease).options(joinedload(PendingRelease.comments))
     if status_filter in ("pending", "processed", "archived"):
         q = q.filter(PendingRelease.status == status_filter)
     else:
@@ -4058,8 +4313,124 @@ def admin_list_pending_releases(
     last_reminder_map = {artist_id: created_at for artist_id, created_at in reminder_rows}
     out = []
     for pr in items:
-        out.append(_serialize_pending_release(pr, last_reminder_sent_at=last_reminder_map.get(pr.artist_id)))
+        out.append(_serialize_pending_release_detail(pr, last_reminder_sent_at=last_reminder_map.get(pr.artist_id)))
     return out
+
+
+@router.get("/admin/pending-releases/{pending_release_id}", response_model=PendingReleaseDetailOut)
+def admin_get_pending_release_detail(
+    pending_release_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> PendingReleaseDetailOut:
+    require_admin(user)
+    pending_release = (
+        db.query(PendingRelease)
+        .options(joinedload(PendingRelease.comments))
+        .filter(PendingRelease.id == pending_release_id)
+        .first()
+    )
+    if not pending_release:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pending release not found")
+    return _serialize_pending_release_detail(pending_release)
+
+
+@router.post("/admin/pending-releases/{pending_release_id}/comments", response_model=PendingReleaseDetailOut)
+def admin_add_pending_release_comment(
+    pending_release_id: int,
+    payload: PendingReleaseCommentCreate,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> PendingReleaseDetailOut:
+    require_admin(user)
+    pending_release = (
+        db.query(PendingRelease)
+        .options(joinedload(PendingRelease.comments))
+        .filter(PendingRelease.id == pending_release_id)
+        .first()
+    )
+    if not pending_release:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pending release not found")
+    body = (payload.body or "").strip()
+    if not body:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Comment body is required")
+    db.add(PendingReleaseComment(pending_release_id=pending_release.id, sender="label", body=body))
+    db.commit()
+    db.refresh(pending_release)
+    _notify_pending_release_artist(
+        pending_release,
+        subject=f'Update on your release "{pending_release.release_title}"',
+        body_lines=[
+            "The label added a new update to your pending release page.",
+            "",
+            body,
+        ],
+    )
+    pending_release = (
+        db.query(PendingRelease)
+        .options(joinedload(PendingRelease.comments))
+        .filter(PendingRelease.id == pending_release_id)
+        .first()
+    )
+    if not pending_release:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Pending release not found after comment")
+    return _serialize_pending_release_detail(pending_release)
+
+
+@router.post("/admin/pending-releases/{pending_release_id}/images", response_model=PendingReleaseDetailOut)
+def admin_upload_pending_release_image(
+    request: Request,
+    pending_release_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> PendingReleaseDetailOut:
+    require_admin(user)
+    pending_release = (
+        db.query(PendingRelease)
+        .options(joinedload(PendingRelease.comments))
+        .filter(PendingRelease.id == pending_release_id)
+        .first()
+    )
+    if not pending_release:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pending release not found")
+    filename = (file.filename or "").strip()
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in _ALLOWED_PENDING_RELEASE_IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only image files are allowed.")
+    image_dir = os.path.join(settings.upload_dir, "pending_release_label_images")
+    os.makedirs(image_dir, exist_ok=True)
+    stored_name = f"{uuid.uuid4().hex}{ext}"
+    path = os.path.join(image_dir, stored_name)
+    with open(path, "wb") as out:
+        out.write(file.file.read())
+    release_data = _safe_json_dict(pending_release.release_data_json)
+    image_options = release_data.get("image_options")
+    if not isinstance(image_options, list):
+        image_options = []
+    image_options.append(
+        {
+            "id": uuid.uuid4().hex,
+            "url": str(request.url_for("public_pending_release_label_image_file", filename=stored_name)),
+            "filename": filename or stored_name,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    release_data["image_options"] = image_options
+    if not release_data.get("selected_image_id") and image_options:
+        release_data["selected_image_id"] = image_options[0]["id"]
+    _save_pending_release_data(pending_release, release_data)
+    db.commit()
+    db.refresh(pending_release)
+    _notify_pending_release_artist(
+        pending_release,
+        subject=f'New image option for "{pending_release.release_title}"',
+        body_lines=[
+            "The label uploaded a new image option for your release.",
+            "Open the pending release page in the artist portal to review and choose the image you want.",
+        ],
+    )
+    return _serialize_pending_release_detail(pending_release)
 
 
 @router.post("/admin/pending-releases/{pending_release_id}/archive", response_model=PendingReleaseActionResponse)

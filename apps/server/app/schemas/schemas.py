@@ -418,6 +418,7 @@ class ArtistDashboard(BaseModel):
     artist: ArtistOut
     releases: list[ReleaseOut]
     tasks: list[TaskOut]
+    pending_releases: list["PendingReleaseDetailOut"] = []
 
 
 class SocialProviderOut(BaseModel):
@@ -738,6 +739,42 @@ class PendingReleaseOut(BaseModel):
     created_at: datetime
     updated_at: datetime | None
     last_reminder_sent_at: datetime | None = None
+
+
+class PendingReleaseImageOptionOut(BaseModel):
+    id: str
+    url: str
+    filename: str | None = None
+    created_at: datetime | None = None
+
+
+class PendingReleaseCommentOut(BaseModel):
+    id: int
+    sender: str
+    body: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PendingReleaseDetailOut(PendingReleaseOut):
+    image_options: list[PendingReleaseImageOptionOut] = []
+    selected_image_id: str | None = None
+    notifications_muted: bool = False
+    comments: list[PendingReleaseCommentOut] = []
+
+
+class PendingReleaseCommentCreate(BaseModel):
+    body: str
+
+
+class PendingReleaseSelectImageRequest(BaseModel):
+    image_id: str
+
+
+class PendingReleaseNotificationSettingsUpdate(BaseModel):
+    notifications_muted: bool
 
 
 class PendingReleaseActionResponse(BaseModel):

@@ -1,3 +1,4 @@
+﻿import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -50,6 +51,13 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
     );
   }
 
+  String? _statusFilterParam() =>
+      _selectedStatusFilter == 'active' ? null : _selectedStatusFilter;
+
+  Future<void> _reloadPendingReleases() => widget.delegate.loadPendingReleases(
+        statusFilter: _statusFilterParam(),
+      );
+
   Future<void> _showRemovePendingReleaseDialog(
       Map<String, dynamic> item) async {
     final pendingReleaseId = item['id'];
@@ -89,18 +97,89 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
       await widget.delegate.archivePendingRelease(
         pendingReleaseId,
         releaseTitle,
-        statusFilter: _selectedStatusFilter == 'active'
-            ? null
-            : _selectedStatusFilter,
+        statusFilter: _statusFilterParam(),
       );
     } else if (action == _PendingReleaseRemovalAction.delete) {
       await widget.delegate.deletePendingRelease(
         pendingReleaseId,
         releaseTitle,
-        statusFilter: _selectedStatusFilter == 'active'
-            ? null
-            : _selectedStatusFilter,
+        statusFilter: _statusFilterParam(),
       );
+    }
+  }
+
+  Future<void> _uploadPendingReleaseImage(Map<String, dynamic> item) async {
+    final pendingReleaseId = item['id'];
+    if (pendingReleaseId is! int) return;
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    final file = (result == null || result.files.isEmpty) ? null : result.files.first;
+    if (file == null || file.bytes == null || file.bytes!.isEmpty) return;
+    try {
+      await widget.delegate.apiClient.uploadPendingReleaseImage(
+        token: widget.delegate.token,
+        pendingReleaseId: pendingReleaseId,
+        fileBytes: file.bytes!,
+        filename: file.name.isEmpty ? 'release-image.png' : file.name,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Image uploaded to pending release')),
+      );
+      await _reloadPendingReleases();
+    } catch (e) {
+      widget.delegate.showErrorSnackBar(e.toString());
+    }
+  }
+
+  Future<void> _addPendingReleaseComment(Map<String, dynamic> item) async {
+    final pendingReleaseId = item['id'];
+    if (pendingReleaseId is! int) return;
+    final controller = TextEditingController();
+    try {
+      final body = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Add release update'),
+          content: TextField(
+            controller: controller,
+            maxLines: 5,
+            decoration: const InputDecoration(
+              labelText: 'Update',
+              border: OutlineInputBorder(),
+              alignLabelWithHint: true,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(ctx).pop(controller.text.trim()),
+              child: const Text('Post'),
+            ),
+          ],
+        ),
+      );
+      if (body == null || body.trim().isEmpty) return;
+      await widget.delegate.apiClient.addPendingReleaseComment(
+        token: widget.delegate.token,
+        pendingReleaseId: pendingReleaseId,
+        body: body.trim(),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Release update posted')),
+      );
+      await _reloadPendingReleases();
+    } catch (e) {
+      widget.delegate.showErrorSnackBar(e.toString());
+    } finally {
+      controller.dispose();
     }
   }
 
@@ -305,9 +384,10 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
     final releaseData = _asMap(item['release_data']);
     final previews = <_ImagePreview>[];
     final seen = <String>{};
+    final selectedImageId = _formatValue(item['selected_image_id']);
 
     void maybeAdd(String label, String url,
-        {String? fileName, bool allowAnyUrl = false}) {
+        {String? fileName, bool allowAnyUrl = false, bool isSelected = false}) {
       final normalized = url.trim();
       final canPreview =
           allowAnyUrl ? _looksLikeUrl(normalized) : _looksLikeImageUrl(normalized);
@@ -318,8 +398,26 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
       previews.add(_ImagePreview(
         label: label,
         url: normalized,
-        subtitle: (fileName ?? '').trim(),
+        subtitle: [
+          (fileName ?? '').trim(),
+          if (isSelected) 'Artist selected',
+        ].where((part) => part.isNotEmpty).join(' - '),
       ));
+    }
+
+    final rawImageOptions = item['image_options'];
+    if (rawImageOptions is List) {
+      for (final rawItem in rawImageOptions) {
+        if (rawItem is! Map) continue;
+        final imageId = _formatValue(rawItem['id']);
+        maybeAdd(
+          imageId == selectedImageId ? 'Selected image' : 'Image option',
+          _formatValue(rawItem['url']),
+          fileName: _formatValue(rawItem['filename']),
+          allowAnyUrl: true,
+          isSelected: imageId == selectedImageId,
+        );
+      }
     }
 
     maybeAdd(
@@ -436,6 +534,13 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
                       final releaseData = _asMap(item['release_data']);
                       final reminderBusy = item['id'] is int && _sendingReminderIds.contains(item['id']);
                       final imagePreviews = _imagePreviews(item);
+                      final comments = item['comments'] is List
+                          ? (item['comments'] as List)
+                              .whereType<Map>()
+                              .map((entry) => entry.map((key, value) =>
+                                  MapEntry(key.toString(), value)))
+                              .toList()
+                          : const <Map<String, dynamic>>[];
                       final overviewRows = _overviewRows(item, fromDemo: fromDemo);
                       final artistRows = _artistRows(artistData);
                       final releaseRows = _releaseRows(releaseData);
@@ -509,14 +614,18 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
                               ],
                             ),
                             const SizedBox(height: 16),
-                            if (imagePreviews.isNotEmpty) ...[
-                              _ImageGalleryCard(
-                                title: 'Reference image',
-                                previews: imagePreviews,
-                                onOpenLink: _openExternalLink,
+                            _ImageGalleryCard(
+                              title: 'Release images',
+                              previews: imagePreviews,
+                              onOpenLink: _openExternalLink,
+                              action: OutlinedButton.icon(
+                                onPressed: () =>
+                                    _uploadPendingReleaseImage(item),
+                                icon: const Icon(Icons.upload_outlined),
+                                label: const Text('Upload image'),
                               ),
-                              const SizedBox(height: 12),
-                            ],
+                            ),
+                            const SizedBox(height: 12),
                             _DetailsTableCard(title: 'Overview', rows: overviewRows, onOpenLink: _openExternalLink),
                             if (artistRows.isNotEmpty) ...[
                               const SizedBox(height: 12),
@@ -534,6 +643,11 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
                                 onOpenLink: _openExternalLink,
                               ),
                             ],
+                            const SizedBox(height: 12),
+                            _CommentFeedCard(
+                              comments: comments,
+                              onAddComment: () => _addPendingReleaseComment(item),
+                            ),
                             const SizedBox(height: 12),
                             Row(
                               children: [
@@ -723,11 +837,13 @@ class _ImageGalleryCard extends StatelessWidget {
     required this.title,
     required this.previews,
     required this.onOpenLink,
+    this.action,
   });
 
   final String title;
   final List<_ImagePreview> previews;
   final Future<void> Function(String value) onOpenLink;
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
@@ -747,27 +863,149 @@ class _ImageGalleryCard extends StatelessWidget {
               color: scheme.secondary.withValues(alpha: 0.08),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(17)),
             ),
-            child: Text(
-              title,
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: scheme.secondary,
-              ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: scheme.secondary,
+                    ),
+                  ),
+                ),
+                if (action != null) action!,
+              ],
             ),
           ),
           Padding(
             padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                for (int i = 0; i < previews.length; i++) ...[
-                  if (i > 0) const SizedBox(height: 16),
-                  _ImagePreviewTile(
-                    preview: previews[i],
-                    onOpenLink: onOpenLink,
+            child: previews.isEmpty
+                ? Text(
+                    'No release images yet. Upload one or more options so the artist can choose the best fit.',
+                    style: TextStyle(color: scheme.onSurfaceVariant),
+                  )
+                : Column(
+                    children: [
+                      for (int i = 0; i < previews.length; i++) ...[
+                        if (i > 0) const SizedBox(height: 16),
+                        _ImagePreviewTile(
+                          preview: previews[i],
+                          onOpenLink: onOpenLink,
+                        ),
+                      ],
+                    ],
                   ),
-                ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommentFeedCard extends StatelessWidget {
+  const _CommentFeedCard({
+    required this.comments,
+    required this.onAddComment,
+  });
+
+  final List<Map<String, dynamic>> comments;
+  final VoidCallback onAddComment;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: scheme.tertiary.withValues(alpha: 0.10),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(17)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Release forum',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: scheme.tertiary,
+                    ),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: onAddComment,
+                  icon: const Icon(Icons.forum_outlined),
+                  label: const Text('Add update'),
+                ),
               ],
             ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: comments.isEmpty
+                ? Text(
+                    'No updates yet. Use this area like a mini forum for release progress.',
+                    style: TextStyle(color: scheme.onSurfaceVariant),
+                  )
+                : Column(
+                    children: [
+                      for (int i = 0; i < comments.length; i++) ...[
+                        _CommentTile(comment: comments[i]),
+                        if (i < comments.length - 1)
+                          const SizedBox(height: 12),
+                      ],
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommentTile extends StatelessWidget {
+  const _CommentTile({required this.comment});
+
+  final Map<String, dynamic> comment;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final sender = (comment['sender'] ?? '').toString() == 'artist'
+        ? 'Artist'
+        : 'Label';
+    final createdAt = (comment['created_at'] ?? '').toString();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.22),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            createdAt.isEmpty ? sender : '$sender - $createdAt',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 8),
+          SelectableText(
+            (comment['body'] ?? '').toString(),
+            style: const TextStyle(fontSize: 13, height: 1.4),
           ),
         ],
       ),
@@ -877,3 +1115,4 @@ enum _PendingReleaseRemovalAction {
   archive,
   delete,
 }
+

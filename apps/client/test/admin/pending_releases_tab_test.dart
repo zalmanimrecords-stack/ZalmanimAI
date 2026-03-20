@@ -175,12 +175,26 @@ void main() {
             'artist_brand': 'Sea Echo Live',
             'website': 'https://seaecho.example.com',
           },
+          'image_options': <Map<String, dynamic>>[
+            {
+              'id': 'img-1',
+              'url': 'https://cdn.example.com/cover-option.png',
+              'filename': 'cover-option.png',
+            },
+          ],
+          'selected_image_id': 'img-1',
+          'comments': <Map<String, dynamic>>[
+            {
+              'id': 1,
+              'sender': 'label',
+              'body': 'Artwork draft is ready for review.',
+              'created_at': '2026-03-18T11:00:00Z',
+            },
+          ],
           'release_data': <String, dynamic>{
             'track_title': 'Blue Horizon',
             'catalog_number': 'ZR-101',
             'wav_download_url': 'https://files.example.com/blue-horizon.wav',
-            'cover_reference_image_url': 'https://cdn.example.com/cover.png',
-            'cover_reference_image_name': 'cover.png',
             'marketing_text': 'A warm melodic journey.',
           },
         },
@@ -201,11 +215,49 @@ void main() {
     expect(find.text('Overview'), findsOneWidget);
     expect(find.text('Artist details'), findsOneWidget);
     expect(find.text('Release details'), findsOneWidget);
-    expect(find.text('Reference image'), findsOneWidget);
+    expect(find.text('Release images'), findsOneWidget);
+    expect(find.text('Release forum'), findsOneWidget);
     expect(find.text('Artist brand'), findsOneWidget);
     expect(find.text('Catalog number'), findsOneWidget);
-    expect(find.text('cover.png'), findsOneWidget);
+    expect(find.text('cover-option.png'), findsOneWidget);
+    expect(find.text('Artist selected'), findsOneWidget);
+    expect(find.text('Artwork draft is ready for review.'), findsOneWidget);
     expect(find.textContaining('"track_title"'), findsNothing);
     expect(find.byType(Image), findsOneWidget);
+  });
+
+  testWidgets('Pending releases tab shows empty image state when no artwork exists yet', (tester) async {
+    final delegate = FakeAdminDashboardDelegate(
+      pendingReleases: const [
+        {
+          'id': 23,
+          'artist_name': 'No Artwork Yet',
+          'artist_email': 'noart@example.com',
+          'release_title': 'Unframed',
+          'status': 'pending',
+          'created_at': '2026-03-18T10:00:00Z',
+          'artist_data': <String, dynamic>{},
+          'release_data': <String, dynamic>{},
+        },
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PendingReleasesTab(delegate: delegate),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('No Artwork Yet'));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(
+      find.text(
+        'No release images yet. Upload one or more options so the artist can choose the best fit.',
+      ),
+      findsOneWidget,
+    );
   });
 }
