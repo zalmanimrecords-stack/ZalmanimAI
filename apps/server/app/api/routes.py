@@ -146,6 +146,7 @@ from app.services.email_service import (
     is_email_configured,
     send_email as send_email_service,
     send_test_smtp_email,
+    smtp_config_for_admin_test,
     test_smtp_connection,
 )
 from app.services.mail_settings import build_mail_config, get_effective_mail_config_for_api, save_mail_settings
@@ -1472,6 +1473,13 @@ def init_db() -> None:
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS update_profile_invite_body TEXT"))
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS password_reset_subject VARCHAR(255)"))
             conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS password_reset_body TEXT"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_host VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_port INTEGER"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_from_email VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_use_tls BOOLEAN"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_use_ssl BOOLEAN"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_user VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_password VARCHAR(255)"))
             conn.execute(text(
                 "ALTER TABLE pending_releases ADD COLUMN IF NOT EXISTS demo_submission_id INTEGER "
                 "REFERENCES demo_submissions(id) ON DELETE SET NULL"
@@ -5134,6 +5142,12 @@ def get_system_settings(
         smtp_use_tls=mail["smtp_use_tls"],
         smtp_use_ssl=mail["smtp_use_ssl"],
         smtp_user_configured=mail["smtp_user_configured"],
+        smtp_backup_host=mail.get("smtp_backup_host", "") or "",
+        smtp_backup_port=mail.get("smtp_backup_port", 587),
+        smtp_backup_from_email=mail.get("smtp_backup_from_email", "") or "",
+        smtp_backup_use_tls=mail.get("smtp_backup_use_tls", True),
+        smtp_backup_use_ssl=mail.get("smtp_backup_use_ssl", False),
+        smtp_backup_user_configured=mail.get("smtp_backup_user_configured", False),
         emails_per_hour=mail["emails_per_hour"],
         email_configured=is_email_configured(),
         email_footer=mail.get("email_footer", "") or "",
@@ -5178,6 +5192,13 @@ def update_system_settings_mail(
         smtp_use_ssl=payload.smtp_use_ssl,
         smtp_user=payload.smtp_user,
         smtp_password=payload.smtp_password,
+        smtp_backup_host=payload.smtp_backup_host,
+        smtp_backup_port=payload.smtp_backup_port,
+        smtp_backup_from_email=payload.smtp_backup_from_email,
+        smtp_backup_use_tls=payload.smtp_backup_use_tls,
+        smtp_backup_use_ssl=payload.smtp_backup_use_ssl,
+        smtp_backup_user=payload.smtp_backup_user,
+        smtp_backup_password=payload.smtp_backup_password,
         emails_per_hour=payload.emails_per_hour,
         email_footer=payload.email_footer,
         demo_rejection_subject=payload.demo_rejection_subject,
@@ -5204,6 +5225,12 @@ def update_system_settings_mail(
         smtp_use_tls=mail["smtp_use_tls"],
         smtp_use_ssl=mail["smtp_use_ssl"],
         smtp_user_configured=mail["smtp_user_configured"],
+        smtp_backup_host=mail.get("smtp_backup_host", "") or "",
+        smtp_backup_port=mail.get("smtp_backup_port", 587),
+        smtp_backup_from_email=mail.get("smtp_backup_from_email", "") or "",
+        smtp_backup_use_tls=mail.get("smtp_backup_use_tls", True),
+        smtp_backup_use_ssl=mail.get("smtp_backup_use_ssl", False),
+        smtp_backup_user_configured=mail.get("smtp_backup_user_configured", False),
         emails_per_hour=mail["emails_per_hour"],
         email_configured=is_email_configured(),
         email_footer=mail.get("email_footer", "") or "",
@@ -5246,12 +5273,22 @@ def test_system_settings_mail(
         smtp_use_ssl=payload.smtp_use_ssl,
         smtp_user=payload.smtp_user,
         smtp_password=payload.smtp_password,
+        smtp_backup_host=payload.smtp_backup_host,
+        smtp_backup_port=payload.smtp_backup_port,
+        smtp_backup_from_email=payload.smtp_backup_from_email,
+        smtp_backup_use_tls=payload.smtp_backup_use_tls,
+        smtp_backup_use_ssl=payload.smtp_backup_use_ssl,
+        smtp_backup_user=payload.smtp_backup_user,
+        smtp_backup_password=payload.smtp_backup_password,
         emails_per_hour=payload.emails_per_hour,
     )
+    test_cfg, err = smtp_config_for_admin_test(cfg, target=payload.smtp_test_target)
+    if err:
+        return SystemSettingsMailTestResponse(success=False, message=err)
     if payload.test_email:
-        success, message = send_test_smtp_email(cfg, to_email=str(payload.test_email))
+        success, message = send_test_smtp_email(test_cfg, to_email=str(payload.test_email))
     else:
-        success, message = test_smtp_connection(cfg)
+        success, message = test_smtp_connection(test_cfg)
     return SystemSettingsMailTestResponse(success=success, message=message)
 
 # Email sending with per-hour rate limit (admin only)

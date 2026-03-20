@@ -31,6 +31,8 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
   bool _savingMail = false;
   bool _testingMail = false;
   bool _sendingTestMail = false;
+  bool _testingBackupMail = false;
+  bool _sendingBackupTestMail = false;
   bool _connectingGoogle = false;
   String? _mailSaveError;
   String? _mailTestMessage;
@@ -40,11 +42,18 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
   final _smtpFromEmailController = TextEditingController();
   final _smtpUserController = TextEditingController();
   final _smtpPasswordController = TextEditingController();
+  final _smtpBackupHostController = TextEditingController();
+  final _smtpBackupPortController = TextEditingController();
+  final _smtpBackupFromEmailController = TextEditingController();
+  final _smtpBackupUserController = TextEditingController();
+  final _smtpBackupPasswordController = TextEditingController();
   final _emailsPerHourController = TextEditingController();
   final _emailFooterController = TextEditingController();
   final _testEmailController = TextEditingController();
   bool _smtpUseTls = true;
   bool _smtpUseSsl = false;
+  bool _smtpBackupUseTls = true;
+  bool _smtpBackupUseSsl = false;
 
   @override
   void dispose() {
@@ -53,6 +62,11 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
     _smtpFromEmailController.dispose();
     _smtpUserController.dispose();
     _smtpPasswordController.dispose();
+    _smtpBackupHostController.dispose();
+    _smtpBackupPortController.dispose();
+    _smtpBackupFromEmailController.dispose();
+    _smtpBackupUserController.dispose();
+    _smtpBackupPasswordController.dispose();
     _emailsPerHourController.dispose();
     _emailFooterController.dispose();
     _testEmailController.dispose();
@@ -106,9 +120,19 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
     _emailFooterController.text = s['email_footer'] as String? ?? '';
     _smtpUseTls = s['smtp_use_tls'] as bool? ?? true;
     _smtpUseSsl = s['smtp_use_ssl'] as bool? ?? false;
+    _smtpBackupHostController.text = s['smtp_backup_host'] as String? ?? '';
+    _smtpBackupPortController.text =
+        (s['smtp_backup_port'] as int?)?.toString() ?? '587';
+    _smtpBackupFromEmailController.text =
+        s['smtp_backup_from_email'] as String? ?? '';
+    _smtpBackupUserController.text = '';
+    _smtpBackupPasswordController.text = '';
+    _smtpBackupUseTls = s['smtp_backup_use_tls'] as bool? ?? true;
+    _smtpBackupUseSsl = s['smtp_backup_use_ssl'] as bool? ?? false;
   }
 
   int? get _smtpPort => int.tryParse(_smtpPortController.text.trim());
+  int? get _smtpBackupPort => int.tryParse(_smtpBackupPortController.text.trim());
   int? get _emailsPerHour => int.tryParse(_emailsPerHourController.text.trim());
 
   Future<void> _saveMailSettings() async {
@@ -127,6 +151,15 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
         smtpUseSsl: _smtpUseSsl,
         smtpUser: _smtpUserController.text.trim(),
         smtpPassword: _smtpPasswordController.text.trim().isEmpty ? null : _smtpPasswordController.text.trim(),
+        smtpBackupHost: _smtpBackupHostController.text.trim(),
+        smtpBackupPort: _smtpBackupPort,
+        smtpBackupFromEmail: _smtpBackupFromEmailController.text.trim(),
+        smtpBackupUseTls: _smtpBackupUseTls,
+        smtpBackupUseSsl: _smtpBackupUseSsl,
+        smtpBackupUser: _smtpBackupUserController.text.trim(),
+        smtpBackupPassword: _smtpBackupPasswordController.text.trim().isEmpty
+            ? null
+            : _smtpBackupPasswordController.text.trim(),
         emailsPerHour: _emailsPerHour,
         emailFooter: _emailFooterController.text,
       );
@@ -158,6 +191,7 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
     try {
       final result = await widget.apiClient.testSystemSettingsMail(
         token: widget.token,
+        smtpTestTarget: 'primary',
         smtpHost: _smtpHostController.text.trim(),
         smtpPort: _smtpPort,
         smtpFromEmail: _smtpFromEmailController.text.trim(),
@@ -165,6 +199,15 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
         smtpUseSsl: _smtpUseSsl,
         smtpUser: _smtpUserController.text.trim(),
         smtpPassword: _smtpPasswordController.text.trim().isEmpty ? null : _smtpPasswordController.text.trim(),
+        smtpBackupHost: _smtpBackupHostController.text.trim(),
+        smtpBackupPort: _smtpBackupPort,
+        smtpBackupFromEmail: _smtpBackupFromEmailController.text.trim(),
+        smtpBackupUseTls: _smtpBackupUseTls,
+        smtpBackupUseSsl: _smtpBackupUseSsl,
+        smtpBackupUser: _smtpBackupUserController.text.trim(),
+        smtpBackupPassword: _smtpBackupPasswordController.text.trim().isEmpty
+            ? null
+            : _smtpBackupPasswordController.text.trim(),
         emailsPerHour: _emailsPerHour,
       );
       if (mounted) {
@@ -195,6 +238,7 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
     try {
       final result = await widget.apiClient.testSystemSettingsMail(
         token: widget.token,
+        smtpTestTarget: 'primary',
         smtpHost: _smtpHostController.text.trim(),
         smtpPort: _smtpPort,
         smtpFromEmail: _smtpFromEmailController.text.trim(),
@@ -202,6 +246,15 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
         smtpUseSsl: _smtpUseSsl,
         smtpUser: _smtpUserController.text.trim(),
         smtpPassword: _smtpPasswordController.text.trim().isEmpty ? null : _smtpPasswordController.text.trim(),
+        smtpBackupHost: _smtpBackupHostController.text.trim(),
+        smtpBackupPort: _smtpBackupPort,
+        smtpBackupFromEmail: _smtpBackupFromEmailController.text.trim(),
+        smtpBackupUseTls: _smtpBackupUseTls,
+        smtpBackupUseSsl: _smtpBackupUseSsl,
+        smtpBackupUser: _smtpBackupUserController.text.trim(),
+        smtpBackupPassword: _smtpBackupPasswordController.text.trim().isEmpty
+            ? null
+            : _smtpBackupPasswordController.text.trim(),
         emailsPerHour: _emailsPerHour,
         testEmail: testEmail,
       );
@@ -216,6 +269,96 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
       }
     } finally {
       if (mounted) setState(() => _sendingTestMail = false);
+    }
+  }
+
+  Future<void> _testSmtpBackupConnection() async {
+    setState(() {
+      _testingBackupMail = true;
+      _mailSaveError = null;
+      _mailTestMessage = null;
+    });
+    try {
+      final result = await widget.apiClient.testSystemSettingsMail(
+        token: widget.token,
+        smtpTestTarget: 'backup',
+        smtpHost: _smtpHostController.text.trim(),
+        smtpPort: _smtpPort,
+        smtpFromEmail: _smtpFromEmailController.text.trim(),
+        smtpUseTls: _smtpUseTls,
+        smtpUseSsl: _smtpUseSsl,
+        smtpUser: _smtpUserController.text.trim(),
+        smtpPassword: _smtpPasswordController.text.trim().isEmpty ? null : _smtpPasswordController.text.trim(),
+        smtpBackupHost: _smtpBackupHostController.text.trim(),
+        smtpBackupPort: _smtpBackupPort,
+        smtpBackupFromEmail: _smtpBackupFromEmailController.text.trim(),
+        smtpBackupUseTls: _smtpBackupUseTls,
+        smtpBackupUseSsl: _smtpBackupUseSsl,
+        smtpBackupUser: _smtpBackupUserController.text.trim(),
+        smtpBackupPassword: _smtpBackupPasswordController.text.trim().isEmpty
+            ? null
+            : _smtpBackupPasswordController.text.trim(),
+        emailsPerHour: _emailsPerHour,
+      );
+      if (mounted) {
+        setState(() {
+          _mailTestMessage = result['message'] as String? ?? 'SMTP test completed.';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _mailSaveError = e.toString());
+      }
+    } finally {
+      if (mounted) setState(() => _testingBackupMail = false);
+    }
+  }
+
+  Future<void> _sendTestEmailBackup() async {
+    final testEmail = _testEmailController.text.trim();
+    if (testEmail.isEmpty) {
+      setState(() => _mailSaveError = 'Enter a test email address first.');
+      return;
+    }
+    setState(() {
+      _sendingBackupTestMail = true;
+      _mailSaveError = null;
+      _mailTestMessage = null;
+    });
+    try {
+      final result = await widget.apiClient.testSystemSettingsMail(
+        token: widget.token,
+        smtpTestTarget: 'backup',
+        smtpHost: _smtpHostController.text.trim(),
+        smtpPort: _smtpPort,
+        smtpFromEmail: _smtpFromEmailController.text.trim(),
+        smtpUseTls: _smtpUseTls,
+        smtpUseSsl: _smtpUseSsl,
+        smtpUser: _smtpUserController.text.trim(),
+        smtpPassword: _smtpPasswordController.text.trim().isEmpty ? null : _smtpPasswordController.text.trim(),
+        smtpBackupHost: _smtpBackupHostController.text.trim(),
+        smtpBackupPort: _smtpBackupPort,
+        smtpBackupFromEmail: _smtpBackupFromEmailController.text.trim(),
+        smtpBackupUseTls: _smtpBackupUseTls,
+        smtpBackupUseSsl: _smtpBackupUseSsl,
+        smtpBackupUser: _smtpBackupUserController.text.trim(),
+        smtpBackupPassword: _smtpBackupPasswordController.text.trim().isEmpty
+            ? null
+            : _smtpBackupPasswordController.text.trim(),
+        emailsPerHour: _emailsPerHour,
+        testEmail: testEmail,
+      );
+      if (mounted) {
+        setState(() {
+          _mailTestMessage = result['message'] as String? ?? 'Test email sent.';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _mailSaveError = e.toString());
+      }
+    } finally {
+      if (mounted) setState(() => _sendingBackupTestMail = false);
     }
   }
 
@@ -434,6 +577,113 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
             const Text('Use SSL (implicit, e.g. port 465)'),
           ],
         ),
+        const SizedBox(height: 24),
+        _sectionTitle('Backup SMTP (optional)'),
+        const Text(
+          'If the primary server rejects the message (or Gmail API fails), LM tries this SMTP next. Leave empty to disable.',
+          style: TextStyle(fontSize: 12, color: Colors.grey),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _smtpBackupHostController,
+          decoration: const InputDecoration(
+            labelText: 'Backup SMTP host',
+            hintText: 'e.g. smtp.sendgrid.net',
+            border: OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.url,
+          textInputAction: TextInputAction.next,
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _smtpBackupPortController,
+          decoration: const InputDecoration(
+            labelText: 'Backup SMTP port',
+            hintText: '587 or 465',
+            border: OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.number,
+          textInputAction: TextInputAction.next,
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _smtpBackupFromEmailController,
+          decoration: const InputDecoration(
+            labelText: 'Backup from email (optional)',
+            hintText: 'Defaults to primary "From email" if empty',
+            border: OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.next,
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _smtpBackupUserController,
+          decoration: const InputDecoration(
+            labelText: 'Backup SMTP user (optional)',
+            hintText: 'Leave blank to keep current',
+            border: OutlineInputBorder(),
+          ),
+          textInputAction: TextInputAction.next,
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _smtpBackupPasswordController,
+          decoration: const InputDecoration(
+            labelText: 'Backup SMTP password (optional)',
+            hintText: 'Leave blank to keep current',
+            border: OutlineInputBorder(),
+          ),
+          obscureText: true,
+          textInputAction: TextInputAction.next,
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Checkbox(
+              value: _smtpBackupUseTls,
+              onChanged: (v) => setState(() => _smtpBackupUseTls = v ?? true),
+            ),
+            const Text('Backup: use TLS (STARTTLS)'),
+          ],
+        ),
+        Row(
+          children: [
+            Checkbox(
+              value: _smtpBackupUseSsl,
+              onChanged: (v) => setState(() => _smtpBackupUseSsl = v ?? false),
+            ),
+            const Text('Backup: use SSL (implicit, e.g. port 465)'),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _testingBackupMail || _sendingBackupTestMail || _testingMail || _sendingTestMail
+                    ? null
+                    : _testSmtpBackupConnection,
+                icon: _testingBackupMail
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(ZalmanimIcons.networkCheck),
+                label: Text(_testingBackupMail ? 'Testing...' : 'Test backup SMTP'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _sendingBackupTestMail || _testingBackupMail || _testingMail || _sendingTestMail
+                    ? null
+                    : _sendTestEmailBackup,
+                icon: _sendingBackupTestMail
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(ZalmanimIcons.send),
+                label: Text(_sendingBackupTestMail ? 'Sending...' : 'Send test (backup)'),
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 8),
         TextField(
           controller: _testEmailController,
@@ -470,7 +720,9 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
           children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: _testingMail || _sendingTestMail ? null : _testSmtpConnection,
+                onPressed: _testingMail || _sendingTestMail || _testingBackupMail || _sendingBackupTestMail
+                    ? null
+                    : _testSmtpConnection,
                 icon: _testingMail ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(ZalmanimIcons.networkCheck),
                 label: Text(_testingMail ? 'Testing...' : 'Test SMTP'),
               ),
@@ -478,7 +730,9 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
             const SizedBox(width: 8),
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: _sendingTestMail || _testingMail ? null : _sendTestEmail,
+                onPressed: _sendingTestMail || _testingMail || _testingBackupMail || _sendingBackupTestMail
+                    ? null
+                    : _sendTestEmail,
                 icon: _sendingTestMail ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(ZalmanimIcons.send),
                 label: Text(_sendingTestMail ? 'Sending...' : 'Send test email'),
               ),

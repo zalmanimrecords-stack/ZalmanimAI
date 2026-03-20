@@ -1,5 +1,6 @@
 import json
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr
 
@@ -1038,6 +1039,12 @@ class SystemSettingsOut(BaseModel):
     smtp_use_tls: bool = True
     smtp_use_ssl: bool = False
     smtp_user_configured: bool = False  # True if smtp_user is set (password not exposed)
+    smtp_backup_host: str = ""
+    smtp_backup_port: int = 587
+    smtp_backup_from_email: str = ""
+    smtp_backup_use_tls: bool = True
+    smtp_backup_use_ssl: bool = False
+    smtp_backup_user_configured: bool = False
     emails_per_hour: int = 10
     email_configured: bool = False  # True if SMTP is usable
     email_footer: str = ""
@@ -1067,6 +1074,7 @@ class SystemSettingsOut(BaseModel):
 
 class SystemSettingsMailTestRequest(BaseModel):
     """Test SMTP connectivity or send a test email with optional unsaved overrides."""
+    smtp_test_target: Literal["primary", "backup"] = "primary"
     smtp_host: str | None = None
     smtp_port: int | None = None
     smtp_from_email: str | None = None
@@ -1074,6 +1082,13 @@ class SystemSettingsMailTestRequest(BaseModel):
     smtp_use_ssl: bool | None = None
     smtp_user: str | None = None
     smtp_password: str | None = None
+    smtp_backup_host: str | None = None
+    smtp_backup_port: int | None = None
+    smtp_backup_from_email: str | None = None
+    smtp_backup_use_tls: bool | None = None
+    smtp_backup_use_ssl: bool | None = None
+    smtp_backup_user: str | None = None
+    smtp_backup_password: str | None = None
     emails_per_hour: int | None = None
     test_email: EmailStr | None = None
 
@@ -1092,6 +1107,13 @@ class SystemSettingsMailUpdate(BaseModel):
     smtp_use_ssl: bool | None = None
     smtp_user: str | None = None
     smtp_password: str | None = None
+    smtp_backup_host: str | None = None
+    smtp_backup_port: int | None = None
+    smtp_backup_from_email: str | None = None
+    smtp_backup_use_tls: bool | None = None
+    smtp_backup_use_ssl: bool | None = None
+    smtp_backup_user: str | None = None
+    smtp_backup_password: str | None = None
     emails_per_hour: int | None = None
     email_footer: str | None = None
     demo_rejection_subject: str | None = None

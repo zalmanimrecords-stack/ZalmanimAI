@@ -207,6 +207,27 @@ def _send_via_gmail_api(
 
 
 
+def _smtp_send_shape_from_backup(cfg) -> object | None:
+    """If backup SMTP host is set, return a config object usable by _smtp_send_with_config."""
+    if not (getattr(cfg, "smtp_backup_host", None) or "").strip():
+        return None
+    primary_from = (cfg.smtp_from_email or cfg.smtp_user or "").strip()
+    from_addr = (
+        (cfg.smtp_backup_from_email or "").strip()
+        or primary_from
+        or (cfg.smtp_backup_user or "").strip()
+    )
+    return type("MailConfig", (), {
+        "smtp_host": (cfg.smtp_backup_host or "").strip(),
+        "smtp_port": cfg.smtp_backup_port,
+        "smtp_from_email": from_addr,
+        "smtp_use_tls": cfg.smtp_backup_use_tls,
+        "smtp_use_ssl": cfg.smtp_backup_use_ssl,
+        "smtp_user": cfg.smtp_backup_user,
+        "smtp_password": cfg.smtp_backup_password,
+    })()
+
+
 def _smtp_send_with_config(
     cfg,
     *,
@@ -214,6 +235,7 @@ def _smtp_send_with_config(
     subject: str,
     body_text: str,
     body_html: str | None = None,
+    log_via: str = "SMTP",
 ) -> tuple[bool, str]:
     from_addr = (cfg.smtp_from_email or cfg.smtp_user or "").strip()
     if not (cfg.smtp_host or "").strip():
@@ -242,7 +264,7 @@ def _smtp_send_with_config(
                 if (cfg.smtp_user or "").strip():
                     smtp.login(cfg.smtp_user.strip(), cfg.smtp_password or "")
                 smtp.sendmail(from_addr, [to_email], msg.as_string())
-        append_system_log("info", "mail", f"Email sent to {to_email}", details=subject[:200] if subject else None)
+        append_system_log("info", "mail", f"Email sent to {to_email} ({log_via})", details=subject[:200] if subject else None)
         return True, "Sent"
     except smtplib.SMTPException as e:
         append_system_log("error", "mail", f"SMTP error sending to {to_email}: {e}", details=subject[:200] if subject else None)
@@ -250,6 +272,22 @@ def _smtp_send_with_config(
     except Exception as e:
         append_system_log("error", "mail", f"Send failed to {to_email}: {e}", details=subject[:200] if subject else None)
         return False, str(e)
+
+
+def smtp_config_for_admin_test(cfg, *, target: str = "primary") -> tuple[object | None, str]:
+    """
+    Choose primary or backup SMTP config for admin connection/test endpoints.
+    Returns (config object for test_smtp_connection / send_test_smtp_email, error message if unusable).
+    """
+    t = (target or "primary").strip().lower()
+    if t == "backup":
+        b = _smtp_send_shape_from_backup(cfg)
+        if not b:
+            return None, "Backup SMTP host is not configured"
+        return b, ""
+    if not (cfg.smtp_host or "").strip():
+        return None, "Primary SMTP host is not configured"
+    return cfg, ""
 
 
 def test_smtp_connection(cfg) -> tuple[bool, str]:
@@ -288,12 +326,14 @@ def send_test_smtp_email(
     )
 
 def is_email_configured() -> bool:
-    """True if Gmail API or SMTP is configured enough to send."""
+    """True if Gmail API or primary/backup SMTP is configured enough to send."""
     connection = _get_active_gmail_connection()
     if _gmail_connection_supports_send(connection):
         return True
     cfg = get_effective_mail_config()
-    return bool((cfg.smtp_host or "").strip())
+    if (cfg.smtp_host or "").strip():
+        return True
+    return bool((cfg.smtp_backup_host or "").strip())
 
 
 def send_email(
@@ -313,7 +353,7 @@ def send_email(
     cfg = get_effective_mail_config()
     if not is_email_configured():
         append_system_log("warning", "mail", "Send skipped: email not configured", details=to_email)
-        return False, "Email is not configured (connect Gmail or set SMTP host)"
+        return False, "Email is not configured (connect Gmail or set primary/backup SMTP host)"
 
     if cfg.emails_per_hour and not check_and_increment_rate_limit():
         append_system_log("warning", "mail", f"Hourly email limit reached ({cfg.emails_per_hour})", details=to_email)
@@ -322,6 +362,7 @@ def send_email(
             "Try again later to avoid spam listing."
         )
 
+    gmail_err: str | None = None
     connection = _get_active_gmail_connection()
     if _gmail_connection_supports_send(connection):
         try:
@@ -334,44 +375,63 @@ def send_email(
             )
             if ok:
                 append_system_log("info", "mail", f"Email sent to {to_email} (Gmail)", details=subject[:200] if subject else None)
-            else:
-                append_system_log("error", "mail", f"Gmail send failed to {to_email}: {msg}", details=subject[:200] if subject else None)
-            return ok, msg
+                return True, msg
+            gmail_err = msg[:500] if msg else "unknown error"
+            append_system_log(
+                "warning",
+                "mail",
+                f"Gmail send failed to {to_email}, trying SMTP: {msg[:300]}",
+                details=subject[:200] if subject else None,
+            )
         except Exception as e:
-            append_system_log("error", "mail", f"Gmail send failed to {to_email}: {e}", details=subject[:200] if subject else None)
-            return False, str(e)
+            gmail_err = str(e)
+            append_system_log(
+                "warning",
+                "mail",
+                f"Gmail send exception for {to_email}, trying SMTP: {e}",
+                details=subject[:200] if subject else None,
+            )
 
-    from_addr = (cfg.smtp_from_email or cfg.smtp_user or "").strip()
-    if not from_addr:
-        return False, "Email from address not configured (smtp_from_email or smtp_user)"
+    primary_err: str | None = None
+    if (cfg.smtp_host or "").strip():
+        ok, primary_err = _smtp_send_with_config(
+            cfg,
+            to_email=to_email,
+            subject=subject,
+            body_text=body_text,
+            body_html=body_html,
+            log_via="primary SMTP",
+        )
+        if ok:
+            return True, primary_err
+        append_system_log(
+            "warning",
+            "mail",
+            f"Primary SMTP failed for {to_email}: {primary_err}",
+            details=subject[:200] if subject else None,
+        )
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = from_addr
-    msg["To"] = to_email
-    msg.attach(MIMEText(body_text, "plain", "utf-8"))
-    if body_html:
-        msg.attach(MIMEText(body_html, "html", "utf-8"))
+    backup_cfg = _smtp_send_shape_from_backup(cfg)
+    if backup_cfg:
+        ok, backup_err = _smtp_send_with_config(
+            backup_cfg,
+            to_email=to_email,
+            subject=subject,
+            body_text=body_text,
+            body_html=body_html,
+            log_via="backup SMTP",
+        )
+        if ok:
+            return True, backup_err
+        if primary_err:
+            return False, f"Primary SMTP failed: {primary_err}. Backup SMTP failed: {backup_err}"
+        if gmail_err:
+            return False, f"Gmail failed: {gmail_err}. Backup SMTP failed: {backup_err}"
+        return False, backup_err
 
-    try:
-        if cfg.smtp_use_ssl:
-            with smtplib.SMTP_SSL(cfg.smtp_host, cfg.smtp_port, timeout=30) as smtp:
-                if (cfg.smtp_user or "").strip():
-                    smtp.login(cfg.smtp_user.strip(), cfg.smtp_password or "")
-                smtp.sendmail(from_addr, [to_email], msg.as_string())
-        else:
-            with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port, timeout=30) as smtp:
-                if cfg.smtp_use_tls:
-                    smtp.starttls()
-                if (cfg.smtp_user or "").strip():
-                    smtp.login(cfg.smtp_user.strip(), cfg.smtp_password or "")
-                smtp.sendmail(from_addr, [to_email], msg.as_string())
-        append_system_log("info", "mail", f"Email sent to {to_email}", details=subject[:200] if subject else None)
-        return True, "Sent"
-    except smtplib.SMTPException as e:
-        append_system_log("error", "mail", f"SMTP error sending to {to_email}: {e}", details=subject[:200] if subject else None)
-        return False, str(e)
-    except Exception as e:
-        append_system_log("error", "mail", f"Send failed to {to_email}: {e}", details=subject[:200] if subject else None)
-        return False, str(e)
+    if primary_err:
+        return False, primary_err
+    if gmail_err:
+        return False, f"Gmail failed: {gmail_err}. No working SMTP fallback."
+    return False, "SMTP not configured (set primary or backup SMTP host, or connect Gmail)"
 

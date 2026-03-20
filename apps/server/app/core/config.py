@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = True   # STARTTLS on port 587
     smtp_use_ssl: bool = False  # True for port 465 (implicit SSL); use with smtp_port=465
     smtp_from_email: str = ""  # Default "From" address; fallback to smtp_user if empty
+    # Optional backup SMTP (env defaults; DB mail_settings overrides when set)
+    smtp_backup_host: str = ""
+    smtp_backup_port: int = 587
+    smtp_backup_user: str = ""
+    smtp_backup_password: str = ""
+    smtp_backup_use_tls: bool = True
+    smtp_backup_use_ssl: bool = False
+    smtp_backup_from_email: str = ""  # If empty, primary smtp_from_email is used when sending via backup
     emails_per_hour: int = 10  # Max emails per hour; 0 = no limit (not recommended)
     redis_url: str = "redis://redis:6379/0"  # Used for rate-limit counter
     demo_submission_token: str = ""  # Set via env DEMO_SUBMISSION_TOKEN; optional shared secret for demo form

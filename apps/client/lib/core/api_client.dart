@@ -1324,6 +1324,13 @@ class ApiClient {
     bool? smtpUseSsl,
     String? smtpUser,
     String? smtpPassword,
+    String? smtpBackupHost,
+    int? smtpBackupPort,
+    String? smtpBackupFromEmail,
+    bool? smtpBackupUseTls,
+    bool? smtpBackupUseSsl,
+    String? smtpBackupUser,
+    String? smtpBackupPassword,
     int? emailsPerHour,
     String? emailFooter,
     String? demoRejectionSubject,
@@ -1349,6 +1356,17 @@ class ApiClient {
     if (smtpUseSsl != null) body['smtp_use_ssl'] = smtpUseSsl;
     if (smtpUser != null) body['smtp_user'] = smtpUser;
     if (smtpPassword != null) body['smtp_password'] = smtpPassword;
+    if (smtpBackupHost != null) body['smtp_backup_host'] = smtpBackupHost;
+    if (smtpBackupPort != null) body['smtp_backup_port'] = smtpBackupPort;
+    if (smtpBackupFromEmail != null) {
+      body['smtp_backup_from_email'] = smtpBackupFromEmail;
+    }
+    if (smtpBackupUseTls != null) body['smtp_backup_use_tls'] = smtpBackupUseTls;
+    if (smtpBackupUseSsl != null) body['smtp_backup_use_ssl'] = smtpBackupUseSsl;
+    if (smtpBackupUser != null) body['smtp_backup_user'] = smtpBackupUser;
+    if (smtpBackupPassword != null) {
+      body['smtp_backup_password'] = smtpBackupPassword;
+    }
     if (emailsPerHour != null) body['emails_per_hour'] = emailsPerHour;
     if (emailFooter != null) body['email_footer'] = emailFooter;
     if (demoRejectionSubject != null) {
@@ -1427,6 +1445,7 @@ class ApiClient {
 
   Future<Map<String, dynamic>> testSystemSettingsMail({
     required String token,
+    String smtpTestTarget = 'primary',
     String? smtpHost,
     int? smtpPort,
     String? smtpFromEmail,
@@ -1434,10 +1453,17 @@ class ApiClient {
     bool? smtpUseSsl,
     String? smtpUser,
     String? smtpPassword,
+    String? smtpBackupHost,
+    int? smtpBackupPort,
+    String? smtpBackupFromEmail,
+    bool? smtpBackupUseTls,
+    bool? smtpBackupUseSsl,
+    String? smtpBackupUser,
+    String? smtpBackupPassword,
     int? emailsPerHour,
     String? testEmail,
   }) async {
-    final body = <String, dynamic>{};
+    final body = <String, dynamic>{'smtp_test_target': smtpTestTarget};
     if (smtpHost != null) body['smtp_host'] = smtpHost;
     if (smtpPort != null) body['smtp_port'] = smtpPort;
     if (smtpFromEmail != null) body['smtp_from_email'] = smtpFromEmail;
@@ -1445,6 +1471,17 @@ class ApiClient {
     if (smtpUseSsl != null) body['smtp_use_ssl'] = smtpUseSsl;
     if (smtpUser != null) body['smtp_user'] = smtpUser;
     if (smtpPassword != null) body['smtp_password'] = smtpPassword;
+    if (smtpBackupHost != null) body['smtp_backup_host'] = smtpBackupHost;
+    if (smtpBackupPort != null) body['smtp_backup_port'] = smtpBackupPort;
+    if (smtpBackupFromEmail != null) {
+      body['smtp_backup_from_email'] = smtpBackupFromEmail;
+    }
+    if (smtpBackupUseTls != null) body['smtp_backup_use_tls'] = smtpBackupUseTls;
+    if (smtpBackupUseSsl != null) body['smtp_backup_use_ssl'] = smtpBackupUseSsl;
+    if (smtpBackupUser != null) body['smtp_backup_user'] = smtpBackupUser;
+    if (smtpBackupPassword != null) {
+      body['smtp_backup_password'] = smtpBackupPassword;
+    }
     if (emailsPerHour != null) body['emails_per_hour'] = emailsPerHour;
     if (testEmail != null && testEmail.isNotEmpty) {
       body['test_email'] = testEmail;

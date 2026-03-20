@@ -37,6 +37,13 @@ def get_effective_mail_config():
         "smtp_use_ssl": _bool(row.smtp_use_ssl if row else None, settings.smtp_use_ssl),
         "smtp_user": _str(row.smtp_user if row else None, settings.smtp_user),
         "smtp_password": _str(row.smtp_password if row else None, settings.smtp_password),
+        "smtp_backup_host": _str(row.smtp_backup_host if row else None, settings.smtp_backup_host),
+        "smtp_backup_port": _int(row.smtp_backup_port if row else None, settings.smtp_backup_port),
+        "smtp_backup_from_email": _str(row.smtp_backup_from_email if row else None, settings.smtp_backup_from_email),
+        "smtp_backup_use_tls": _bool(row.smtp_backup_use_tls if row else None, settings.smtp_backup_use_tls),
+        "smtp_backup_use_ssl": _bool(row.smtp_backup_use_ssl if row else None, settings.smtp_backup_use_ssl),
+        "smtp_backup_user": _str(row.smtp_backup_user if row else None, settings.smtp_backup_user),
+        "smtp_backup_password": _str(row.smtp_backup_password if row else None, settings.smtp_backup_password),
         "emails_per_hour": emails_per_hour,
         "email_footer": (row.email_footer if row else None) or "",
     })()
@@ -53,6 +60,12 @@ def get_effective_mail_config_for_api():
         "smtp_use_tls": c.smtp_use_tls,
         "smtp_use_ssl": c.smtp_use_ssl,
         "smtp_user_configured": bool((c.smtp_user or "").strip()),
+        "smtp_backup_host": c.smtp_backup_host or "",
+        "smtp_backup_port": c.smtp_backup_port,
+        "smtp_backup_from_email": c.smtp_backup_from_email or "",
+        "smtp_backup_use_tls": c.smtp_backup_use_tls,
+        "smtp_backup_use_ssl": c.smtp_backup_use_ssl,
+        "smtp_backup_user_configured": bool((c.smtp_backup_user or "").strip()),
         "emails_per_hour": c.emails_per_hour,
         "email_footer": (getattr(row, "email_footer", None) if row else None) or "",
         "demo_rejection_subject": (getattr(row, "demo_rejection_subject", None) if row else None) or "",
@@ -80,6 +93,13 @@ def save_mail_settings(
     smtp_use_ssl: bool | None = None,
     smtp_user: str | None = None,
     smtp_password: str | None = None,
+    smtp_backup_host: str | None = None,
+    smtp_backup_port: int | None = None,
+    smtp_backup_from_email: str | None = None,
+    smtp_backup_use_tls: bool | None = None,
+    smtp_backup_use_ssl: bool | None = None,
+    smtp_backup_user: str | None = None,
+    smtp_backup_password: str | None = None,
     emails_per_hour: int | None = None,
     email_footer: str | None = None,
     demo_rejection_subject: str | None = None,
@@ -117,6 +137,20 @@ def save_mail_settings(
             row.smtp_user = smtp_user or None
         if smtp_password is not None:
             row.smtp_password = smtp_password or None
+        if smtp_backup_host is not None:
+            row.smtp_backup_host = smtp_backup_host or None
+        if smtp_backup_port is not None:
+            row.smtp_backup_port = smtp_backup_port
+        if smtp_backup_from_email is not None:
+            row.smtp_backup_from_email = smtp_backup_from_email or None
+        if smtp_backup_use_tls is not None:
+            row.smtp_backup_use_tls = smtp_backup_use_tls
+        if smtp_backup_use_ssl is not None:
+            row.smtp_backup_use_ssl = smtp_backup_use_ssl
+        if smtp_backup_user is not None:
+            row.smtp_backup_user = smtp_backup_user or None
+        if smtp_backup_password is not None:
+            row.smtp_backup_password = smtp_backup_password or None
         if emails_per_hour is not None:
             row.emails_per_hour = emails_per_hour
         if email_footer is not None:
@@ -160,6 +194,13 @@ def build_mail_config(
     smtp_use_ssl: bool | None = None,
     smtp_user: str | None = None,
     smtp_password: str | None = None,
+    smtp_backup_host: str | None = None,
+    smtp_backup_port: int | None = None,
+    smtp_backup_from_email: str | None = None,
+    smtp_backup_use_tls: bool | None = None,
+    smtp_backup_use_ssl: bool | None = None,
+    smtp_backup_user: str | None = None,
+    smtp_backup_password: str | None = None,
     emails_per_hour: int | None = None,
 ):
     """Build effective mail config with optional in-memory overrides."""
@@ -172,6 +213,13 @@ def build_mail_config(
         "smtp_use_ssl": base.smtp_use_ssl if smtp_use_ssl is None else smtp_use_ssl,
         "smtp_user": base.smtp_user if smtp_user is None else (smtp_user or ""),
         "smtp_password": base.smtp_password if smtp_password is None else (smtp_password or ""),
+        "smtp_backup_host": base.smtp_backup_host if smtp_backup_host is None else (smtp_backup_host or ""),
+        "smtp_backup_port": base.smtp_backup_port if smtp_backup_port is None else smtp_backup_port,
+        "smtp_backup_from_email": base.smtp_backup_from_email if smtp_backup_from_email is None else (smtp_backup_from_email or ""),
+        "smtp_backup_use_tls": base.smtp_backup_use_tls if smtp_backup_use_tls is None else smtp_backup_use_tls,
+        "smtp_backup_use_ssl": base.smtp_backup_use_ssl if smtp_backup_use_ssl is None else smtp_backup_use_ssl,
+        "smtp_backup_user": base.smtp_backup_user if smtp_backup_user is None else (smtp_backup_user or ""),
+        "smtp_backup_password": base.smtp_backup_password if smtp_backup_password is None else (smtp_backup_password or ""),
         "emails_per_hour": base.emails_per_hour if emails_per_hour is None else emails_per_hour,
         "email_footer": getattr(base, "email_footer", ""),
     })()

@@ -155,8 +155,13 @@ The server sends email **via SMTP** with a **per-hour rate limit** to reduce the
 - `SMTP_USE_TLS` - default `true` (STARTTLS on port 587)
 - `SMTP_USE_SSL` - set to `true` for port 465 (implicit SSL from connection start)
 - `SMTP_FROM_EMAIL` - "From" address (fallback: `SMTP_USER`)
+- **Backup SMTP (optional)** — if primary SMTP or Gmail API fails, the server tries this next:
+  - `SMTP_BACKUP_HOST`, `SMTP_BACKUP_PORT` (default `587`), `SMTP_BACKUP_USER`, `SMTP_BACKUP_PASSWORD`
+  - `SMTP_BACKUP_USE_TLS` / `SMTP_BACKUP_USE_SSL`, `SMTP_BACKUP_FROM_EMAIL` (falls back to primary `SMTP_FROM_EMAIL` if empty)
 - `EMAILS_PER_HOUR` - max emails per hour (default `30`); set to `0` for no limit (not recommended)
 - `REDIS_URL` - used for the rate-limit counter (default `redis://redis:6379/0`)
+
+Send order: **Gmail API** (if connected with send scope) → **primary SMTP** → **backup SMTP**. Admin UI also has **Backup SMTP** fields under Settings → Mail.
 
 Admin endpoints: `GET /api/admin/email/rate-limit` (status) and `POST /api/admin/email/send` (send one email). When the hourly limit is reached, send returns `429 Too Many Requests`.
 

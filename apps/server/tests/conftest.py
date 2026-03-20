@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.db.session import Base, get_db
+from app.db.session import Base, engine as app_engine, get_db
 from app.main import app
 from app.models.models import User
 from app.services.auth import create_access_token
@@ -41,8 +41,12 @@ app.dependency_overrides[get_db] = override_get_db
 def reset_database():
     Base.metadata.drop_all(bind=TEST_ENGINE)
     Base.metadata.create_all(bind=TEST_ENGINE)
+    # mail_settings and other code paths use SessionLocal() (app engine), not the test override
+    Base.metadata.drop_all(bind=app_engine)
+    Base.metadata.create_all(bind=app_engine)
     yield
     Base.metadata.drop_all(bind=TEST_ENGINE)
+    Base.metadata.drop_all(bind=app_engine)
 
 
 @pytest.fixture
