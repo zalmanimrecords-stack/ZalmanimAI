@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/zalmanim_icons.dart';
 import '../admin_dashboard_delegate.dart';
+import '../file_download.dart';
 
 /// Tab showing tracks pending for release (artist submitted full details after approval).
 class PendingReleasesTab extends StatefulWidget {
@@ -24,15 +25,26 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
   String _imageBusyKey(int pendingReleaseId, String imageId, String op) =>
       '$pendingReleaseId|$imageId|$op';
 
-  Future<void> _deletePendingReleaseImage(
-      int pendingReleaseId, String imageId) async {
-    final key = _imageBusyKey(pendingReleaseId, imageId, 'del');
+  /// Busy key for [removePendingReleaseStoredImage] (URL-based delete).
+  String _storedDeleteBusyKey(int pendingReleaseId, String imageUrl) =>
+      '$pendingReleaseId|${imageUrl.hashCode}|sdel';
+
+  /// Label/reference files on this API can be removed; external URLs cannot.
+  bool _isServerStoredPendingReleaseImageUrl(String url) {
+    final p = url.toLowerCase();
+    return p.contains('/public/pending-release-label-image/') ||
+        p.contains('/public/pending-release-reference-image/');
+  }
+
+  Future<void> _removePendingReleaseStoredImage(
+      int pendingReleaseId, String imageUrl) async {
+    final key = _storedDeleteBusyKey(pendingReleaseId, imageUrl);
     setState(() => _busyImageOps.add(key));
     try {
-      await widget.delegate.apiClient.deletePendingReleaseImageOption(
+      await widget.delegate.apiClient.removePendingReleaseStoredImage(
         token: widget.delegate.token,
         pendingReleaseId: pendingReleaseId,
-        imageId: imageId,
+        imageUrl: imageUrl,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -73,13 +85,14 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
     }
   }
 
-  Future<void> _confirmDeleteImage(int pendingReleaseId, String imageId) async {
+  Future<void> _confirmDeleteStoredImage(
+      int pendingReleaseId, String imageUrl) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Remove image'),
         content: const Text(
-          'Remove this image option? The file will be deleted and artists will no longer see it.',
+          'Remove this image? The file will be deleted on the server and artists will no longer see it.',
         ),
         actions: [
           TextButton(
@@ -95,7 +108,7 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
       ),
     );
     if (ok == true) {
-      await _deletePendingReleaseImage(pendingReleaseId, imageId);
+      await _removePendingReleaseStoredImage(pendingReleaseId, imageUrl);
     }
   }
 
@@ -136,6 +149,45 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
   Future<void> _reloadPendingReleases() => widget.delegate.loadPendingReleases(
         statusFilter: _statusFilterParam(),
       );
+
+  String _mimeTypeForDownloadFilename(String filename) {
+    final lower = filename.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    return 'application/octet-stream';
+  }
+
+  String _downloadFilenameForPreview(_ImagePreview preview, int index) {
+    final s = preview.suggestedFilename;
+    if (s != null && s.trim().isNotEmpty) return s.trim();
+    final u = Uri.tryParse(preview.url);
+    if (u != null && u.pathSegments.isNotEmpty) {
+      final last = u.pathSegments.last;
+      if (last.isNotEmpty) return last;
+    }
+    return 'image_${index + 1}.jpg';
+  }
+
+  Future<void> _downloadReleaseImage(String displayUrl, String filename) async {
+    try {
+      final bytes = await widget.delegate.apiClient.fetchUrlBytes(displayUrl);
+      if (!mounted) return;
+      triggerBrowserDownload(
+        bytes,
+        filename,
+        mimeType: _mimeTypeForDownloadFilename(filename),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Download started.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      widget.delegate.showErrorSnackBar(e.toString());
+    }
+  }
 
   Future<void> _showRemovePendingReleaseDialog(
       Map<String, dynamic> item) async {
@@ -480,6 +532,13 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
         return;
       }
       seen.add(normalized);
+      var suggested = (fileName ?? '').trim();
+      if (suggested.isEmpty) {
+        final u = Uri.tryParse(normalized);
+        if (u != null && u.pathSegments.isNotEmpty) {
+          suggested = u.pathSegments.last;
+        }
+      }
       previews.add(_ImagePreview(
         label: label,
         url: normalized,
@@ -487,6 +546,7 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
           (fileName ?? '').trim(),
           if (isSelected) 'Artist selected',
         ].where((part) => part.isNotEmpty).join(' - '),
+        suggestedFilename: suggested.isEmpty ? null : suggested,
         managementImageId:
             (managementImageId ?? '').trim().isEmpty ? null : managementImageId!.trim(),
       ));
@@ -615,11 +675,19 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
                       final artistName = _formatValue(item['artist_name']).isEmpty ? '-' : _formatValue(item['artist_name']);
                       final artistEmail = _formatValue(item['artist_email']);
                       final releaseTitle = _formatValue(item['release_title']);
+                      final artistData = _asMap(item['artist_data']);
+                      final releaseData = _asMap(item['release_data']);
+                      final trackTitle = _formatValue(releaseData['track_title']);
+                      final displayTitle = trackTitle.isNotEmpty
+                          ? trackTitle
+                          : (releaseTitle.isNotEmpty
+                              ? releaseTitle
+                              : artistName);
+                      final showArtistLine =
+                          artistName != '-' && displayTitle != artistName;
                       final status = _formatValue(item['status']).isEmpty ? 'pending' : _formatValue(item['status']);
                       final demoSubmissionId = item['demo_submission_id'];
                       final fromDemo = demoSubmissionId != null;
-                      final artistData = _asMap(item['artist_data']);
-                      final releaseData = _asMap(item['release_data']);
                       final reminderBusy = item['id'] is int && _sendingReminderIds.contains(item['id']);
                       final imagePreviews = _imagePreviews(item);
                       final comments = item['comments'] is List
@@ -641,32 +709,50 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
                           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                           title: Text(
-                            artistName,
+                            displayTitle,
                             style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
                           subtitle: Padding(
                             padding: const EdgeInsets.only(top: 6),
-                            child: Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                if (releaseTitle.isNotEmpty)
-                                  _InfoPill(
-                                    label: releaseTitle,
-                                    background: scheme.primary.withValues(alpha: 0.10),
-                                    foreground: scheme.primary,
+                                if (showArtistLine)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 6),
+                                    child: Text(
+                                      artistName,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: scheme.onSurfaceVariant,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
                                   ),
-                                _InfoPill(
-                                  label: status.toUpperCase(),
-                                  background: scheme.secondary.withValues(alpha: 0.12),
-                                  foreground: scheme.secondary,
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    if (releaseTitle.isNotEmpty &&
+                                        displayTitle != releaseTitle)
+                                      _InfoPill(
+                                        label: releaseTitle,
+                                        background: scheme.primary.withValues(alpha: 0.10),
+                                        foreground: scheme.primary,
+                                      ),
+                                    _InfoPill(
+                                      label: status.toUpperCase(),
+                                      background: scheme.secondary.withValues(alpha: 0.12),
+                                      foreground: scheme.secondary,
+                                    ),
+                                    if (fromDemo)
+                                      _InfoPill(
+                                        label: 'Demo #$demoSubmissionId',
+                                        background: scheme.surfaceContainerHighest,
+                                        foreground: scheme.onSurfaceVariant,
+                                      ),
+                                  ],
                                 ),
-                                if (fromDemo)
-                                  _InfoPill(
-                                    label: 'Demo #$demoSubmissionId',
-                                    background: scheme.surfaceContainerHighest,
-                                    foreground: scheme.onSurfaceVariant,
-                                  ),
                               ],
                             ),
                           ),
@@ -708,10 +794,18 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
                               onOpenLink: _openExternalLink,
                               resolveMediaUrl:
                                   widget.delegate.apiClient.resolveMediaUrl,
+                              onDownloadReleaseImage:
+                                  (preview, index, displayUrl) =>
+                                      _downloadReleaseImage(
+                                displayUrl,
+                                _downloadFilenameForPreview(preview, index),
+                              ),
                               pendingReleaseId: item['id'] as int,
                               busyImageOps: _busyImageOps,
                               imageBusyKey: _imageBusyKey,
-                              onDeleteImage: _confirmDeleteImage,
+                              storedDeleteBusyKey: _storedDeleteBusyKey,
+                              isServerStoredImageUrl: _isServerStoredPendingReleaseImageUrl,
+                              onDeleteStoredImage: _confirmDeleteStoredImage,
                               onNormalizeImage: _normalizePendingReleaseImage,
                               action: OutlinedButton.icon(
                                 onPressed: () =>
@@ -933,10 +1027,13 @@ class _ImageGalleryCard extends StatelessWidget {
     required this.previews,
     required this.onOpenLink,
     required this.resolveMediaUrl,
+    required this.onDownloadReleaseImage,
     required this.pendingReleaseId,
     required this.busyImageOps,
     required this.imageBusyKey,
-    required this.onDeleteImage,
+    required this.storedDeleteBusyKey,
+    required this.isServerStoredImageUrl,
+    required this.onDeleteStoredImage,
     required this.onNormalizeImage,
     this.action,
   });
@@ -945,12 +1042,20 @@ class _ImageGalleryCard extends StatelessWidget {
   final List<_ImagePreview> previews;
   final Future<void> Function(String value) onOpenLink;
   final String Function(String? url) resolveMediaUrl;
+  final Future<void> Function(
+    _ImagePreview preview,
+    int index,
+    String displayUrl,
+  ) onDownloadReleaseImage;
   final int pendingReleaseId;
   final Set<String> busyImageOps;
   final String Function(int pendingReleaseId, String imageId, String op)
       imageBusyKey;
-  final Future<void> Function(int pendingReleaseId, String imageId)
-      onDeleteImage;
+  final String Function(int pendingReleaseId, String imageUrl)
+      storedDeleteBusyKey;
+  final bool Function(String url) isServerStoredImageUrl;
+  final Future<void> Function(int pendingReleaseId, String imageUrl)
+      onDeleteStoredImage;
   final Future<void> Function(int pendingReleaseId, String imageId)
       onNormalizeImage;
   final Widget? action;
@@ -1001,12 +1106,17 @@ class _ImageGalleryCard extends StatelessWidget {
                         if (i > 0) const SizedBox(height: 16),
                         _ImagePreviewTile(
                           preview: previews[i],
+                          imageIndex: i,
                           onOpenLink: onOpenLink,
+                          onDownloadReleaseImage: onDownloadReleaseImage,
                           displayUrl: resolveMediaUrl(previews[i].url),
                           pendingReleaseId: pendingReleaseId,
                           busyImageOps: busyImageOps,
                           imageBusyKey: imageBusyKey,
-                          onDeleteImage: onDeleteImage,
+                          storedDeleteBusyKey: storedDeleteBusyKey,
+                          canDeleteStored:
+                              isServerStoredImageUrl(previews[i].url),
+                          onDeleteStoredImage: onDeleteStoredImage,
                           onNormalizeImage: onNormalizeImage,
                         ),
                       ],
@@ -1129,38 +1239,75 @@ class _CommentTile extends StatelessWidget {
   }
 }
 
-class _ImagePreviewTile extends StatelessWidget {
+class _ImagePreviewTile extends StatefulWidget {
   const _ImagePreviewTile({
     required this.preview,
+    required this.imageIndex,
     required this.onOpenLink,
+    required this.onDownloadReleaseImage,
     required this.displayUrl,
     required this.pendingReleaseId,
     required this.busyImageOps,
     required this.imageBusyKey,
-    required this.onDeleteImage,
+    required this.storedDeleteBusyKey,
+    required this.canDeleteStored,
+    required this.onDeleteStoredImage,
     required this.onNormalizeImage,
   });
 
   final _ImagePreview preview;
+  final int imageIndex;
   final Future<void> Function(String value) onOpenLink;
+  final Future<void> Function(
+    _ImagePreview preview,
+    int index,
+    String displayUrl,
+  ) onDownloadReleaseImage;
   final String displayUrl;
   final int pendingReleaseId;
   final Set<String> busyImageOps;
   final String Function(int pendingReleaseId, String imageId, String op)
       imageBusyKey;
-  final Future<void> Function(int pendingReleaseId, String imageId)
-      onDeleteImage;
+  final String Function(int pendingReleaseId, String imageUrl)
+      storedDeleteBusyKey;
+  final bool canDeleteStored;
+  final Future<void> Function(int pendingReleaseId, String imageUrl)
+      onDeleteStoredImage;
   final Future<void> Function(int pendingReleaseId, String imageId)
       onNormalizeImage;
 
   @override
+  State<_ImagePreviewTile> createState() => _ImagePreviewTileState();
+}
+
+class _ImagePreviewTileState extends State<_ImagePreviewTile> {
+  bool _downloading = false;
+
+  Future<void> _download() async {
+    if (_downloading) return;
+    setState(() => _downloading = true);
+    try {
+      await widget.onDownloadReleaseImage(
+        widget.preview,
+        widget.imageIndex,
+        widget.displayUrl,
+      );
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    const previewBox = 500.0;
     final scheme = Theme.of(context).colorScheme;
-    final mid = preview.managementImageId;
-    final busyDel = mid != null &&
-        busyImageOps.contains(imageBusyKey(pendingReleaseId, mid, 'del'));
+    final mid = widget.preview.managementImageId;
+    final busyStoredDel = widget.busyImageOps.contains(
+      widget.storedDeleteBusyKey(widget.pendingReleaseId, widget.preview.url),
+    );
     final busyJpg = mid != null &&
-        busyImageOps.contains(imageBusyKey(pendingReleaseId, mid, 'jpg'));
+        widget.busyImageOps
+            .contains(widget.imageBusyKey(widget.pendingReleaseId, mid, 'jpg'));
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
@@ -1171,20 +1318,21 @@ class _ImagePreviewTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      preview.label,
+                      widget.preview.label,
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
-                    if (preview.subtitle.isNotEmpty)
+                    if (widget.preview.subtitle.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
-                          preview.subtitle,
+                          widget.preview.subtitle,
                           style: TextStyle(
                             color: scheme.onSurfaceVariant,
                             fontSize: 12,
@@ -1194,62 +1342,89 @@ class _ImagePreviewTile extends StatelessWidget {
                   ],
                 ),
               ),
-              TextButton.icon(
-                onPressed: () => onOpenLink(preview.url),
-                icon: const Icon(Icons.open_in_new, size: 16),
-                label: const Text('Open'),
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                alignment: WrapAlignment.end,
+                children: [
+                  TextButton.icon(
+                    onPressed: _downloading ? null : _download,
+                    icon: _downloading
+                        ? SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: scheme.primary,
+                            ),
+                          )
+                        : const Icon(Icons.download, size: 16),
+                    label: Text(_downloading ? 'Downloading…' : 'Download'),
+                  ),
+                  TextButton.icon(
+                    onPressed: () => widget.onOpenLink(widget.preview.url),
+                    icon: const Icon(Icons.open_in_new, size: 16),
+                    label: const Text('Open'),
+                  ),
+                  if (widget.canDeleteStored)
+                    TextButton.icon(
+                      onPressed: busyStoredDel || busyJpg
+                          ? null
+                          : () => widget.onDeleteStoredImage(
+                                widget.pendingReleaseId,
+                                widget.preview.url,
+                              ),
+                      icon: busyStoredDel
+                          ? SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: scheme.primary,
+                              ),
+                            )
+                          : const Icon(Icons.delete_outline, size: 16),
+                      label: Text(busyStoredDel ? 'Removing…' : 'Delete'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: scheme.error,
+                      ),
+                    ),
+                ],
               ),
             ],
           ),
           if (mid != null) ...[
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: busyDel || busyJpg
-                      ? null
-                      : () => onDeleteImage(pendingReleaseId, mid),
-                  icon: busyDel
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.delete_outline, size: 18),
-                  label: Text(busyDel ? 'Removing…' : 'Delete'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: busyDel || busyJpg
-                      ? null
-                      : () => onNormalizeImage(pendingReleaseId, mid),
-                  icon: busyJpg
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.photo_size_select_large_outlined,
-                          size: 18),
-                  label: Text(
-                      busyJpg ? 'Converting…' : 'JPG 3000×3000'),
-                ),
-              ],
+            OutlinedButton.icon(
+              onPressed: busyStoredDel || busyJpg
+                  ? null
+                  : () => widget.onNormalizeImage(widget.pendingReleaseId, mid),
+              icon: busyJpg
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.photo_size_select_large_outlined,
+                      size: 18),
+              label: Text(busyJpg ? 'Converting…' : 'JPG 3000×3000'),
             ),
           ],
           const SizedBox(height: 12),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: AspectRatio(
-              aspectRatio: 16 / 9,
-              child: Image.network(
-                displayUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  color: scheme.surfaceContainerHighest,
-                  alignment: Alignment.center,
-                  child: const Text('Could not preview image'),
+          Center(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: SizedBox(
+                width: previewBox,
+                height: previewBox,
+                child: Image.network(
+                  widget.displayUrl,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: scheme.surfaceContainerHighest,
+                    alignment: Alignment.center,
+                    child: const Text('Could not preview image'),
+                  ),
                 ),
               ),
             ),
@@ -1277,12 +1452,15 @@ class _ImagePreview {
     required this.label,
     required this.url,
     this.subtitle = '',
+    this.suggestedFilename,
     this.managementImageId,
   });
 
   final String label;
   final String url;
   final String subtitle;
+  /// Hint for download filename (e.g. original upload name or URL path segment).
+  final String? suggestedFilename;
   /// Label-uploaded option id (delete / normalize); null for reference URLs only.
   final String? managementImageId;
 }

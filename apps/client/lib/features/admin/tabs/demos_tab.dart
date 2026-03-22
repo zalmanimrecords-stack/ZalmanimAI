@@ -304,7 +304,11 @@ class _DemoMp3DownloadLinkState extends State<_DemoMp3DownloadLink> {
         id: widget.demoId,
       );
       if (!mounted) return;
-      triggerBrowserDownload(bytes, 'demo_${widget.demoId}.mp3');
+      triggerBrowserDownload(
+        bytes,
+        'demo_${widget.demoId}.mp3',
+        mimeType: 'audio/mpeg',
+      );
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Download started.')),
       );

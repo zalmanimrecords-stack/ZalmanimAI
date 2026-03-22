@@ -123,6 +123,7 @@ from app.schemas.schemas import (
     PendingReleaseNotificationSettingsUpdate,
     PendingReleaseOut,
     PendingReleaseReferenceUploadOut,
+    PendingReleaseRemoveStoredImageBody,
     PendingReleaseReminderResponse,
     PendingReleaseSelectImageRequest,
     PendingReleaseSubmit,
@@ -1307,6 +1308,19 @@ def _pending_release_upload_path_from_public_url(url: str) -> tuple[str, str] | 
     full = os.path.join(settings.upload_dir, sub, filename)
     kind = "label" if sub == "pending_release_label_images" else "reference"
     return (full, kind)
+
+
+def _normalize_public_image_url_path_for_match(url: str) -> str:
+    """Path-only compare for pending-release public image URLs (handles absolute vs relative)."""
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urlparse(raw)
+        path = (parsed.path or raw).split("?")[0]
+    except Exception:
+        path = raw.split("?")[0]
+    return path.rstrip("/")
 
 
 def _bytes_to_jpg_3000_square(data: bytes) -> bytes:
@@ -4543,6 +4557,109 @@ def admin_delete_pending_release_image_option(
             if new_options and isinstance(new_options[0], dict)
             else None
         )
+    _save_pending_release_data(pending_release, release_data)
+    db.commit()
+    db.refresh(pending_release)
+    return _serialize_pending_release_detail(pending_release)
+
+
+@router.post(
+    "/admin/pending-releases/{pending_release_id}/remove-stored-image",
+    response_model=PendingReleaseDetailOut,
+)
+def admin_remove_pending_release_stored_image(
+    pending_release_id: int,
+    body: PendingReleaseRemoveStoredImageBody,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> PendingReleaseDetailOut:
+    """Remove a server-stored image: label option (uploads dir) or artist cover reference (references dir)."""
+    require_admin(user)
+    raw_url = (body.url or "").strip()
+    if not raw_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="url is required")
+    resolved = _pending_release_upload_path_from_public_url(raw_url)
+    if resolved is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Not a server-stored pending release image URL.",
+        )
+    fs_path, kind = resolved
+    req_path = _normalize_public_image_url_path_for_match(raw_url)
+
+    pending_release = (
+        db.query(PendingRelease)
+        .options(joinedload(PendingRelease.comments))
+        .filter(PendingRelease.id == pending_release_id)
+        .first()
+    )
+    if not pending_release:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pending release not found")
+    release_data = _safe_json_dict(pending_release.release_data_json)
+
+    if kind == "label":
+        image_options = release_data.get("image_options")
+        if not isinstance(image_options, list):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+        target: dict | None = None
+        for item in image_options:
+            if not isinstance(item, dict):
+                continue
+            u = (item.get("url") or "").strip()
+            if _normalize_public_image_url_path_for_match(u) == req_path:
+                target = item
+                break
+        if not target:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found in options")
+        image_id = (target.get("id") or "").strip()
+        if not image_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image option has no id")
+        url = (target.get("url") or "").strip() if isinstance(target.get("url"), str) else ""
+        path_resolved = _pending_release_upload_path_from_public_url(url)
+        if path_resolved is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only images uploaded to this system can be removed.",
+            )
+        path_fs, path_kind = path_resolved
+        if path_kind != "label":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This image can only be removed from the label upload list.",
+            )
+        if os.path.isfile(path_fs):
+            try:
+                os.remove(path_fs)
+            except OSError:
+                pass
+        new_options = [
+            item
+            for item in image_options
+            if not (isinstance(item, dict) and (item.get("id") or "").strip() == image_id)
+        ]
+        release_data["image_options"] = new_options
+        sel = (release_data.get("selected_image_id") or "").strip() if isinstance(release_data.get("selected_image_id"), str) else ""
+        if sel == image_id:
+            release_data["selected_image_id"] = (
+                (new_options[0].get("id") or "").strip()
+                if new_options and isinstance(new_options[0], dict)
+                else None
+            )
+    else:
+        cov = (release_data.get("cover_reference_image_url") or "").strip()
+        if _normalize_public_image_url_path_for_match(cov) != req_path:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="URL does not match the stored cover reference.",
+            )
+        if os.path.isfile(fs_path):
+            try:
+                os.remove(fs_path)
+            except OSError:
+                pass
+        release_data["cover_reference_image_url"] = ""
+        release_data["cover_reference_image_name"] = ""
+
     _save_pending_release_data(pending_release, release_data)
     db.commit()
     db.refresh(pending_release)

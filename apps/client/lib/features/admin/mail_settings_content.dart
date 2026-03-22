@@ -5,8 +5,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/api_client.dart';
 import '../../core/zalmanim_icons.dart';
 
-/// Mail settings UI: SMTP, test, Google Mail. (Demo rejection template is in Email Templates.)
-/// Used in System Settings page and in Settings > Mail settings tab.
+/// Mail settings UI: SMTP, test, Google Mail. (Email content templates and global footer are in Email templates.)
+/// Used in Settings → Mail settings.
 class MailSettingsContent extends StatefulWidget {
   const MailSettingsContent({
     super.key,
@@ -49,7 +49,6 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
   final _smtpBackupUserController = TextEditingController();
   final _smtpBackupPasswordController = TextEditingController();
   final _emailsPerHourController = TextEditingController();
-  final _emailFooterController = TextEditingController();
   final _testEmailController = TextEditingController();
   bool _smtpUseTls = true;
   bool _smtpUseSsl = false;
@@ -69,7 +68,6 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
     _smtpBackupUserController.dispose();
     _smtpBackupPasswordController.dispose();
     _emailsPerHourController.dispose();
-    _emailFooterController.dispose();
     _testEmailController.dispose();
     super.dispose();
   }
@@ -140,7 +138,6 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
     _smtpUserController.text = '';
     _smtpPasswordController.text = '';
     _emailsPerHourController.text = (s['emails_per_hour'] as int?)?.toString() ?? '30';
-    _emailFooterController.text = s['email_footer'] as String? ?? '';
     _smtpUseTls = s['smtp_use_tls'] as bool? ?? true;
     _smtpUseSsl = s['smtp_use_ssl'] as bool? ?? false;
     _smtpBackupHostController.text = s['smtp_backup_host'] as String? ?? '';
@@ -184,7 +181,6 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
             ? null
             : _smtpBackupPasswordController.text.trim(),
         emailsPerHour: _emailsPerHour,
-        emailFooter: _emailFooterController.text,
       );
       if (mounted) {
         setState(() {
@@ -475,7 +471,7 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
         children: [
           _sectionTitle('Outgoing mail'),
           Card(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+            color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.45),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -564,43 +560,6 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
             style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
           const SizedBox(height: 12),
-          Card(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Global email footer',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'This text is appended automatically to every outgoing email from the system.',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _emailFooterController,
-                    decoration: const InputDecoration(
-                      labelText: 'Email footer',
-                      hintText: 'Appended automatically to every outgoing email.',
-                      border: OutlineInputBorder(),
-                      alignLabelWithHint: true,
-                    ),
-                    maxLines: 5,
-                    minLines: 3,
-                    textInputAction: TextInputAction.newline,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
         TextField(
           controller: _smtpHostController,
           decoration: const InputDecoration(

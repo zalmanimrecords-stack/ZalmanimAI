@@ -794,6 +794,12 @@ class PendingReleaseReferenceUploadOut(BaseModel):
     filename: str
 
 
+class PendingReleaseRemoveStoredImageBody(BaseModel):
+    """Remove a label-uploaded option or artist reference image stored on this server (by public URL)."""
+
+    url: str
+
+
 # Label inbox (artist messages to label; admin replies by email)
 class LabelInboxSend(BaseModel):
     """Artist: send a message to the label."""

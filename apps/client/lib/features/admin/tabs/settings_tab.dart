@@ -109,7 +109,7 @@ class SettingsTab extends StatelessWidget {
   }
 }
 
-/// Mail settings sub-tab: server mail (SMTP, demo rejection, Google) + artist reminder template.
+/// Mail settings sub-tab: server mail (SMTP, Google) + artist reminder shortcut. Email templates live in Email templates.
 class MailSettingsSubTab extends StatelessWidget {
   const MailSettingsSubTab({super.key, required this.delegate});
 

@@ -160,6 +160,9 @@ class EmailTemplatesTab extends StatefulWidget {
 class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
   bool _loading = true;
   String? _error;
+  final _emailFooterController = TextEditingController();
+  bool _savingFooter = false;
+  String? _footerSaveError;
   final Map<String, TextEditingController> _subjectControllers = {};
   final Map<String, TextEditingController> _bodyControllers = {};
   final Map<String, bool> _saving = {};
@@ -181,6 +184,7 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
 
   @override
   void dispose() {
+    _emailFooterController.dispose();
     for (final controller in _subjectControllers.values) {
       controller.dispose();
     }
@@ -198,6 +202,7 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
     try {
       final data = await delegate.apiClient.fetchSystemSettings(delegate.token);
       if (!mounted) return;
+      _emailFooterController.text = (data['email_footer'] as String? ?? '').toString();
       for (final template in _templateConfigs) {
         _subjectControllers[template.id]!.text =
             (data[template.subjectKey] as String? ?? '').toString();
@@ -287,6 +292,30 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
     }
   }
 
+  Future<void> _saveEmailFooter() async {
+    setState(() {
+      _savingFooter = true;
+      _footerSaveError = null;
+    });
+    try {
+      await delegate.apiClient.updateSystemSettingsMail(
+        token: delegate.token,
+        emailFooter: _emailFooterController.text,
+      );
+      if (!mounted) return;
+      setState(() => _savingFooter = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Global email footer saved.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _savingFooter = false;
+        _footerSaveError = e.toString();
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -324,6 +353,78 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
           style: TextStyle(
             fontSize: 13,
             color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          color: Theme.of(context)
+              .colorScheme
+              .surfaceContainerHighest
+              .withOpacity(0.45),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Global email footer',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'This text is appended automatically to every outgoing email from the system.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _emailFooterController,
+                  decoration: const InputDecoration(
+                    labelText: 'Email footer',
+                    hintText: 'Appended automatically to every outgoing email.',
+                    border: OutlineInputBorder(),
+                    alignLabelWithHint: true,
+                  ),
+                  maxLines: 5,
+                  minLines: 3,
+                  textInputAction: TextInputAction.newline,
+                ),
+                if (_footerSaveError != null) ...[
+                  const SizedBox(height: 8),
+                  SelectableText(
+                    _footerSaveError!,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: IconButton(
+                      icon: const Icon(Icons.copy),
+                      tooltip: 'Copy error',
+                      onPressed: () => Clipboard.setData(
+                        ClipboardData(text: _footerSaveError!),
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: _savingFooter ? null : _saveEmailFooter,
+                  icon: _savingFooter
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(ZalmanimIcons.save, size: 18),
+                  label: Text(_savingFooter ? 'Saving...' : 'Save footer'),
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 12),

@@ -1024,6 +1024,18 @@ class ApiClient {
     return response.bodyBytes;
   }
 
+  /// Fetches binary content from an absolute URL (e.g. resolved public media URL).
+  /// Used for "Download" on pending-release images and similar assets.
+  Future<List<int>> fetchUrlBytes(String absoluteUrl) async {
+    final response = await http.get(Uri.parse(absoluteUrl));
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Download failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return response.bodyBytes;
+  }
+
   Future<Map<String, dynamic>> fetchSystemSettings(String token) async {
     final response = await http.get(
       Uri.parse('$baseUrl/admin/settings'),
@@ -1179,6 +1191,26 @@ class ApiClient {
       final detail = ApiClient._detailFromErrorBody(response.body);
       throw Exception(
           'Delete pending release image failed (${response.statusCode}): $detail');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  /// Removes a server-stored image by public URL (label option or cover reference file).
+  Future<Map<String, dynamic>> removePendingReleaseStoredImage({
+    required String token,
+    required int pendingReleaseId,
+    required String imageUrl,
+  }) async {
+    final response = await http.post(
+      Uri.parse(
+          '$baseUrl/admin/pending-releases/$pendingReleaseId/remove-stored-image'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode({'url': imageUrl}),
+    );
+    if (response.statusCode != 200) {
+      final detail = ApiClient._detailFromErrorBody(response.body);
+      throw Exception(
+          'Remove image failed (${response.statusCode}): $detail');
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
