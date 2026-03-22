@@ -2431,7 +2431,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               'Hi $artistName,\n\nThanks for sending your demo.\n\nWe reviewed it and would like to move forward with you. Please reply to this email so we can continue the next steps.\n\nBest regards')
           .toString(),
     );
-    bool createArtist = submission['artist_id'] == null;
     bool sendEmail = true;
     final approved = await showDialog<bool>(
       context: context,
@@ -2443,6 +2442,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   TextField(
                     controller: subjectController,
@@ -2458,14 +2458,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       alignLabelWithHint: true,
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  SwitchListTile(
-                    value: createArtist,
-                    onChanged: (value) =>
-                        setStateDialog(() => createArtist = value),
-                    title: const Text('Create or link artist in the system'),
-                    contentPadding: EdgeInsets.zero,
+                  const SizedBox(height: 8),
+                  Text(
+                    'The submitter is added to Artists (new row or linked by email).',
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
+                  const SizedBox(height: 12),
                   SwitchListTile(
                     value: sendEmail,
                     onChanged: (value) =>
@@ -2501,7 +2499,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         id: id,
         approvalSubject: subjectController.text.trim(),
         approvalBody: bodyController.text,
-        createArtist: createArtist,
         sendEmail: sendEmail,
       );
       await _loadDemoSubmissions(withOverlay: false);

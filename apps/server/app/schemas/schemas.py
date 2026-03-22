@@ -618,7 +618,7 @@ class DemoSubmissionUpdate(BaseModel):
 class DemoSubmissionApproveRequest(BaseModel):
     approval_subject: str | None = None
     approval_body: str | None = None
-    create_artist: bool = True
+    create_artist: bool = True  # Ignored: an Artist is always created or linked by email on approve.
     send_email: bool = True
 
 

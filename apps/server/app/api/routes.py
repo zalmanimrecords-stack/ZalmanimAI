@@ -207,6 +207,33 @@ def _create_pending_release_for_demo(db: Session, item: DemoSubmission) -> Pendi
     return pr
 
 
+def _link_or_create_artist_for_demo_submission(db: Session, item: DemoSubmission) -> None:
+    """Set DemoSubmission.artist_id by reusing an Artist with the same email or creating one from the demo."""
+    if item.artist_id is not None:
+        return
+    artist = db.query(Artist).filter(func.lower(Artist.email) == item.email.lower()).first()
+    if artist is None:
+        demo_extra = {
+            "artist_brand": item.artist_name,
+            "full_name": item.contact_name,
+            "comments": item.message,
+            "demo_submission_id": item.id,
+            "demo_status": "approved",
+            "demo_links": _safe_json_list(item.links_json),
+            **_safe_json_dict(item.fields_json),
+        }
+        artist = Artist(
+            name=item.artist_name,
+            email=item.email,
+            notes="Created from approved demo submission.",
+            is_active=True,
+            extra_json=json.dumps(demo_extra),
+        )
+        db.add(artist)
+        db.flush()
+    item.artist_id = artist.id
+
+
 def _generate_temporary_password(length: int = 12) -> str:
     alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@$%*"
     return "".join(secrets.choice(alphabet) for _ in range(length))
@@ -2477,6 +2504,11 @@ def update_demo_submission(
     if payload.artist_id is not None:
         item.artist_id = payload.artist_id
 
+    # When status changes to approved (e.g. admin "Mark approved"), mirror POST /approve: artist row + pending release.
+    if item.status == "approved" and old_status != "approved":
+        _link_or_create_artist_for_demo_submission(db, item)
+        _create_pending_release_for_demo(db, item)
+
     # When status changes to rejected, send rejection email once (if not already sent).
     if item.status == "rejected" and old_status != "rejected" and item.rejection_email_sent_at is None:
         default_rejection_subject, default_rejection_body = _get_demo_rejection_subject_and_body(item)
@@ -2581,28 +2613,9 @@ def approve_demo_submission(
         if not item.approval_body:
             item.approval_body = default_body
 
-    if payload.create_artist and item.artist_id is None:
-        artist = db.query(Artist).filter(func.lower(Artist.email) == item.email.lower()).first()
-        if artist is None:
-            demo_extra = {
-                "artist_brand": item.artist_name,
-                "full_name": item.contact_name,
-                "comments": item.message,
-                "demo_submission_id": item.id,
-                "demo_status": "approved",
-                "demo_links": _safe_json_list(item.links_json),
-                **_safe_json_dict(item.fields_json),
-            }
-            artist = Artist(
-                name=item.artist_name,
-                email=item.email,
-                notes="Created from approved demo submission.",
-                is_active=True,
-                extra_json=json.dumps(demo_extra),
-            )
-            db.add(artist)
-            db.flush()
-        item.artist_id = artist.id
+    # Always ensure an Artist exists when a demo is approved (list in /artists).
+    if item.artist_id is None:
+        _link_or_create_artist_for_demo_submission(db, item)
 
     # Create one-time token for artist to confirm details (form link in approval email).
     demo_confirm_form_link: str | None = None
