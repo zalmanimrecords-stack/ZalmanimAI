@@ -35,6 +35,7 @@ services:
   api:
     build:
       context: ./apps/server
+    image: zalmanimai-api:latest
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-label}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-labelops}
@@ -89,15 +90,19 @@ services:
   worker:
     build:
       context: ./apps/server
+    image: zalmanimai-worker:latest
     command: ["python", "worker.py"]
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-label}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-labelops}
       JWT_SECRET: ${JWT_SECRET:-change-me-in-prod}
+      UPLOAD_DIR: storage/uploads
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       MAILCHIMP_API_KEY: ${MAILCHIMP_API_KEY:-}
       WORDPRESS_REST_BASE_URL: ${WORDPRESS_REST_BASE_URL:-}
       WORDPRESS_CLIENT_KEY: ${WORDPRESS_CLIENT_KEY:-}
       WORDPRESS_CLIENT_SECRET: ${WORDPRESS_CLIENT_SECRET:-}
+    volumes:
+      - ./apps/server/storage:/app/storage
     depends_on:
       postgres:
         condition: service_healthy

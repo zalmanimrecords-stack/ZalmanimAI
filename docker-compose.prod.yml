@@ -85,8 +85,12 @@ services:
         ARTIST_PRIMARY_COLOR: ${ARTIST_PRIMARY_COLOR:-B66A2C}
         DEMO_SUBMISSION_TOKEN: ${DEMO_SUBMISSION_TOKEN:-}
     restart: unless-stopped
+    # Ensure worker runs with the public sites (scheduled campaigns). Without this,
+    # `docker compose up -d web` would start api+web but omit worker.
     depends_on:
       api:
+        condition: service_started
+      worker:
         condition: service_started
     expose:
       - "80"
