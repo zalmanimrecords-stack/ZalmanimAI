@@ -26,6 +26,61 @@ KEY_TTL_SECONDS = 7200  # 2 hours so the key expires after the hour window
 _GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send"
 
 
+def _normalize_smtp_tls_mode(port: int | None, use_tls: bool, use_ssl: bool) -> tuple[bool, bool]:
+    """
+    Align implicit-SSL vs STARTTLS with standard SMTP ports.
+
+    Gmail and most providers: 587 = plain socket then STARTTLS; 465 = TLS from first byte.
+    Using SMTP_SSL on 587 triggers [SSL: WRONG_VERSION_NUMBER] because the server speaks SMTP, not TLS.
+    """
+    try:
+        p = int(port) if port is not None else 587
+    except (TypeError, ValueError):
+        p = 587
+    if p == 465:
+        return True, False
+    if p in (587, 2525):
+        # Submission ports: STARTTLS only (never implicit SSL). Fixes Gmail on 587 with SSL flag set.
+        return False, True
+    if p == 25:
+        return False, bool(use_tls)
+    return bool(use_ssl), bool(use_tls)
+
+
+def _is_google_smtp_host(host: str | None) -> bool:
+    h = (host or "").lower().strip()
+    return "gmail.com" in h or "smtp.google.com" in h
+
+
+def _gmail_smtp_preflight(cfg, from_addr: str) -> str | None:
+    """
+    Gmail rejects unauthenticated SMTP (530 5.7.0). Require credentials and warn on From vs login mismatch.
+    """
+    if not _is_google_smtp_host(getattr(cfg, "smtp_host", None)):
+        return None
+    user = (cfg.smtp_user or "").strip()
+    pw = (cfg.smtp_password or "").strip()
+    if not user:
+        return (
+            "Google SMTP requires a username (full Gmail address) and password. "
+            "With 2-Step Verification, create an App Password: https://myaccount.google.com/apppasswords"
+        )
+    if not pw:
+        return (
+            "Google SMTP requires a password. With 2-Step Verification use an App Password, not your normal password."
+        )
+    user_l = user.lower()
+    from_l = (from_addr or "").strip().lower()
+    if user_l != from_l and user_l.endswith(("@gmail.com", "@googlemail.com")) and from_l.endswith(
+        ("@gmail.com", "@googlemail.com")
+    ):
+        return (
+            "For Gmail SMTP the 'From' address must match the SMTP login address, "
+            "or add that address in Gmail → Settings → See all settings → Accounts → Send mail as."
+        )
+    return None
+
+
 def _htmlify_plain_text(value: str) -> str:
     escaped = html.escape(value.strip())
     if not escaped:
@@ -243,6 +298,10 @@ def _smtp_send_with_config(
     if not from_addr:
         return False, "Email from address not configured (smtp_from_email or smtp_user)"
 
+    pre = _gmail_smtp_preflight(cfg, from_addr)
+    if pre:
+        return False, pre
+
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = from_addr
@@ -251,15 +310,20 @@ def _smtp_send_with_config(
     if body_html:
         msg.attach(MIMEText(body_html, "html", "utf-8"))
 
+    use_ssl, use_tls = _normalize_smtp_tls_mode(
+        getattr(cfg, "smtp_port", None),
+        bool(cfg.smtp_use_tls),
+        bool(cfg.smtp_use_ssl),
+    )
     try:
-        if cfg.smtp_use_ssl:
+        if use_ssl:
             with smtplib.SMTP_SSL(cfg.smtp_host, cfg.smtp_port, timeout=30) as smtp:
                 if (cfg.smtp_user or "").strip():
                     smtp.login(cfg.smtp_user.strip(), cfg.smtp_password or "")
                 smtp.sendmail(from_addr, [to_email], msg.as_string())
         else:
             with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port, timeout=30) as smtp:
-                if cfg.smtp_use_tls:
+                if use_tls:
                     smtp.starttls()
                 if (cfg.smtp_user or "").strip():
                     smtp.login(cfg.smtp_user.strip(), cfg.smtp_password or "")
@@ -267,8 +331,14 @@ def _smtp_send_with_config(
         append_system_log("info", "mail", f"Email sent to {to_email} ({log_via})", details=subject[:200] if subject else None)
         return True, "Sent"
     except smtplib.SMTPException as e:
+        err = str(e)
+        if _is_google_smtp_host(getattr(cfg, "smtp_host", None)) and "530" in err and "Authentication" in err:
+            err = (
+                f"{err} — For smtp.gmail.com: use the same account for SMTP login and 'From', "
+                "an App Password if 2FA is on, and ensure both user and password are set in Mail settings."
+            )
         append_system_log("error", "mail", f"SMTP error sending to {to_email}: {e}", details=subject[:200] if subject else None)
-        return False, str(e)
+        return False, err
     except Exception as e:
         append_system_log("error", "mail", f"Send failed to {to_email}: {e}", details=subject[:200] if subject else None)
         return False, str(e)
@@ -294,14 +364,23 @@ def test_smtp_connection(cfg) -> tuple[bool, str]:
     """Open SMTP connection and optionally authenticate without sending an email."""
     if not (cfg.smtp_host or "").strip():
         return False, "SMTP host is required"
+    test_from = (getattr(cfg, "smtp_from_email", None) or getattr(cfg, "smtp_user", None) or "").strip()
+    pre = _gmail_smtp_preflight(cfg, test_from or (cfg.smtp_user or "").strip())
+    if pre:
+        return False, pre
+    use_ssl, use_tls = _normalize_smtp_tls_mode(
+        getattr(cfg, "smtp_port", None),
+        bool(cfg.smtp_use_tls),
+        bool(cfg.smtp_use_ssl),
+    )
     try:
-        if cfg.smtp_use_ssl:
+        if use_ssl:
             with smtplib.SMTP_SSL(cfg.smtp_host, cfg.smtp_port, timeout=30) as smtp:
                 if (cfg.smtp_user or "").strip():
                     smtp.login(cfg.smtp_user.strip(), cfg.smtp_password or "")
         else:
             with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port, timeout=30) as smtp:
-                if cfg.smtp_use_tls:
+                if use_tls:
                     smtp.starttls()
                 if (cfg.smtp_user or "").strip():
                     smtp.login(cfg.smtp_user.strip(), cfg.smtp_password or "")
