@@ -7,7 +7,9 @@ import time
 # Ensure app root is on path and env is loaded (e.g. DATABASE_URL in docker).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from app.db.session import SessionLocal
+from sqlalchemy.exc import OperationalError
+
+from app.db.session import SessionLocal, engine
 from app.services.campaign_send import get_campaigns_ready_to_send, run_campaign_send
 
 POLL_INTERVAL_SEC = 60
@@ -23,6 +25,9 @@ def main() -> None:
                     run_campaign_send(db, campaign.id)
             finally:
                 db.close()
+        except OperationalError as e:
+            print(f"worker error: {e}", flush=True)
+            engine.dispose()
         except Exception as e:
             print(f"worker error: {e}", flush=True)
         time.sleep(POLL_INTERVAL_SEC)
