@@ -119,15 +119,32 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      TextField(
-                        controller: emailController,
-                        decoration: const InputDecoration(labelText: 'Email'),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: passwordController,
-                        decoration: const InputDecoration(labelText: 'Password'),
-                        obscureText: true,
+                      AutofillGroup(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            TextField(
+                              controller: emailController,
+                              keyboardType: TextInputType.emailAddress,
+                              textInputAction: TextInputAction.next,
+                              autofillHints: const [AutofillHints.email],
+                              decoration: const InputDecoration(
+                                labelText: 'Email',
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: passwordController,
+                              obscureText: true,
+                              textInputAction: TextInputAction.done,
+                              autofillHints: const [AutofillHints.password],
+                              onEditingComplete: loading ? null : _login,
+                              decoration: const InputDecoration(
+                                labelText: 'Password',
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 8),
                       Align(
@@ -254,6 +271,8 @@ class _LoginPageState extends State<LoginPage> {
         email: emailController.text.trim(),
         password: passwordController.text,
       );
+      // Lets the browser (especially Chrome) offer to save/update the password.
+      TextInput.finishAutofillContext(shouldSave: true);
       await _completeLogin(session);
     } catch (e) {
       final msg = e.toString();

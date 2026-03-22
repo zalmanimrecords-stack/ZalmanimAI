@@ -1317,99 +1317,86 @@ class _ImagePreviewTileState extends State<_ImagePreviewTile> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.preview.label,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    if (widget.preview.subtitle.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(
-                          widget.preview.subtitle,
-                          style: TextStyle(
-                            color: scheme.onSurfaceVariant,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                  ],
+          Text(
+            widget.preview.label,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          if (widget.preview.subtitle.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                widget.preview.subtitle,
+                style: TextStyle(
+                  color: scheme.onSurfaceVariant,
+                  fontSize: 12,
                 ),
               ),
-              Wrap(
-                spacing: 4,
-                runSpacing: 4,
-                alignment: WrapAlignment.end,
-                children: [
-                  TextButton.icon(
-                    onPressed: _downloading ? null : _download,
-                    icon: _downloading
-                        ? SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: scheme.primary,
-                            ),
-                          )
-                        : const Icon(Icons.download, size: 16),
-                    label: Text(_downloading ? 'Downloading…' : 'Download'),
-                  ),
-                  TextButton.icon(
-                    onPressed: () => widget.onOpenLink(widget.preview.url),
-                    icon: const Icon(Icons.open_in_new, size: 16),
-                    label: const Text('Open'),
-                  ),
-                  if (widget.canDeleteStored)
-                    TextButton.icon(
-                      onPressed: busyStoredDel || busyJpg
-                          ? null
-                          : () => widget.onDeleteStoredImage(
-                                widget.pendingReleaseId,
-                                widget.preview.url,
-                              ),
-                      icon: busyStoredDel
-                          ? SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: scheme.primary,
-                              ),
-                            )
-                          : const Icon(Icons.delete_outline, size: 16),
-                      label: Text(busyStoredDel ? 'Removing…' : 'Delete'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: scheme.error,
-                      ),
-                    ),
-                ],
+            ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _downloading ? null : _download,
+                icon: _downloading
+                    ? SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: scheme.primary,
+                        ),
+                      )
+                    : const Icon(ZalmanimIcons.download, size: 18),
+                label: Text(_downloading ? 'Downloading…' : 'Download'),
               ),
+              OutlinedButton.icon(
+                onPressed: () => widget.onOpenLink(widget.preview.url),
+                icon: const Icon(Icons.open_in_new, size: 18),
+                label: const Text('Open'),
+              ),
+              if (widget.canDeleteStored)
+                OutlinedButton.icon(
+                  onPressed: busyStoredDel || busyJpg
+                      ? null
+                      : () => widget.onDeleteStoredImage(
+                            widget.pendingReleaseId,
+                            widget.preview.url,
+                          ),
+                  icon: busyStoredDel
+                      ? SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: scheme.primary,
+                          ),
+                        )
+                      : const Icon(Icons.delete_outline, size: 18),
+                  label: Text(busyStoredDel ? 'Removing…' : 'Delete'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: scheme.error,
+                  ),
+                ),
+              if (mid != null)
+                OutlinedButton.icon(
+                  onPressed: busyStoredDel || busyJpg
+                      ? null
+                      : () => widget.onNormalizeImage(widget.pendingReleaseId, mid),
+                  icon: busyJpg
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.photo_size_select_large_outlined,
+                          size: 18),
+                  label: Text(busyJpg ? 'Converting…' : 'JPG 3000×3000'),
+                ),
             ],
           ),
-          if (mid != null) ...[
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: busyStoredDel || busyJpg
-                  ? null
-                  : () => widget.onNormalizeImage(widget.pendingReleaseId, mid),
-              icon: busyJpg
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.photo_size_select_large_outlined,
-                      size: 18),
-              label: Text(busyJpg ? 'Converting…' : 'JPG 3000×3000'),
-            ),
-          ],
           const SizedBox(height: 12),
           Center(
             child: ClipRRect(
