@@ -62,7 +62,7 @@ class FakeAdminDashboardDelegate extends Fake
   void showAddArtistDialog() {}
 
   @override
-  void showEditArtistDialog(int id) {}
+  void showEditArtistDialog(int id, {Map<String, dynamic>? initialArtist}) {}
 
   @override
   void showSetArtistPasswordDialog(int artistId, String artistName) {}

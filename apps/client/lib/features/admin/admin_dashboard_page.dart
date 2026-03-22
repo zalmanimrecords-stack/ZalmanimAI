@@ -1566,7 +1566,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   void showAddArtistDialog() => _showAddArtistDialog();
 
   @override
-  void showEditArtistDialog(int id) => _showEditArtistDialog(id);
+  void showEditArtistDialog(int id, {Map<String, dynamic>? initialArtist}) =>
+      _showEditArtistDialog(id, initialArtist: initialArtist);
 
   @override
   void showSetArtistPasswordDialog(int artistId, String artistName) =>
@@ -3045,7 +3046,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               .whereType<Map>()
               .map((e) => Map<String, dynamic>.from(e))
               .firstWhere(
-                (item) => item['id'] == id,
+                (item) => _coerceArtistId(item['id']) == id,
                 orElse: () => <String, dynamic>{},
               );
       final artistData = artist.isNotEmpty
@@ -7869,4 +7870,13 @@ class _SoundCloudEmbedWidgetState extends State<_SoundCloudEmbedWidget> {
       child: WebViewWidget(controller: _controller),
     );
   }
+}
+
+/// Normalizes JSON `id` (int, double, or string) for list lookups.
+int? _coerceArtistId(dynamic v) {
+  if (v == null) return null;
+  if (v is int) return v;
+  if (v is num) return v.toInt();
+  if (v is String) return int.tryParse(v.trim());
+  return null;
 }

@@ -24,7 +24,7 @@ abstract class AdminDashboardDelegate {
   Future<void> loadArtists();
   Future<void> loadMoreArtists();
   void showAddArtistDialog();
-  void showEditArtistDialog(int id);
+  void showEditArtistDialog(int id, {Map<String, dynamic>? initialArtist});
   void showSetArtistPasswordDialog(int artistId, String artistName);
   void sendArtistPortalInvite(
       int artistId, String artistName, String artistEmail);

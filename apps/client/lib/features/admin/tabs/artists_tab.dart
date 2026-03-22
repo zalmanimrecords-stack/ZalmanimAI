@@ -299,7 +299,15 @@ class _ArtistsTabState extends State<ArtistsTab> {
                                                       tooltip: 'Edit',
                                                       onPressed: () => delegate
                                                           .showEditArtistDialog(
-                                                              artist.id),
+                                                        artist.id,
+                                                        initialArtist:
+                                                            Map<String,
+                                                                    dynamic>.from(
+                                                                sorted[index]
+                                                                    as Map<
+                                                                        String,
+                                                                        dynamic>),
+                                                      ),
                                                     ),
                                                     _actionButton(
                                                       icon: ZalmanimIcons
