@@ -1686,6 +1686,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       _toggleAudienceSubscriberStatus(subscriber);
 
   @override
+  Future<void> promoteAudienceSubscriberToArtist(
+          Map<String, dynamic> subscriber) =>
+      _promoteAudienceSubscriberToArtist(subscriber);
+
+  @override
   void showArtistRemindersReport(BuildContext context) =>
       _showArtistRemindersReport(context);
 
@@ -6617,6 +6622,34 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       );
     } catch (e) {
       _showErrorSnackBar(e.toString());
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> _promoteAudienceSubscriberToArtist(
+      Map<String, dynamic> subscriber) async {
+    final audienceId = _selectedAudienceId;
+    if (audienceId == null) return;
+    final subId = subscriber['id'] as int?;
+    if (subId == null) return;
+    try {
+      setState(() => loading = true);
+      final artist = await widget.apiClient.promoteAudienceSubscriberToArtist(
+        token: widget.token,
+        audienceId: audienceId,
+        subscriberId: subId,
+      );
+      await loadArtists();
+      if (!mounted) return;
+      final name = (artist['name'] ?? artist['email'] ?? 'Artist').toString();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Added to Artists: $name')),
+      );
+    } catch (e) {
+      _setError(e);
+    } finally {
+      if (mounted) setState(() => loading = false);
     }
   }
 

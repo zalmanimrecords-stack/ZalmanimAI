@@ -123,6 +123,8 @@ abstract class AdminDashboardDelegate {
   void showAddAudienceSubscriberDialog();
   void showEditAudienceSubscriberDialog(Map<String, dynamic> subscriber);
   void toggleAudienceSubscriberStatus(Map<String, dynamic> subscriber);
+  Future<void> promoteAudienceSubscriberToArtist(
+      Map<String, dynamic> subscriber);
   // Reports
   void showArtistRemindersReport(BuildContext context);
   void showSignedInArtistsReport(BuildContext context);

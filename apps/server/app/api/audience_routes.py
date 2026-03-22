@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import secrets
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,8 +13,9 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_lm_user, require_admin
 from app.db.session import get_db
-from app.models.models import MailingList, MailingSubscriber
+from app.models.models import Artist, ArtistActivityLog, MailingList, MailingSubscriber
 from app.schemas.schemas import (
+    ArtistOut,
     MailingListCreate,
     MailingListOut,
     MailingListUpdate,
@@ -416,6 +418,76 @@ def update_audience_subscriber(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Subscriber email already exists in this audience") from exc
     db.refresh(subscriber)
     return _subscriber_out(request, subscriber)
+
+
+def _promotion_extra_from_subscriber(subscriber: MailingSubscriber, list_id: int) -> dict:
+    return {
+        "full_name": subscriber.full_name,
+        "promoted_from_mailing_subscriber": True,
+        "mailing_subscriber_id": subscriber.id,
+        "mailing_list_id": list_id,
+        "mailing_list_consent_source": subscriber.consent_source,
+    }
+
+
+@router.post(
+    "/admin/audiences/{list_id}/subscribers/{subscriber_id}/promote-to-artist",
+    response_model=ArtistOut,
+)
+def promote_audience_subscriber_to_artist(
+    list_id: int,
+    subscriber_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> ArtistOut:
+    """Create an Artist from this subscriber, or return the existing Artist with the same email."""
+    require_admin(user)
+    subscriber = db.get(MailingSubscriber, subscriber_id)
+    if not subscriber or subscriber.list_id != list_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscriber not found")
+    email = (subscriber.email or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Subscriber has no email")
+
+    artist = db.query(Artist).filter(func.lower(Artist.email) == email).first()
+    promo_extra = _promotion_extra_from_subscriber(subscriber, list_id)
+
+    if artist is None:
+        display_name = (subscriber.full_name or "").strip()
+        if not display_name:
+            display_name = email.split("@", 1)[0][:120]
+        else:
+            display_name = display_name[:120]
+        artist = Artist(
+            name=display_name,
+            email=email,
+            notes="Created from Audience mailing list subscriber.",
+            is_active=True,
+            extra_json=json.dumps(promo_extra),
+        )
+        db.add(artist)
+        db.flush()
+    else:
+        try:
+            cur = json.loads(artist.extra_json or "{}") or {}
+        except (json.JSONDecodeError, TypeError):
+            cur = {}
+        cur["promoted_from_mailing_subscriber_ref"] = {
+            "subscriber_id": subscriber.id,
+            "list_id": list_id,
+        }
+        artist.extra_json = json.dumps(cur)
+
+    db.add(
+        ArtistActivityLog(
+            artist_id=artist.id,
+            activity_type="promoted_from_audience",
+            details=f"Mailing subscriber #{subscriber.id} (list {list_id})",
+        )
+    )
+    db.commit()
+    db.refresh(artist)
+    return ArtistOut.from_artist(artist)
 
 
 @router.get("/unsubscribe/{token}", response_class=HTMLResponse, name="public_unsubscribe")

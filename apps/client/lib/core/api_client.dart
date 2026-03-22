@@ -1785,6 +1785,26 @@ class ApiClient {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  /// Creates an [Artist] from this mailing subscriber or returns the existing one by email.
+  Future<Map<String, dynamic>> promoteAudienceSubscriberToArtist({
+    required String token,
+    required int audienceId,
+    required int subscriberId,
+  }) async {
+    final response = await http.post(
+      Uri.parse(
+        '$baseUrl/admin/audiences/$audienceId/subscribers/$subscriberId/promote-to-artist',
+      ),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Promote subscriber to artist failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> importMailchimpAudienceCsv({
     required String token,
     required List<int> fileBytes,

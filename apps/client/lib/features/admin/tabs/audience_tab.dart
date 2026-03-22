@@ -203,6 +203,12 @@ class AudienceTab extends StatelessWidget {
                                 icon: const Icon(ZalmanimIcons.link, size: 18),
                               ),
                               IconButton(
+                                tooltip: 'Add to Artists',
+                                onPressed: () =>
+                                    delegate.promoteAudienceSubscriberToArtist(subscriber),
+                                icon: const Icon(ZalmanimIcons.artists, size: 18),
+                              ),
+                              IconButton(
                                 tooltip: 'Edit subscriber',
                                 onPressed: () => delegate.showEditAudienceSubscriberDialog(subscriber),
                                 icon: const Icon(ZalmanimIcons.edit, size: 18),
