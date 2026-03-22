@@ -1,0 +1,4 @@
+# RFC 9116 — https://www.rfc-editor.org/rfc/rfc9116.html
+Contact: mailto:security@zalmanim.com
+Expires: 2027-03-22T12:00:00.000Z
+Preferred-Languages: en

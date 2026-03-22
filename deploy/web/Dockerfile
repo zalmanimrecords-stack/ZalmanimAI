@@ -34,3 +34,5 @@ FROM nginx:1.27-alpine
 COPY deploy/nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY --from=admin_build /app/build/web/ /usr/share/nginx/html/
 COPY --from=artist_build /app/build/web/ /usr/share/nginx/artist/
+COPY deploy/web/.well-known/security.txt /usr/share/nginx/html/.well-known/security.txt
+COPY deploy/web/.well-known/security.txt /usr/share/nginx/artist/.well-known/security.txt
