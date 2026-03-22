@@ -81,6 +81,23 @@ def _gmail_smtp_preflight(cfg, from_addr: str) -> str | None:
     return None
 
 
+def _smtp_recipient_rejection_hint(err_text: str) -> str:
+    """Append guidance for common provider errors (Gmail rejecting relay / reputation)."""
+    if "554" not in err_text and "530" not in err_text:
+        return ""
+    if "554" in err_text and (
+        "Client host rejected" in err_text
+        or "Access denied" in err_text
+        or "unknown[" in err_text
+    ):
+        return (
+            " — Gmail is blocking mail tied to your server IP (often missing PTR/reverse DNS, SPF/DKIM, or IP reputation). "
+            "Fix: set PTR for the VPS IP in the host panel, publish SPF + DKIM for the From domain, "
+            "or send through authenticated smtp.gmail.com (App Password) or a transactional provider (Mailgun, etc.)."
+        )
+    return ""
+
+
 def _htmlify_plain_text(value: str) -> str:
     escaped = html.escape(value.strip())
     if not escaped:
@@ -337,6 +354,10 @@ def _smtp_send_with_config(
                 f"{err} — For smtp.gmail.com: use the same account for SMTP login and 'From', "
                 "an App Password if 2FA is on, and ensure both user and password are set in Mail settings."
             )
+        else:
+            hint = _smtp_recipient_rejection_hint(err)
+            if hint:
+                err = err + hint
         append_system_log("error", "mail", f"SMTP error sending to {to_email}: {e}", details=subject[:200] if subject else None)
         return False, err
     except Exception as e:
