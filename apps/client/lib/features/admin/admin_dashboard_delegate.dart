@@ -130,7 +130,6 @@ abstract class AdminDashboardDelegate {
   void showSignedInArtistsReport(BuildContext context);
   void showSendEmailToReportArtistsDialog(BuildContext context,
       List<dynamic> reportList, List<int> selectedIndices);
-  void showArtistReminderMailSettingsDialog(BuildContext context);
 
   // Admin users (admin-only)
   List<dynamic> get usersList;

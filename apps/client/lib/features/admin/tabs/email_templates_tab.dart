@@ -349,13 +349,25 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
       padding: const EdgeInsets.all(16),
       children: [
         Text(
-          'Preview and edit all automatic LM emails in one place.',
+          'Preview and edit all automatic LM emails in one place. The global footer at the bottom is appended to every outgoing message.',
           style: TextStyle(
             fontSize: 13,
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: 12),
+        for (final template in _templateConfigs) ...[
+          _EmailTemplateCard(
+            config: template,
+            subjectController: _subjectControllers[template.id]!,
+            bodyController: _bodyControllers[template.id]!,
+            saving: _saving[template.id] ?? false,
+            saveError: _saveErrors[template.id],
+            onChanged: () => setState(() {}),
+            onSave: () => _saveTemplate(template),
+          ),
+          const SizedBox(height: 12),
+        ],
         Card(
           color: Theme.of(context)
               .colorScheme
@@ -427,19 +439,6 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
             ),
           ),
         ),
-        const SizedBox(height: 12),
-        for (final template in _templateConfigs) ...[
-          _EmailTemplateCard(
-            config: template,
-            subjectController: _subjectControllers[template.id]!,
-            bodyController: _bodyControllers[template.id]!,
-            saving: _saving[template.id] ?? false,
-            saveError: _saveErrors[template.id],
-            onChanged: () => setState(() {}),
-            onSave: () => _saveTemplate(template),
-          ),
-          const SizedBox(height: 12),
-        ],
       ],
     );
   }

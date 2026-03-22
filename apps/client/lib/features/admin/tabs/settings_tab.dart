@@ -109,7 +109,7 @@ class SettingsTab extends StatelessWidget {
   }
 }
 
-/// Mail settings sub-tab: server mail (SMTP, Google) + artist reminder shortcut. Email templates live in Email templates.
+/// Mail settings sub-tab: server mail (SMTP). Email templates live in Email templates.
 class MailSettingsSubTab extends StatelessWidget {
   const MailSettingsSubTab({super.key, required this.delegate});
 
@@ -120,43 +120,14 @@ class MailSettingsSubTab extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Artist reminder emails',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Default subject and body for reminder emails sent from Reports > Artist reminders.',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton.icon(
-                    onPressed: () => delegate.showArtistReminderMailSettingsDialog(context),
-                    icon: const Icon(ZalmanimIcons.edit, size: 18),
-                    label: const Text('Edit default subject & body'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
         Expanded(
-          child: SingleChildScrollView(
-            child: MailSettingsContent(
-              apiClient: delegate.apiClient,
-              token: delegate.token,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: SingleChildScrollView(
+              child: MailSettingsContent(
+                apiClient: delegate.apiClient,
+                token: delegate.token,
+              ),
             ),
           ),
         ),

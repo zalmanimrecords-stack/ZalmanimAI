@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api_client.dart';
 import '../../core/zalmanim_icons.dart';
 
-/// Mail settings UI: SMTP, test, Google Mail. (Email content templates and global footer are in Email templates.)
+/// Mail settings UI: SMTP and tests. (Email content templates and global footer are in Email templates.)
 /// Used in Settings → Mail settings.
 class MailSettingsContent extends StatefulWidget {
   const MailSettingsContent({
@@ -33,8 +32,6 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
   bool _sendingTestMail = false;
   bool _testingBackupMail = false;
   bool _sendingBackupTestMail = false;
-  bool _connectingGoogle = false;
-  bool _refreshingSettings = false;
   String? _mailSaveError;
   String? _mailTestMessage;
 
@@ -104,28 +101,6 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
         setState(() {
           _error = e.toString();
           _loading = false;
-        });
-      }
-    }
-  }
-
-  /// Reload settings from API without the full-page loading spinner (e.g. after Gmail OAuth).
-  Future<void> _refreshMailSettingsSilently() async {
-    setState(() => _refreshingSettings = true);
-    try {
-      final data = await widget.apiClient.fetchSystemSettings(widget.token);
-      if (mounted) {
-        setState(() {
-          _settings = data;
-          _refreshingSettings = false;
-          _fillMailFormFromSettings(data);
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _refreshingSettings = false;
-          _mailSaveError = e.toString();
         });
       }
     }
@@ -381,30 +356,6 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
     }
   }
 
-  Future<void> _connectGoogleMail() async {
-    setState(() {
-      _connectingGoogle = true;
-      _mailSaveError = null;
-    });
-    try {
-      final redirectUri = Uri.base.replace(queryParameters: const {}, fragment: '').toString();
-      final authUrl = await widget.apiClient.startGoogleMailConnect(
-        token: widget.token,
-        redirectUri: redirectUri,
-      );
-      final launched = await launchUrl(Uri.parse(authUrl), webOnlyWindowName: '_self');
-      if (!launched && mounted) {
-        setState(() => _mailSaveError = 'Could not open Google authorization page.');
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _mailSaveError = e.toString());
-      }
-    } finally {
-      if (mounted) setState(() => _connectingGoogle = false);
-    }
-  }
-
   Widget _sectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -460,9 +411,6 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
       );
     }
     final s = _settings!;
-    final googleConfigured = s['google_oauth_configured'] as bool? ?? false;
-    final gmailConnected = s['gmail_connected'] as bool? ?? false;
-    final gmailConnectedEmail = s['gmail_connected_email'] as String? ?? '';
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -486,9 +434,8 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    '1. Gmail API — if you connect Gmail below and it has send permission.\n'
-                    '2. Primary SMTP — host and credentials below.\n'
-                    '3. Backup SMTP — used if Gmail fails or primary SMTP rejects the message.',
+                    '1. Primary SMTP — host and credentials below.\n'
+                    '2. Backup SMTP — used if primary SMTP rejects the message or is unavailable.',
                     style: TextStyle(fontSize: 13, height: 1.35),
                   ),
                   const SizedBox(height: 8),
@@ -504,59 +451,9 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
             ),
           ),
           const SizedBox(height: 16),
-          _sectionTitle('Gmail (Google Mail API)'),
-          const Text(
-            'Connect a Google account so LM can send mail through Gmail when OAuth is configured on the server. Requires GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET in server env.',
-            style: TextStyle(fontSize: 12, color: Colors.grey),
-          ),
-          const SizedBox(height: 8),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _row('Google OAuth', googleConfigured ? 'Configured on server' : 'Missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET'),
-                  _row('Gmail connection', gmailConnected ? 'Connected' : 'Not connected'),
-                  _row('Connected account', gmailConnectedEmail),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: googleConfigured && !_connectingGoogle ? _connectGoogleMail : null,
-                          icon: _connectingGoogle
-                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                              : const Icon(ZalmanimIcons.alternateEmail),
-                          label: Text(
-                            _connectingGoogle
-                                ? 'Opening Google...'
-                                : (gmailConnected ? 'Reconnect Gmail account' : 'Connect Gmail account'),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        tooltip: 'Reload connection status from server',
-                        onPressed: _refreshingSettings ? null : _refreshMailSettingsSilently,
-                        icon: _refreshingSettings
-                            ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.refresh_rounded),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
           _sectionTitle('Primary SMTP'),
           const Text(
-            'Used when Gmail is not used or after Gmail fails. Stored in the server database and overrides environment variables.',
+            'Main outgoing server. Stored in the server database and overrides environment variables.',
             style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
           const SizedBox(height: 12),
@@ -646,7 +543,7 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
         const SizedBox(height: 24),
         _sectionTitle('Backup SMTP (fallback server)'),
         const Text(
-          'If the primary SMTP rejects the message (or Gmail API fails first), LM tries this server next. Leave host empty to disable. Not related to Settings → Backup (database).',
+          'If primary SMTP rejects the message or is unavailable, LM tries this server next. Leave host empty to disable. Not related to Settings → Backup (database).',
           style: TextStyle(fontSize: 12, color: Colors.grey),
         ),
         const SizedBox(height: 12),

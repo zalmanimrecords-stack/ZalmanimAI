@@ -1704,63 +1704,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       _showSendEmailToReportArtistsDialog(context, reportList, selectedIndices);
 
   @override
-  void showArtistReminderMailSettingsDialog(BuildContext context) =>
-      _showArtistReminderMailSettingsDialog(context);
-
-  Future<void> _showArtistReminderMailSettingsDialog(
-      BuildContext context) async {
-    final savedSubject = await getArtistReminderEmailSubject();
-    final savedBody = await getArtistReminderEmailBody();
-    final subjectController =
-        TextEditingController(text: savedSubject ?? _defaultReminderSubject);
-    final bodyController =
-        TextEditingController(text: savedBody ?? _defaultReminderBody);
-    if (!mounted) return;
-    if (!context.mounted) return;
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Mail settings - reminder emails'),
-        content: SingleChildScrollView(
-          child: SizedBox(
-            width: 680,
-            child: _ReminderTemplateEditor(
-              subjectController: subjectController,
-              bodyController: bodyController,
-              previewValues: _sampleReminderTemplateValues,
-              helperText:
-                  'Default subject and body for artist reminder emails. The body editor supports HTML snippets and dynamic fields from the artist profile.',
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Save')),
-        ],
-      ),
-    );
-    if (saved == true) {
-      await setArtistReminderEmailTemplate(
-        subject: subjectController.text.trim(),
-        body: bodyController.text,
-      );
-      subjectController.dispose();
-      bodyController.dispose();
-      if (!mounted) return;
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Mail settings saved.')));
-    } else {
-      subjectController.dispose();
-      bodyController.dispose();
-    }
-  }
-
-  @override
   List<dynamic> get usersList => users;
 
   @override
@@ -3310,7 +3253,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           msg.contains('TimeoutException');
       if (isNotConfigured) {
         _showErrorSnackBar(
-            '$msg\n\nGo to Settings → Mail to configure SMTP or connect Gmail.');
+            '$msg\n\nGo to Settings → Mail to configure SMTP.');
       } else if (isNetworkFailure) {
         _showErrorSnackBar(
             '$msg\n\nNetwork or timeout. The server may be busy sending the email. Try again; if it persists, check the API is reachable.');
@@ -3564,7 +3507,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           msg.contains('Email is not configured');
       if (isNotConfigured) {
         _showErrorSnackBar(
-            '$msg\n\nGo to Settings → Mail to configure SMTP or connect Gmail.');
+            '$msg\n\nGo to Settings → Mail to configure SMTP.');
       } else {
         _showErrorSnackBar(msg);
       }
@@ -3627,7 +3570,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
           msg.contains('TimeoutException');
       if (isNotConfigured) {
         _showErrorSnackBar(
-            '$msg\n\nGo to Settings → Mail to configure SMTP or connect Gmail.');
+            '$msg\n\nGo to Settings → Mail to configure SMTP.');
       } else if (isNetworkFailure) {
         _showErrorSnackBar(
             '$msg\n\nNetwork or timeout. Try again; if it persists, check the API is reachable.');
@@ -3644,7 +3587,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       builder: (ctx) => AlertDialog(
         title: const Text('Email not set up'),
         content: const SelectableText(
-          'To send invite emails, configure SMTP or connect Gmail in Settings → Mail.',
+          'To send invite emails, configure SMTP in Settings → Mail.',
         ),
         actions: [
           TextButton(
