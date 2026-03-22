@@ -19,6 +19,10 @@ export BUILD_NUMBER
 echo "[deploy-prod] Image tag: $IMAGE_TAG, build version: $BUILD_NUMBER"
 echo "[deploy-prod] Pulling latest code..."
 git pull
-echo "[deploy-prod] Building and starting containers..."
-docker compose --env-file deploy/.env.production -f docker-compose.prod.yml up -d --build
+echo "[deploy-prod] Building web, api, worker (--no-cache)..."
+docker compose --env-file deploy/.env.production -f docker-compose.prod.yml build --no-cache web api worker
+echo "[deploy-prod] Starting / recreating containers..."
+docker compose --env-file deploy/.env.production -f docker-compose.prod.yml up -d
+echo "[deploy-prod] Restarting app containers..."
+docker compose --env-file deploy/.env.production -f docker-compose.prod.yml restart api worker web
 echo "[deploy-prod] Done. Check: docker compose --env-file deploy/.env.production -f docker-compose.prod.yml ps"
