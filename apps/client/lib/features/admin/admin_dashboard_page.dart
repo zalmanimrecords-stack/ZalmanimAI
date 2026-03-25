@@ -213,32 +213,171 @@ void _insertIntoController(TextEditingController controller, String value) {
   );
 }
 
-void _wrapControllerSelection(
-  TextEditingController controller, {
-  required String before,
-  required String after,
-  String? placeholder,
-}) {
-  final selection = controller.selection;
-  final start = selection.isValid ? selection.start : controller.text.length;
-  final end = selection.isValid ? selection.end : controller.text.length;
-  final normalizedStart = start < 0 ? controller.text.length : start;
-  final normalizedEnd = end < 0 ? controller.text.length : end;
-  final selectedText = normalizedStart < normalizedEnd
-      ? controller.text.substring(normalizedStart, normalizedEnd)
-      : (placeholder ?? '');
-  final replacement = '$before$selectedText$after';
-  final newText = controller.text.replaceRange(
-    normalizedStart,
-    normalizedEnd,
-    replacement,
-  );
-  final caretOffset = normalizedStart + before.length + selectedText.length;
-  controller.value = controller.value.copyWith(
-    text: newText,
-    selection: TextSelection.collapsed(offset: caretOffset),
-    composing: TextRange.empty,
-  );
+class _ReminderTemplateEditor extends StatefulWidget {
+  const _ReminderTemplateEditor({
+    required this.subjectController,
+    required this.bodyController,
+    required this.previewValues,
+    required this.helperText,
+    this.footerText,
+  });
+
+  final TextEditingController subjectController;
+  final TextEditingController bodyController;
+  final Map<String, String> previewValues;
+  final String helperText;
+  final String? footerText;
+
+  @override
+  State<_ReminderTemplateEditor> createState() =>
+      _ReminderTemplateEditorState();
+}
+
+class _ReminderTemplateEditorState extends State<_ReminderTemplateEditor> {
+  void _onControllerTextChanged() {
+    setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    widget.subjectController.addListener(_onControllerTextChanged);
+    widget.bodyController.addListener(_onControllerTextChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.subjectController.removeListener(_onControllerTextChanged);
+    widget.bodyController.removeListener(_onControllerTextChanged);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final previewSubject = _applyReminderTemplate(
+      widget.subjectController.text,
+      widget.previewValues,
+    ).trim();
+    final previewBodyHtml = _renderReminderHtml(
+      widget.bodyController.text,
+      widget.previewValues,
+    );
+    final previewBodyPlain = _htmlToPlainText(previewBodyHtml);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(widget.helperText, style: theme.textTheme.bodySmall),
+        if (widget.footerText != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            widget.footerText!,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.primary,
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        TextField(
+          controller: widget.subjectController,
+          decoration: const InputDecoration(
+            labelText: 'Subject',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Insert into subject',
+            style: theme.textTheme.labelSmall,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final field in _reminderTemplateFields)
+              ActionChip(
+                label: Text(field.label, style: const TextStyle(fontSize: 11)),
+                tooltip: field.description,
+                onPressed: () {
+                  _insertIntoController(
+                    widget.subjectController,
+                    field.token,
+                  );
+                },
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: widget.bodyController,
+          decoration: const InputDecoration(
+            labelText: 'Body',
+            alignLabelWithHint: true,
+            border: OutlineInputBorder(),
+          ),
+          minLines: 10,
+          maxLines: 16,
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Insert into body',
+            style: theme.textTheme.labelSmall,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final field in _reminderTemplateFields)
+              ActionChip(
+                label: Text(field.label, style: const TextStyle(fontSize: 11)),
+                tooltip: field.description,
+                onPressed: () {
+                  _insertIntoController(
+                    widget.bodyController,
+                    field.token,
+                  );
+                },
+              ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Text('Preview (sample artist)', style: theme.textTheme.titleSmall),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SelectableText(
+                previewSubject.isEmpty ? '(empty subject)' : previewSubject,
+                style: theme.textTheme.titleSmall,
+              ),
+              const SizedBox(height: 8),
+              SelectableText(
+                previewBodyPlain.isEmpty ? '(empty body)' : previewBodyPlain,
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class AdminDashboardPage extends StatefulWidget {

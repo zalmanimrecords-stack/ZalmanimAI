@@ -419,7 +419,10 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
         children: [
           _sectionTitle('Outgoing mail'),
           Card(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.45),
+            color: Theme.of(context)
+                .colorScheme
+                .surfaceContainerHighest
+                .withValues(alpha: 0.45),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
