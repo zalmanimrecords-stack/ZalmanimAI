@@ -27,6 +27,9 @@ from app.api.deps import (
     require_artist,
     security,
 )
+from app.api.campaign_routes import router as campaign_router
+from app.api.campaign_request_routes import router as campaign_request_router
+from app.api.inbox_routes import _create_pending_release_inbox_message, router as inbox_router
 from app.core.config import settings
 from app.db.session import Base, engine, get_db
 from app.models import models as models_module  # noqa: F401 - register all tables with Base
@@ -42,8 +45,6 @@ from app.models.models import (
     DemoConfirmationToken,
     DemoSubmission,
     HubConnector,
-    LabelInboxMessage,
-    LabelInboxThread,
     MailingList,
     MailingSubscriber,
     PasswordResetToken,
@@ -57,6 +58,7 @@ from app.models.models import (
     User,
     UserIdentity,
 )
+from app.services import auth_rate_limit
 from app.schemas.schemas import (
     AgentDefinitionOut,
     AgentPlanOut,
@@ -69,15 +71,9 @@ from app.schemas.schemas import (
     ArtistOut,
     ArtistSelfUpdate,
     ArtistUpdate,
-    CampaignRequestCreate,
-    CampaignRequestOut,
-    CampaignRequestUpdate,
     LinktreeLink,
     LinktreeOut,
     LinktreeRelease,
-    CampaignCreate,
-    CampaignOut,
-    CampaignUpdate,
     CatalogTrackOut,
     DemoConfirmFormInfo,
     DemoConfirmSubmit,
@@ -87,7 +83,6 @@ from app.schemas.schemas import (
     DemoSubmissionUpdate,
     EmailRateLimitStatus,
     EmailRecipientHistoryOut,
-    ScheduleCampaignRequest,
     SendEmailRequest,
     SendEmailResponse,
     SystemSettingsMailTestRequest,
@@ -108,11 +103,6 @@ from app.schemas.schemas import (
     ArtistSetPasswordRequest,
     AdminDashboardStatsOut,
     LoginStatsOut,
-    LabelInboxMessageOut,
-    LabelInboxReply,
-    LabelInboxSend,
-    LabelInboxThreadDetailOut,
-    LabelInboxThreadOut,
     LoginRequest,
     PendingReleaseFormInfo,
     PendingReleaseActionResponse,
@@ -154,17 +144,18 @@ from app.services.mail_settings import build_mail_config, get_effective_mail_con
 from app.services.system_log import append_system_log
 from app.services.agent_supervisor import build_agent_plan, get_agent_registry
 from app.services.backup_service import export_database, restore_database
-from app.services.campaign_service import (
-    cancel_schedule,
-    create_campaign as create_campaign_svc,
-    delete_campaign,
-    get_campaign,
-    list_campaigns as list_campaigns_svc,
-    set_campaign_scheduled,
-    update_campaign as update_campaign_svc,
-)
 
 router = APIRouter()
+
+
+def _client_ip_from_request(request: Request) -> str:
+    forwarded_for = (request.headers.get("x-forwarded-for") or "").strip()
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return (request.client.host if request.client else "") or "unknown"
+router.include_router(campaign_router)
+router.include_router(campaign_request_router)
+router.include_router(inbox_router)
 
 _GOOGLE_AUTH_SCOPES = [
     "openid",
@@ -1642,16 +1633,27 @@ def init_db() -> None:
 @router.post("/auth/login", response_model=TokenResponse)
 def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)) -> TokenResponse:
     """Admin/manager login (users table). For artist portal use POST /public/artist-login."""
+    email = (payload.email or "").strip().lower()
+    client_ip = _client_ip_from_request(request)
+    allowed, retry_after = auth_rate_limit.check_login_allowed(email=email, client_ip=client_ip)
+    if not allowed:
+        _log_auth_attempt(request, event="Admin login rate limited", email=email, level="warning")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many login attempts. Try again in about {retry_after or 1} seconds.",
+        )
     user = (
         db.query(User)
         .options(joinedload(User.artist), joinedload(User.identities))
-        .filter(func.lower(User.email) == payload.email.lower())
+        .filter(func.lower(User.email) == email)
         .first()
     )
     if not user or not user.is_active or not verify_password(payload.password, user.password_hash):
-        _log_auth_attempt(request, event="Admin login failed", email=payload.email, level="warning")
+        auth_rate_limit.register_failed_login(email=email, client_ip=client_ip)
+        _log_auth_attempt(request, event="Admin login failed", email=email, level="warning")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
+    auth_rate_limit.clear_login_failures(email=email, client_ip=client_ip)
     _touch_user_login(db, user)
     _log_auth_attempt(request, event="Admin login succeeded", email=user.email)
     return _user_token_response(user)
@@ -1663,26 +1665,38 @@ def artist_login(payload: ArtistLoginRequest, request: Request, db: Session = De
     Artist portal login (artists.zalmanim.com). Uses artists table email + password_hash only.
     No users table row is required. Admin must set the artist's password first (admin UI or API).
     """
+    email = (payload.email or "").strip().lower()
+    client_ip = _client_ip_from_request(request)
+    allowed, retry_after = auth_rate_limit.check_login_allowed(email=email, client_ip=client_ip)
+    if not allowed:
+        _log_auth_attempt(request, event="Artist login rate limited", email=email, level="warning")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many login attempts. Try again in about {retry_after or 1} seconds.",
+        )
     artist = (
         db.query(Artist)
-        .filter(func.lower(Artist.email) == payload.email.lower().strip())
+        .filter(func.lower(Artist.email) == email)
         .first()
     )
     if not artist:
-        _log_auth_attempt(request, event="Artist login failed", email=payload.email, level="warning")
+        auth_rate_limit.register_failed_login(email=email, client_ip=client_ip)
+        _log_auth_attempt(request, event="Artist login failed", email=email, level="warning")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     if not artist.is_active:
-        _log_auth_attempt(request, event="Artist login blocked: inactive", email=payload.email, level="warning")
+        _log_auth_attempt(request, event="Artist login blocked: inactive", email=email, level="warning")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account is inactive")
     if not artist.password_hash:
-        _log_auth_attempt(request, event="Artist login blocked: password not set", email=payload.email, level="warning")
+        _log_auth_attempt(request, event="Artist login blocked: password not set", email=email, level="warning")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Password not set. Contact the label to get portal access.",
         )
     if not verify_password(payload.password, artist.password_hash):
-        _log_auth_attempt(request, event="Artist login failed", email=payload.email, level="warning")
+        auth_rate_limit.register_failed_login(email=email, client_ip=client_ip)
+        _log_auth_attempt(request, event="Artist login failed", email=email, level="warning")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    auth_rate_limit.clear_login_failures(email=email, client_ip=client_ip)
     _touch_artist_login(db, artist)
     _log_auth_attempt(request, event="Artist login succeeded", email=artist.email)
     return _artist_token_response(artist)
@@ -2702,6 +2716,7 @@ def create_artist(
 
 
 @router.patch("/artists/{artist_id}", response_model=ArtistOut)
+@router.put("/artists/{artist_id}", response_model=ArtistOut)
 def update_artist(
     artist_id: int,
     payload: ArtistUpdate,
@@ -3536,354 +3551,6 @@ def artist_delete_media(
     return {"ok": True}
 
 
-@router.post("/artist/me/campaign-requests", response_model=CampaignRequestOut)
-def artist_create_campaign_request(
-    payload: CampaignRequestCreate,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
-) -> CampaignRequestOut:
-    """Artist requests a campaign for a release from the label."""
-    require_artist(user)
-    artist = db.query(Artist).filter(Artist.id == user.artist_id).first()
-    if not artist:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
-    release_title = None
-    if payload.release_id:
-        release = db.query(Release).filter(
-            Release.id == payload.release_id,
-            or_(Release.artist_id == user.artist_id, Release.artists.any(Artist.id == user.artist_id)),
-        ).first()
-        if not release:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Release not found")
-        release_title = release.title
-    req = CampaignRequest(
-        artist_id=user.artist_id,
-        release_id=payload.release_id,
-        message=(payload.message or "").strip() or None,
-        status="pending",
-    )
-    db.add(req)
-    db.commit()
-    db.refresh(req)
-    return _campaign_request_out(req, artist.name, release_title)
-
-
-@router.get("/artist/me/campaign-requests", response_model=list[CampaignRequestOut])
-def artist_list_my_campaign_requests(
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
-) -> list[CampaignRequestOut]:
-    """List current artist's campaign requests."""
-    require_artist(user)
-    artist = db.query(Artist).filter(Artist.id == user.artist_id).first()
-    if not artist:
-        return []
-    items = (
-        db.query(CampaignRequest)
-        .filter(CampaignRequest.artist_id == user.artist_id)
-        .order_by(desc(CampaignRequest.created_at))
-        .all()
-    )
-    return [_campaign_request_out(r, artist.name, r.release.title if r.release else None) for r in items]
-
-
-def _campaign_request_out(r: CampaignRequest, artist_name: str, release_title: str | None) -> CampaignRequestOut:
-    return CampaignRequestOut(
-        id=r.id,
-        artist_id=r.artist_id,
-        artist_name=artist_name,
-        release_id=r.release_id,
-        release_title=release_title,
-        message=r.message,
-        status=r.status,
-        admin_notes=r.admin_notes,
-        created_at=r.created_at,
-        updated_at=r.updated_at,
-    )
-
-
-def _label_inbox_message_out(m: LabelInboxMessage) -> LabelInboxMessageOut:
-    return LabelInboxMessageOut(
-        id=m.id,
-        sender=m.sender,
-        body=m.body,
-        created_at=m.created_at,
-        admin_read_at=m.admin_read_at,
-        reply_email_sent_at=m.reply_email_sent_at,
-    )
-
-
-def _label_inbox_unread_count(messages: list[LabelInboxMessage]) -> int:
-    return sum(1 for m in messages if m.sender == "artist" and m.admin_read_at is None)
-
-
-def _label_inbox_thread_out(
-    thread: LabelInboxThread,
-    artist: Artist,
-    last_message_preview: str,
-    last_message_at: datetime,
-    message_count: int,
-    has_label_reply: bool,
-    unread_count: int,
-) -> LabelInboxThreadOut:
-    return LabelInboxThreadOut(
-        id=thread.id,
-        artist_id=thread.artist_id,
-        artist_name=artist.name or "",
-        artist_email=artist.email or "",
-        last_message_preview=last_message_preview,
-        last_message_at=last_message_at,
-        created_at=thread.created_at,
-        updated_at=thread.updated_at,
-        message_count=message_count,
-        has_label_reply=has_label_reply,
-        unread_count=unread_count,
-    )
-
-
-def _label_inbox_thread_detail_out(thread: LabelInboxThread, artist: Artist, messages: list[LabelInboxMessage]) -> LabelInboxThreadDetailOut:
-    has_label_reply = any(m.sender == "label" for m in messages)
-    unread_count = _label_inbox_unread_count(messages)
-    return LabelInboxThreadDetailOut(
-        id=thread.id,
-        artist_id=thread.artist_id,
-        artist_name=artist.name or "",
-        artist_email=artist.email or "",
-        created_at=thread.created_at,
-        updated_at=thread.updated_at,
-        message_count=len(messages),
-        has_label_reply=has_label_reply,
-        unread_count=unread_count,
-        messages=[_label_inbox_message_out(m) for m in messages],
-    )
-
-
-def _get_or_create_latest_label_inbox_thread(db: Session, artist_id: int) -> LabelInboxThread:
-    thread = (
-        db.query(LabelInboxThread)
-        .filter(LabelInboxThread.artist_id == artist_id)
-        .order_by(desc(LabelInboxThread.updated_at), desc(LabelInboxThread.id))
-        .first()
-    )
-    if thread:
-        return thread
-    thread = LabelInboxThread(artist_id=artist_id)
-    db.add(thread)
-    db.flush()
-    return thread
-
-
-def _mark_admin_thread_as_read(
-    db: Session,
-    *,
-    thread: LabelInboxThread,
-    read_at: datetime | None = None,
-) -> bool:
-    timestamp = read_at or datetime.now(timezone.utc)
-    unread_messages = [
-        message
-        for message in (thread.messages or [])
-        if message.sender == "artist" and message.admin_read_at is None
-    ]
-    if not unread_messages:
-        return False
-    for message in unread_messages:
-        message.admin_read_at = timestamp
-    return True
-
-
-def _create_pending_release_inbox_message(
-    db: Session,
-    *,
-    pending_release: PendingRelease,
-    message_prefix: str,
-) -> None:
-    if pending_release.artist_id is None:
-        return
-    thread = _get_or_create_latest_label_inbox_thread(db, pending_release.artist_id)
-    release_title = (pending_release.release_title or "").strip() or "Untitled"
-    message_body = (
-        f"{message_prefix}\n\n"
-        f"Release: {release_title}\n"
-        f"Artist: {(pending_release.artist_name or '').strip() or 'Artist'}\n"
-        f"Email: {(pending_release.artist_email or '').strip().lower()}"
-    )
-    db.add(
-        LabelInboxMessage(
-            thread_id=thread.id,
-            sender="artist",
-            body=message_body,
-            admin_read_at=None,
-        )
-    )
-    thread.updated_at = datetime.now(timezone.utc)
-
-
-@router.post("/artist/me/inbox", response_model=LabelInboxThreadDetailOut)
-def artist_send_inbox_message(
-    payload: LabelInboxSend,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
-) -> LabelInboxThreadDetailOut:
-    """Artist sends a message to the label. Creates a new thread and first message."""
-    require_artist(user)
-    artist = db.query(Artist).filter(Artist.id == user.artist_id).first()
-    if not artist:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
-    body = (payload.body or "").strip()
-    if not body:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Message body is required")
-    thread = LabelInboxThread(artist_id=artist.id)
-    db.add(thread)
-    db.flush()
-    msg = LabelInboxMessage(
-        thread_id=thread.id,
-        sender="artist",
-        body=body,
-        admin_read_at=None,
-    )
-    db.add(msg)
-    db.commit()
-    db.refresh(thread)
-    db.refresh(msg)
-    messages = [msg]
-    return _label_inbox_thread_detail_out(thread, artist, messages)
-
-
-@router.get("/artist/me/inbox", response_model=list[LabelInboxThreadOut])
-def artist_list_my_inbox(
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
-) -> list[LabelInboxThreadOut]:
-    """List current artist's inbox threads."""
-    require_artist(user)
-    artist = db.query(Artist).filter(Artist.id == user.artist_id).first()
-    if not artist:
-        return []
-    threads = (
-        db.query(LabelInboxThread)
-        .options(joinedload(LabelInboxThread.messages))
-        .filter(LabelInboxThread.artist_id == user.artist_id)
-        .order_by(desc(LabelInboxThread.updated_at))
-        .all()
-    )
-    out = []
-    for thread in threads:
-        msgs = thread.messages or []
-        if not msgs:
-            continue
-        last = msgs[-1]
-        preview = (last.body or "")[:120].strip()
-        if len(last.body or "") > 120:
-            preview += "..."
-        has_label = any(m.sender == "label" for m in msgs)
-        out.append(
-            _label_inbox_thread_out(
-                thread,
-                artist,
-                preview,
-                last.created_at,
-                len(msgs),
-                has_label,
-                _label_inbox_unread_count(msgs),
-            )
-        )
-    return out
-
-
-@router.get("/artist/me/inbox/threads/{thread_id}", response_model=LabelInboxThreadDetailOut)
-def artist_get_inbox_thread(
-    thread_id: int,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_user),
-) -> LabelInboxThreadDetailOut:
-    """Get one thread and its messages (artist can only see own threads)."""
-    require_artist(user)
-    thread = (
-        db.query(LabelInboxThread)
-        .options(joinedload(LabelInboxThread.messages), joinedload(LabelInboxThread.artist))
-        .filter(LabelInboxThread.id == thread_id, LabelInboxThread.artist_id == user.artist_id)
-        .first()
-    )
-    if not thread:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
-    artist = thread.artist
-    messages = sorted(thread.messages or [], key=lambda m: m.created_at)
-    return _label_inbox_thread_detail_out(thread, artist, messages)
-
-
-@router.get("/admin/campaign-requests", response_model=list[CampaignRequestOut])
-def admin_list_campaign_requests(
-    status_filter: str | None = Query(None, description="pending | approved | rejected"),
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-) -> list[CampaignRequestOut]:
-    """List all artist campaign requests for the label."""
-    require_admin(user)
-    q = db.query(CampaignRequest).order_by(desc(CampaignRequest.created_at))
-    if status_filter:
-        q = q.filter(CampaignRequest.status == status_filter)
-    items = q.all()
-    out = []
-    for r in items:
-        artist = db.query(Artist).filter(Artist.id == r.artist_id).first()
-        release_title = r.release.title if r.release else None
-        out.append(_campaign_request_out(r, artist.name if artist else "", release_title))
-    return out
-
-
-def _create_pending_release_token_and_send_approval_email(
-    db: Session,
-    req: CampaignRequest,
-    artist: Artist,
-    release_title: str | None,
-) -> None:
-    """Create a one-time token and email the artist with the pending-release form link."""
-    raw_token = secrets.token_urlsafe(32)
-    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-    form_link = _pending_release_form_link(raw_token)
-    expires_at = datetime.now(timezone.utc) + timedelta(days=30)
-    token_row = PendingReleaseToken(
-        token_hash=token_hash,
-        campaign_request_id=req.id,
-        pending_release_id=None,
-        artist_id=req.artist_id,
-        expires_at=expires_at,
-    )
-    db.add(token_row)
-    db.flush()
-
-    artist_name = (artist.name or "").strip() or "there"
-    subject = f"Your track was approved – next steps, {artist_name}"
-    body = (
-        f"Hi {artist_name},\n\n"
-        "Thank you! We're happy to move forward and release the track you sent.\n\n"
-        "Please fill in the form below with your full artist details and the track/release details "
-        "so we can proceed:\n\n"
-        f"{form_link}\n\n"
-        "Best regards,\nZalmanim"
-    )
-    if release_title:
-        body = (
-            f"Hi {artist_name},\n\n"
-            f"Thank you! We're happy to move forward and release \"{release_title}\".\n\n"
-            "Please fill in the form below with your full artist details and the track/release details "
-            "so we can proceed:\n\n"
-            f"{form_link}\n\n"
-            "Best regards,\nZalmanim"
-        )
-    if is_email_configured():
-        success, message = send_email_service(
-            to_email=artist.email,
-            subject=subject,
-            body_text=body,
-        )
-        if not success:
-            logging.getLogger(__name__).warning(
-                "Failed to send track-approved email to %s: %s", artist.email, message
-            )
-
-
 def _create_pending_release_reminder_token(
     db: Session,
     *,
@@ -3904,40 +3571,6 @@ def _create_pending_release_reminder_token(
     db.add(token_row)
     db.flush()
     return _pending_release_form_link(raw_token), expires_at
-
-
-@router.patch("/admin/campaign-requests/{request_id}", response_model=CampaignRequestOut)
-def admin_update_campaign_request(
-    request_id: int,
-    payload: CampaignRequestUpdate,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-) -> CampaignRequestOut:
-    """Update campaign request status (approve/reject) and notes. On approve, sends artist an email with form link."""
-    require_admin(user)
-    req = db.query(CampaignRequest).options(
-        joinedload(CampaignRequest.artist),
-        joinedload(CampaignRequest.release),
-    ).filter(CampaignRequest.id == request_id).first()
-    if not req:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign request not found")
-    old_status = req.status
-    if payload.status is not None:
-        req.status = payload.status
-    if payload.admin_notes is not None:
-        req.admin_notes = payload.admin_notes
-
-    if req.status == "approved" and old_status != "approved":
-        artist = req.artist or db.query(Artist).filter(Artist.id == req.artist_id).first()
-        if artist:
-            release_title = req.release.title if req.release else None
-            _create_pending_release_token_and_send_approval_email(db, req, artist, release_title)
-
-    db.commit()
-    db.refresh(req)
-    artist = db.query(Artist).filter(Artist.id == req.artist_id).first()
-    release_title = req.release.title if req.release else None
-    return _campaign_request_out(req, artist.name if artist else "", release_title)
 
 
 @router.get("/public/pending-release-form", response_model=PendingReleaseFormInfo)
@@ -4071,165 +3704,6 @@ def public_pending_release_label_image_file(filename: str) -> FileResponse:
         ".webp": "image/webp",
     }
     return FileResponse(path, media_type=media_types.get(os.path.splitext(filename)[1].lower(), "application/octet-stream"))
-
-
-@router.get("/admin/inbox", response_model=list[LabelInboxThreadOut])
-def admin_list_inbox(
-    artist_id: int | None = Query(None, description="Filter by artist id"),
-    limit: int = Query(100, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-) -> list[LabelInboxThreadOut]:
-    """List all label inbox threads (artist messages to label)."""
-    require_admin(user)
-    q = (
-        db.query(LabelInboxThread)
-        .options(joinedload(LabelInboxThread.artist), joinedload(LabelInboxThread.messages))
-        .order_by(desc(LabelInboxThread.updated_at))
-        .offset(offset)
-        .limit(limit)
-    )
-    if artist_id is not None:
-        q = q.filter(LabelInboxThread.artist_id == artist_id)
-    threads = q.all()
-    out = []
-    for thread in threads:
-        artist = thread.artist
-        if not artist:
-            continue
-        msgs = thread.messages or []
-        if not msgs:
-            continue
-        last = msgs[-1]
-        preview = (last.body or "")[:120].strip()
-        if len(last.body or "") > 120:
-            preview += "..."
-        has_label = any(m.sender == "label" for m in msgs)
-        out.append(
-            _label_inbox_thread_out(
-                thread,
-                artist,
-                preview,
-                last.created_at,
-                len(msgs),
-                has_label,
-                _label_inbox_unread_count(msgs),
-            )
-        )
-    return out
-
-
-@router.get("/admin/inbox/threads/{thread_id}", response_model=LabelInboxThreadDetailOut)
-def admin_get_inbox_thread(
-    thread_id: int,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-) -> LabelInboxThreadDetailOut:
-    """Get one inbox thread with messages (admin)."""
-    require_admin(user)
-    thread = (
-        db.query(LabelInboxThread)
-        .options(joinedload(LabelInboxThread.messages), joinedload(LabelInboxThread.artist))
-        .filter(LabelInboxThread.id == thread_id)
-        .first()
-    )
-    if not thread:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
-    artist = thread.artist
-    if not artist:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
-    if _mark_admin_thread_as_read(db, thread=thread):
-        db.commit()
-        db.refresh(thread)
-    messages = sorted(thread.messages or [], key=lambda m: m.created_at)
-    return _label_inbox_thread_detail_out(thread, artist, messages)
-
-
-@router.post("/admin/inbox/threads/{thread_id}/reply", response_model=LabelInboxThreadDetailOut)
-def admin_reply_inbox_thread(
-    thread_id: int,
-    payload: LabelInboxReply,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-) -> LabelInboxThreadDetailOut:
-    """Reply to a thread; saves message and sends email to artist."""
-    require_admin(user)
-    thread = (
-        db.query(LabelInboxThread)
-        .options(joinedload(LabelInboxThread.messages), joinedload(LabelInboxThread.artist))
-        .filter(LabelInboxThread.id == thread_id)
-        .first()
-    )
-    if not thread:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
-    artist = thread.artist
-    if not artist:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
-    body = (payload.body or "").strip()
-    if not body:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reply body is required")
-    now = datetime.now(timezone.utc)
-    _mark_admin_thread_as_read(db, thread=thread, read_at=now)
-    reply_msg = LabelInboxMessage(
-        thread_id=thread.id,
-        sender="label",
-        body=body,
-        admin_read_at=now,
-    )
-    db.add(reply_msg)
-    db.flush()
-    if is_email_configured():
-        label_name = "Zalmanim"  # could come from settings later
-        subject = f"Re: Your message to {label_name}"
-        email_body = (
-            f"The label has replied to your message.\n\n"
-            "---\n\n"
-            f"{body}\n\n"
-            "---\n\nBest regards,\n" + label_name
-        )
-        success, msg = send_email_service(
-            to_email=artist.email,
-            subject=subject,
-            body_text=email_body,
-        )
-        if success:
-            reply_msg.reply_email_sent_at = now
-        else:
-            logging.getLogger(__name__).warning(
-                "Failed to send inbox reply email to %s: %s", artist.email, msg
-            )
-    thread.updated_at = now
-    db.commit()
-    db.refresh(thread)
-    db.refresh(reply_msg)
-    thread = (
-        db.query(LabelInboxThread)
-        .options(joinedload(LabelInboxThread.messages), joinedload(LabelInboxThread.artist))
-        .filter(LabelInboxThread.id == thread_id)
-        .first()
-    )
-    artist = thread.artist if thread else None
-    if not thread or not artist:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Thread not found after reply")
-    messages = sorted(thread.messages or [], key=lambda m: m.created_at)
-    return _label_inbox_thread_detail_out(thread, artist, messages)
-
-
-@router.delete("/admin/inbox/threads/{thread_id}")
-def admin_delete_inbox_thread(
-    thread_id: int,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-) -> dict:
-    """Delete an inbox thread and all of its messages."""
-    require_admin(user)
-    thread = db.query(LabelInboxThread).filter(LabelInboxThread.id == thread_id).first()
-    if not thread:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
-    db.delete(thread)
-    db.commit()
-    return {"ok": True}
 
 
 @router.get("/artist/me/pending-releases/{pending_release_id}", response_model=PendingReleaseDetailOut)
@@ -6042,171 +5516,6 @@ def merge_artists(
 
 # ---- Social and Connectors routes removed (rebuild from scratch) ----
 # Placeholder so next section comment is not orphaned
-
-# ---- Campaigns (unified: social + Mailchimp + WordPress) ----
-# (Social/connector routes removed - rebuild from scratch)
-
-@router.get("/admin/campaigns", response_model=list[CampaignOut])
-def list_campaigns(
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-    status: str | None = Query(None),
-    limit: int = Query(100, le=200),
-    offset: int = Query(0, ge=0),
-) -> list[CampaignOut]:
-    require_admin(user)
-    campaigns = list_campaigns_svc(db, status=status, limit=limit, offset=offset)
-    return [CampaignOut.from_campaign(c) for c in campaigns]
-
-
-@router.get("/admin/campaigns/{campaign_id}", response_model=CampaignOut)
-def get_campaign_route(
-    campaign_id: int,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-) -> CampaignOut:
-    require_admin(user)
-    campaign = get_campaign(db, campaign_id)
-    if not campaign:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
-    return CampaignOut.from_campaign(campaign)
-
-
-@router.post("/admin/campaigns", response_model=CampaignOut)
-def create_campaign_route(
-    payload: CampaignCreate,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-) -> CampaignOut:
-    require_admin(user)
-    targets = [
-        {"channel_type": t.channel_type, "external_id": t.external_id, "channel_payload": t.channel_payload}
-        for t in payload.targets
-    ]
-    campaign = create_campaign_svc(
-        db,
-        name=payload.name,
-        title=payload.title,
-        body_text=payload.body_text,
-        body_html=payload.body_html,
-        media_url=payload.media_url,
-        artist_id=payload.artist_id,
-        targets=targets,
-    )
-    return CampaignOut.from_campaign(campaign)
-
-
-# (Social/connector routes removed - rebuild from scratch)
-
-
-# Allowed image extensions for campaign media upload
-_CAMPAIGN_MEDIA_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
-
-# Allowed image extensions for campaign media upload
-_CAMPAIGN_MEDIA_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
-
-@router.post("/admin/campaigns/upload-media")
-def upload_campaign_media(
-    request: Request,
-    file: UploadFile = File(...),
-    user: UserContext = Depends(get_current_lm_user),
-) -> dict:
-    """Upload an image for use as campaign media. Returns public URL for the image."""
-    require_admin(user)
-    ext = (os.path.splitext(file.filename or "")[1] or "").lower()
-    if ext not in _CAMPAIGN_MEDIA_EXT:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid file type. Allowed: {', '.join(_CAMPAIGN_MEDIA_EXT)}",
-        )
-    media_dir = os.path.join(settings.upload_dir, "campaign_media")
-    os.makedirs(media_dir, exist_ok=True)
-    filename = f"{uuid.uuid4().hex}{ext}"
-    path = os.path.join(media_dir, filename)
-    with open(path, "wb") as out:
-        out.write(file.file.read())
-    base = str(request.base_url).rstrip("/")
-    if base.endswith("/api"):
-        pass
-    elif not base.endswith("/api/"):
-        base = base + "/api"
-    url = f"{base}/media/campaigns/{filename}"
-    return {"url": url}
-
-
-@router.get("/media/campaigns/{filename}")
-def serve_campaign_media(filename: str):
-    """Serve uploaded campaign image. Public so social platforms can fetch the URL."""
-    if ".." in filename or "/" in filename or "\\" in filename:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
-    ext = (os.path.splitext(filename)[1] or "").lower()
-    if ext not in _CAMPAIGN_MEDIA_EXT:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    path = os.path.join(settings.upload_dir, "campaign_media", filename)
-    if not os.path.isfile(path):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    media_types = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"}
-    return FileResponse(path, media_type=media_types.get(ext, "application/octet-stream"))
-
-
-@router.patch("/admin/campaigns/{campaign_id}", response_model=CampaignOut)
-def update_campaign_route(
-    campaign_id: int,
-    payload: CampaignUpdate,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-) -> CampaignOut:
-    require_admin(user)
-    kwargs = payload.model_dump(exclude_unset=True)
-    campaign = update_campaign_svc(db, campaign_id, **kwargs)
-    if not campaign:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found or not editable")
-    return CampaignOut.from_campaign(campaign)
-
-
-@router.delete("/admin/campaigns/{campaign_id}")
-def delete_campaign_route(
-    campaign_id: int,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-) -> dict:
-    require_admin(user)
-    if not delete_campaign(db, campaign_id):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Campaign not found or cannot be deleted")
-    return {"ok": True}
-
-
-@router.post("/admin/campaigns/{campaign_id}/schedule", response_model=CampaignOut)
-def schedule_campaign_route(
-    campaign_id: int,
-    payload: ScheduleCampaignRequest,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-) -> CampaignOut:
-    require_admin(user)
-    campaign = get_campaign(db, campaign_id)
-    if not campaign:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
-    if campaign.status != "draft":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only draft campaigns can be scheduled")
-    scheduled_at = payload.scheduled_at
-    campaign = set_campaign_scheduled(db, campaign_id, scheduled_at)
-    if not campaign:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not schedule campaign")
-    return CampaignOut.from_campaign(campaign)
-
-
-@router.post("/admin/campaigns/{campaign_id}/cancel", response_model=CampaignOut)
-def cancel_campaign_schedule_route(
-    campaign_id: int,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-) -> CampaignOut:
-    require_admin(user)
-    campaign = cancel_schedule(db, campaign_id)
-    if not campaign:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Campaign not found or not scheduled")
-    return CampaignOut.from_campaign(campaign)
 
 
 

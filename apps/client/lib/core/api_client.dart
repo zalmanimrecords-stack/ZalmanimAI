@@ -270,7 +270,7 @@ class ApiClient {
     required int id,
     required Map<String, dynamic> body,
   }) async {
-    final response = await http.patch(
+    final response = await http.put(
       Uri.parse('$baseUrl/artists/$id'),
       headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
       body: jsonEncode(body),
