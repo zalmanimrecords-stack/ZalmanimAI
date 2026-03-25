@@ -30,6 +30,21 @@ app = FastAPI(
 )
 
 
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    content_type = (response.headers.get("content-type") or "").lower()
+    if "text/html" in content_type:
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        )
+    return response
+
+
 def _log_category(path: str) -> str:
     """Use 'artist_portal' for public/artist endpoints, else 'api' (LB)."""
     if "/api/public/" in path or "/public/" in path:

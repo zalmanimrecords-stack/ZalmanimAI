@@ -7,9 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.models.models import Campaign, CampaignDelivery, CampaignTarget, HubConnector, SocialConnection
 from app.services.campaign_service import (
+    claim_scheduled_campaign_for_sending,
     get_campaign,
     set_campaign_failed,
-    set_campaign_sending,
     set_campaign_sent,
 )
 from app.services.hub_connectors import publish_wordpress_content
@@ -22,13 +22,9 @@ def run_campaign_send(db: Session, campaign_id: int) -> None:
     Load campaign and targets, set status to sending, run each target sender, record deliveries.
     Sets campaign status to sent or failed.
     """
-    campaign = get_campaign(db, campaign_id)
+    campaign = claim_scheduled_campaign_for_sending(db, campaign_id)
     if not campaign:
         return
-    if campaign.status != "scheduled":
-        return
-    set_campaign_sending(db, campaign_id)
-    db.commit()
 
     title = campaign.title or ""
     body_text = campaign.body_text or ""

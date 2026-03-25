@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.models import Campaign, CampaignTarget
@@ -144,6 +145,24 @@ def set_campaign_sending(db: Session, campaign_id: int) -> Campaign | None:
     db.commit()
     db.refresh(campaign)
     return campaign
+
+
+def claim_scheduled_campaign_for_sending(db: Session, campaign_id: int) -> Campaign | None:
+    result = db.execute(
+        update(Campaign)
+        .where(Campaign.id == campaign_id, Campaign.status == "scheduled")
+        .values(status="sending")
+    )
+    if result.rowcount != 1:
+        db.rollback()
+        return None
+    db.commit()
+    return (
+        db.query(Campaign)
+        .options(joinedload(Campaign.targets))
+        .filter(Campaign.id == campaign_id)
+        .first()
+    )
 
 
 def set_campaign_sent(db: Session, campaign_id: int) -> Campaign | None:

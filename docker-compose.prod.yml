@@ -79,8 +79,8 @@ services:
       context: .
       dockerfile: ./deploy/web/Dockerfile
       args:
-        API_BASE_URL: ${API_BASE_URL:-https://lm.zalmanim.com/}
-        ARTIST_API_BASE_URL: ${ARTIST_API_BASE_URL:-https://artists.zalmanim.com/}
+        API_BASE_URL: ${API_BASE_URL:-https://lmapi.zalmanim.com/}
+        ARTIST_API_BASE_URL: ${ARTIST_API_BASE_URL:-https://lmapi.zalmanim.com/}
         ARTIST_LABEL_NAME: ${ARTIST_LABEL_NAME:-Zalmanim Artists}
         ARTIST_PRIMARY_COLOR: ${ARTIST_PRIMARY_COLOR:-B66A2C}
         DEMO_SUBMISSION_TOKEN: ${DEMO_SUBMISSION_TOKEN:-}
