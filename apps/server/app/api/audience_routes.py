@@ -1,4 +1,5 @@
 import csv
+import html
 import io
 import json
 import secrets
@@ -506,6 +507,8 @@ def public_unsubscribe(
         db.refresh(subscriber)
 
     list_name = subscriber.mailing_list.name if subscriber.mailing_list else "the mailing list"
+    safe_email = html.escape((subscriber.email or "").strip())
+    safe_list_name = html.escape((list_name or "").strip())
     return HTMLResponse(
         content=f"""
         <!DOCTYPE html>
@@ -517,7 +520,7 @@ def public_unsubscribe(
         </head>
         <body style=\"font-family: Arial, sans-serif; max-width: 640px; margin: 40px auto; padding: 24px; line-height: 1.5;\">
           <h1>You have been unsubscribed</h1>
-          <p><strong>{subscriber.email}</strong> will no longer receive marketing emails from <strong>{list_name}</strong>.</p>
+          <p><strong>{safe_email}</strong> will no longer receive marketing emails from <strong>{safe_list_name}</strong>.</p>
           <p>If this was a mistake, an administrator can resubscribe you manually.</p>
         </body>
         </html>
