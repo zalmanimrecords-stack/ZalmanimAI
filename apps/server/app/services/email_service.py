@@ -193,7 +193,7 @@ def check_and_increment_rate_limit() -> bool:
 
 def _get_active_gmail_connection() -> SocialConnection | None:
     with SessionLocal() as db:
-        return (
+        connection = (
             db.query(SocialConnection)
             .filter(
                 SocialConnection.provider == "google_mail",
@@ -202,6 +202,10 @@ def _get_active_gmail_connection() -> SocialConnection | None:
             .order_by(SocialConnection.authorized_at.desc().nullslast(), SocialConnection.id.desc())
             .first()
         )
+        if connection and connection.ensure_encrypted_tokens():
+            db.commit()
+            db.refresh(connection)
+        return connection
 
 
 def _gmail_connection_supports_send(connection: SocialConnection | None) -> bool:
@@ -534,4 +538,3 @@ def send_email(
     if gmail_err:
         return False, f"Gmail failed: {gmail_err}. No working SMTP fallback."
     return False, "SMTP not configured (set primary or backup SMTP host, or connect Gmail)"
-

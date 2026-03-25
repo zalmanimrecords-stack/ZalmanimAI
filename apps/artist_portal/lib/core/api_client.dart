@@ -631,10 +631,7 @@ class ApiClient {
   }) async {
     final response = await http.post(
       Uri.parse('$baseUrl/public/demo-submissions'),
-      headers: {
-        'Content-Type': 'application/json',
-        'x-demo-token': AppConfig.demoSubmissionToken,
-      },
+      headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         'artist_name': artistName.trim(),
         'email': email.trim().toLowerCase(),
@@ -696,7 +693,6 @@ class ApiClient {
       'POST',
       Uri.parse('$baseUrl/public/demo-submissions/with-file'),
     );
-    request.headers['x-demo-token'] = AppConfig.demoSubmissionToken;
     request.fields['artist_name'] = artistName.trim();
     request.fields['email'] = email.trim().toLowerCase();
     request.fields['consent_to_emails'] = consentToEmails.toString();

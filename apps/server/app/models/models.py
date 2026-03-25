@@ -1,9 +1,60 @@
+import base64
+import hashlib
 from datetime import date
+from functools import lru_cache
 
+from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Table, Text, UniqueConstraint, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
+from app.core.config import settings
 from app.db.session import Base
+
+
+_SOCIAL_TOKEN_PREFIX = "enc:v1:"
+
+
+def _social_token_secret() -> str:
+    return (getattr(settings, "token_encryption_key", "") or getattr(settings, "jwt_secret", "") or "").strip()
+
+
+@lru_cache(maxsize=8)
+def _social_token_cipher(secret: str) -> Fernet:
+    key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
+    return Fernet(key)
+
+
+def _encrypt_social_token(value: str | None) -> str | None:
+    if value is None:
+        return None
+    token = value.strip()
+    if not token:
+        return None
+    if token.startswith(_SOCIAL_TOKEN_PREFIX):
+        return token
+    secret = _social_token_secret()
+    if not secret:
+        raise RuntimeError("A token encryption secret is required to encrypt social connection tokens.")
+    encrypted = _social_token_cipher(secret).encrypt(token.encode("utf-8")).decode("ascii")
+    return f"{_SOCIAL_TOKEN_PREFIX}{encrypted}"
+
+
+def _decrypt_social_token(value: str | None) -> str | None:
+    if value is None:
+        return None
+    token = value.strip()
+    if not token:
+        return None
+    if not token.startswith(_SOCIAL_TOKEN_PREFIX):
+        return token
+    secret = _social_token_secret()
+    if not secret:
+        raise RuntimeError("A token encryption secret is required to decrypt social connection tokens.")
+    encrypted = token.removeprefix(_SOCIAL_TOKEN_PREFIX)
+    try:
+        return _social_token_cipher(secret).decrypt(encrypted.encode("ascii")).decode("utf-8")
+    except InvalidToken as exc:
+        raise RuntimeError("Unable to decrypt stored social connection token.") from exc
 
 
 class MailSettings(Base):
@@ -393,13 +444,65 @@ class SocialConnection(Base):
     pkce_code_verifier: Mapped[str | None] = mapped_column(String(255), nullable=True)
     one_time_token: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     one_time_expires_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
-    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    _access_token: Mapped[str | None] = mapped_column("access_token", Text, nullable=True)
+    _refresh_token: Mapped[str | None] = mapped_column("refresh_token", Text, nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="pending")
     authorized_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     artist: Mapped[Artist | None] = relationship(back_populates="social_connections")
+
+    def ensure_encrypted_tokens(self) -> bool:
+        """Upgrade any legacy plaintext token values in-place."""
+        changed = False
+        if self._access_token:
+            encrypted = _encrypt_social_token(self._access_token)
+            if encrypted != self._access_token:
+                self._access_token = encrypted
+                changed = True
+        if self._refresh_token:
+            encrypted = _encrypt_social_token(self._refresh_token)
+            if encrypted != self._refresh_token:
+                self._refresh_token = encrypted
+                changed = True
+        return changed
+
+    @property
+    def access_token(self) -> str | None:
+        token = _decrypt_social_token(self._access_token)
+        if token and self._access_token and not self._access_token.startswith(_SOCIAL_TOKEN_PREFIX):
+            self._access_token = _encrypt_social_token(token)
+        return token
+
+    @access_token.setter
+    def access_token(self, value: str | None) -> None:
+        self._access_token = _encrypt_social_token(value)
+
+    @property
+    def refresh_token(self) -> str | None:
+        token = _decrypt_social_token(self._refresh_token)
+        if token and self._refresh_token and not self._refresh_token.startswith(_SOCIAL_TOKEN_PREFIX):
+            self._refresh_token = _encrypt_social_token(token)
+        return token
+
+    @refresh_token.setter
+    def refresh_token(self, value: str | None) -> None:
+        self._refresh_token = _encrypt_social_token(value)
+
+
+def migrate_legacy_social_connection_tokens(db: Session) -> int:
+    changed = 0
+    rows = (
+        db.query(SocialConnection)
+        .filter((SocialConnection._access_token.is_not(None)) | (SocialConnection._refresh_token.is_not(None)))
+        .all()
+    )
+    for row in rows:
+        if row.ensure_encrypted_tokens():
+            changed += 1
+    if changed:
+        db.commit()
+    return changed
 
 
 class HubConnector(Base):

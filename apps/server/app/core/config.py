@@ -1,18 +1,37 @@
+from urllib.parse import urlparse
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _split_csv(value: str) -> list[str]:
+    return [item.strip() for item in (value or "").split(",") if item.strip()]
+
+
+def _origin_from_url(value: str) -> str:
+    parsed = urlparse((value or "").strip())
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+    return f"{parsed.scheme}://{parsed.netloc}"
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_name: str = "LabelOps API"
-    api_docs_enabled: bool = True
+    environment: str = "development"
+    api_docs_enabled: bool = False
     cors_allowed_origins: str = ""
-    jwt_secret: str = ""  # Set via env (e.g. JWT_SECRET); see secrets-backup.txt for local dev
+    trusted_hosts: str = ""
+    oauth_allowed_redirect_origins: str = ""
+    public_demo_allowed_origins: str = ""
+    jwt_secret: str = ""  # Set via env (e.g. JWT_SECRET); keep out of source control.
+    token_encryption_key: str = ""  # Optional dedicated key for encrypting stored provider tokens.
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 60 * 24
-    database_url: str = ""  # Set via env DATABASE_URL; see secrets-backup.txt for local dev
+    database_url: str = ""  # Set via env DATABASE_URL; keep out of source control.
     upload_dir: str = "storage/uploads"
 
+    admin_app_base_url: str = "https://lm.zalmanim.com"
     oauth_redirect_base: str = "http://localhost:8000/api/admin/social/callback"
     oauth_success_redirect: str = ""  # Optional: redirect here after connect (e.g. Flutter app URL)
     google_client_id: str = ""
@@ -65,6 +84,81 @@ class Settings(BaseSettings):
     password_reset_base_url: str = ""
     artist_portal_base_url: str = "https://artists.zalmanim.com"
     zalmanim_website_url: str = "https://zalmanim.com"
+
+    def is_production(self) -> bool:
+        return (self.environment or "").strip().lower() in {"prod", "production"}
+
+    def cors_origin_list(self) -> list[str]:
+        return _split_csv(self.cors_allowed_origins)
+
+    def trusted_host_list(self) -> list[str]:
+        configured = _split_csv(self.trusted_hosts)
+        if configured:
+            return configured
+        if self.is_production():
+            return []
+        return ["localhost", "127.0.0.1", "testserver"]
+
+    def oauth_allowed_redirect_origin_list(self) -> list[str]:
+        origins: list[str] = []
+        candidates = _split_csv(self.oauth_allowed_redirect_origins)
+        candidates.extend(
+            [
+                self.admin_app_base_url,
+                self.artist_portal_base_url,
+                self.zalmanim_website_url,
+                self.password_reset_base_url,
+                self.oauth_success_redirect,
+            ]
+        )
+        if not self.is_production():
+            candidates.extend(["http://localhost", "http://127.0.0.1"])
+        for candidate in candidates:
+            origin = _origin_from_url(candidate)
+            if origin and origin not in origins:
+                origins.append(origin)
+        return origins
+
+    def public_demo_allowed_origin_list(self) -> list[str]:
+        origins: list[str] = []
+        candidates = _split_csv(self.public_demo_allowed_origins)
+        candidates.extend([self.artist_portal_base_url, self.zalmanim_website_url])
+        if not self.is_production():
+            candidates.extend(["http://localhost", "http://127.0.0.1"])
+        for candidate in candidates:
+            origin = _origin_from_url(candidate)
+            if origin and origin not in origins:
+                origins.append(origin)
+        return origins
+
+    def validate_runtime(self) -> None:
+        errors: list[str] = []
+        jwt_secret = (self.jwt_secret or "").strip()
+        database_url = (self.database_url or "").strip()
+        cors_origins = self.cors_origin_list()
+
+        if not database_url:
+            errors.append("DATABASE_URL is required.")
+        if not jwt_secret:
+            errors.append("JWT_SECRET is required.")
+        elif len(jwt_secret) < 32:
+            errors.append("JWT_SECRET must be at least 32 characters.")
+        token_encryption_key = (self.token_encryption_key or "").strip()
+        if token_encryption_key and len(token_encryption_key) < 32:
+            errors.append("TOKEN_ENCRYPTION_KEY must be at least 32 characters when set.")
+        if "*" in cors_origins:
+            errors.append("CORS_ALLOWED_ORIGINS must not contain '*'.")
+
+        if self.is_production():
+            if self.api_docs_enabled:
+                errors.append("API docs must be disabled in production.")
+            if not cors_origins:
+                errors.append("CORS_ALLOWED_ORIGINS must be set in production.")
+            if not self.trusted_host_list():
+                errors.append("TRUSTED_HOSTS must be set in production.")
+
+        if errors:
+            raise ValueError("Invalid runtime configuration: " + " ".join(errors))
 
 
 settings = Settings()

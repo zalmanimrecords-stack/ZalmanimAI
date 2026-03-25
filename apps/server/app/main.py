@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.audience_routes import router as audience_router
 from app.api.routes import router
@@ -16,10 +17,20 @@ def _docs_path(path: str) -> str | None:
 
 
 def _cors_origins() -> list[str]:
-    raw = (settings.cors_allowed_origins or "").strip()
-    if not raw:
-        return ["*"]
-    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+    return settings.cors_origin_list()
+
+
+def _cors_origin_regex() -> str | None:
+    if settings.cors_origin_list() or settings.is_production():
+        return None
+    return r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+
+
+def _validate_runtime_configuration() -> None:
+    try:
+        settings.validate_runtime()
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
 
 
 app = FastAPI(
@@ -28,6 +39,14 @@ app = FastAPI(
     redoc_url=_docs_path("/redoc"),
     openapi_url=_docs_path("/openapi.json"),
 )
+
+if trusted_hosts := settings.trusted_host_list():
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)
+
+
+@app.on_event("startup")
+def validate_runtime_configuration() -> None:
+    _validate_runtime_configuration()
 
 
 @app.middleware("http")
@@ -90,11 +109,12 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 # Allow Flutter web (e.g. localhost:port) to call the API from the browser.
-# Cannot use allow_origins=["*"] with allow_credentials=True (browser rejects it).
+# Use explicit localhost origins during local development; wildcard origins are rejected.
 # Explicit headers help some browsers with preflight for multipart + Authorization.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
+    allow_origin_regex=_cors_origin_regex(),
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=[

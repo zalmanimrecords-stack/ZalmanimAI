@@ -69,7 +69,11 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
   }
 
   Future<AuthSession?> _resolveInitialSession() async {
-    final params = Uri.base.queryParameters;
+    final params = <String, String>{};
+    if (Uri.base.fragment.isNotEmpty) {
+      params.addAll(Uri.splitQueryString(Uri.base.fragment));
+    }
+    params.addAll(Uri.base.queryParameters);
     final token = params['token'];
     final role = params['role'];
     final socialError = params['social_error'];

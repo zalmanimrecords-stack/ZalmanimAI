@@ -3,7 +3,7 @@ import json
 import os
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from PIL import Image
 
@@ -284,6 +284,45 @@ def test_admin_delete_pending_release_image_option_removes_file_and_updates_json
     data = json.loads(row.release_data_json or "{}")
     assert data.get("image_options") == []
     assert data.get("selected_image_id") in (None, "")
+
+
+def test_admin_upload_pending_release_image_uses_artist_and_release_name(
+    client,
+    db_session,
+    admin_headers,
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "upload_dir", str(tmp_path))
+    monkeypatch.setattr(routes, "send_email_service", lambda **kwargs: (True, "Sent"))
+
+    pending_release = PendingRelease(
+        artist_name="Maya Waves",
+        artist_email="maya@example.com",
+        artist_data_json="{}",
+        release_title="Ocean Lights",
+        release_data_json="{}",
+        status="pending",
+    )
+    db_session.add(pending_release)
+    db_session.commit()
+    db_session.refresh(pending_release)
+
+    response = client.post(
+        f"/api/admin/pending-releases/{pending_release.id}/images",
+        headers=admin_headers,
+        files={"file": ("cover draft.PNG", b"fake-image-bytes", "image/png")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["image_options"]) == 1
+    option = payload["image_options"][0]
+    assert option["filename"] == "Maya Waves - Ocean Lights.png"
+
+    stored_name = unquote(urlparse(option["url"]).path.split("/")[-1])
+    assert stored_name == "Maya Waves - Ocean Lights.png"
+    assert (tmp_path / "pending_release_label_images" / stored_name).is_file()
 
 
 def test_admin_normalize_pending_release_image_writes_jpg_3000(

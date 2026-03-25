@@ -32,9 +32,4 @@ class AppConfig {
     'PUBLIC_BASE_URL',
     defaultValue: 'https://artists.zalmanim.com/',
   );
-
-  static const String demoSubmissionToken = String.fromEnvironment(
-    'DEMO_SUBMISSION_TOKEN',
-    defaultValue: 'TOKEN',
-  );
 }

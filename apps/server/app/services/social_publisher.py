@@ -17,6 +17,7 @@ def publish_social(
     Publish text (and optional media) to the given social connection.
     Returns (success, message, external_id e.g. post id).
     """
+    connection.ensure_encrypted_tokens()
     provider = (connection.provider or "").strip().lower()
     token = (connection.access_token or "").strip()
     if not token:

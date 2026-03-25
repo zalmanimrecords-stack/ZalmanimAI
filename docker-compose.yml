@@ -38,7 +38,7 @@ services:
     image: zalmanimai-api:latest
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-label}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-labelops}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-label}:${POSTGRES_PASSWORD:-label}@postgres:5432/${POSTGRES_DB:-labelops}
       JWT_SECRET: ${JWT_SECRET:-change-me-in-prod}
       UPLOAD_DIR: storage/uploads
       OAUTH_REDIRECT_BASE: http://localhost:8000/api/admin/social/callback
@@ -93,7 +93,7 @@ services:
     image: zalmanimai-worker:latest
     command: ["python", "worker.py"]
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-label}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-labelops}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-label}:${POSTGRES_PASSWORD:-label}@postgres:5432/${POSTGRES_DB:-labelops}
       JWT_SECRET: ${JWT_SECRET:-change-me-in-prod}
       UPLOAD_DIR: storage/uploads
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}

@@ -20,6 +20,11 @@ services:
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   api:
     image: zalmanimai-api:${IMAGE_TAG:-latest}
@@ -52,6 +57,15 @@ services:
         condition: service_started
     expose:
       - "8000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"from urllib.request import urlopen; import sys; sys.exit(0 if urlopen('http://127.0.0.1:8000/health').status == 200 else 1)\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   worker:
     image: zalmanimai-worker:${IMAGE_TAG:-latest}
@@ -65,13 +79,25 @@ services:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-label}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-labelops}
       REDIS_URL: redis://redis:6379/0
       UPLOAD_DIR: /app/storage/uploads
+      WORKER_HEARTBEAT_PATH: /tmp/worker-heartbeat.txt
+      WORKER_HEARTBEAT_MAX_AGE_SEC: 600
     volumes:
       - server_storage:/app/storage
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import os,time,pathlib,sys; p=pathlib.Path(os.getenv('WORKER_HEARTBEAT_PATH','/tmp/worker-heartbeat.txt')); max_age=int(os.getenv('WORKER_HEARTBEAT_MAX_AGE_SEC','600')); sys.exit(0 if p.exists() and time.time()-p.stat().st_mtime <= max_age else 1)\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
 
   web:
     image: zalmanimai-web:${IMAGE_TAG:-latest}
@@ -83,15 +109,14 @@ services:
         ARTIST_API_BASE_URL: ${ARTIST_API_BASE_URL:-https://lmapi.zalmanim.com/}
         ARTIST_LABEL_NAME: ${ARTIST_LABEL_NAME:-Zalmanim Artists}
         ARTIST_PRIMARY_COLOR: ${ARTIST_PRIMARY_COLOR:-B66A2C}
-        DEMO_SUBMISSION_TOKEN: ${DEMO_SUBMISSION_TOKEN:-}
     restart: unless-stopped
     # Ensure worker runs with the public sites (scheduled campaigns). Without this,
     # `docker compose up -d web` would start api+web but omit worker.
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
       worker:
-        condition: service_started
+        condition: service_healthy
     expose:
       - "80"
     labels:
@@ -107,7 +132,7 @@ services:
       traefik.http.services.lm-web-svc.loadbalancer.server.port: "80"
       traefik.http.services.artists-web-svc.loadbalancer.server.port: "80"
     healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 80 || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz >/dev/null 2>&1"]
       interval: 30s
       timeout: 5s
       retries: 3

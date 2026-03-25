@@ -132,7 +132,14 @@ Invoke-Step -Name "Checking API health" -Action {
     }
 
     if (-not $healthy) {
-        $msg = "API health check failed after $maxAttempts attempts. Ensure Docker is running and ports 8000/5432 are free."
+        Write-Host "`nRecent API container logs (docker compose logs api --tail 40):" -ForegroundColor Yellow
+        try {
+            docker compose logs api --tail 40 2>&1 | ForEach-Object { Write-Host $_ }
+        }
+        catch {
+            Write-Host "  (could not read logs: $_)" -ForegroundColor Gray
+        }
+        $msg = "API health check failed after $maxAttempts attempts. Ensure Docker is running and ports 8000/5432 are free. If dependencies changed, run: .\scripts\restart-system.ps1 -Rebuild"
         if ($lastError) {
             $msg += " Last error: $($lastError.Exception.Message)"
         }

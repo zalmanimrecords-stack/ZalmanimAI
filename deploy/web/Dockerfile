@@ -22,12 +22,10 @@ COPY apps/artist_portal/ ./
 ARG ARTIST_API_BASE_URL=https://lmapi.zalmanim.com/
 ARG ARTIST_LABEL_NAME=Zalmanim\ Artists
 ARG ARTIST_PRIMARY_COLOR=B66A2C
-ARG DEMO_SUBMISSION_TOKEN=TOKEN
 RUN flutter build web --release \
     --dart-define="API_BASE_URL=${ARTIST_API_BASE_URL}" \
     --dart-define="LABEL_NAME=${ARTIST_LABEL_NAME}" \
-    --dart-define="PRIMARY_COLOR=${ARTIST_PRIMARY_COLOR}" \
-    --dart-define="DEMO_SUBMISSION_TOKEN=${DEMO_SUBMISSION_TOKEN}"
+    --dart-define="PRIMARY_COLOR=${ARTIST_PRIMARY_COLOR}"
 
 FROM nginx:1.27-alpine
 

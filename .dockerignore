@@ -3,11 +3,23 @@
 .cursor
 reports
 tmp_release_mgmt
+tmp_deploy_branch
+tmp_*.sql
+tmp_*.sql.gz.b64
+tmp_*.yml
+test_bootstrap.db
+wp-codex-bridge.env
+apps/server/test_bootstrap.db
+reports/db_sync/*.json
 
 apps/client/.dart_tool
 apps/client/build
 apps/client/.flutter-plugins
 apps/client/.flutter-plugins-dependencies
+apps/artist_portal/.dart_tool
+apps/artist_portal/build
+apps/artist_portal/.flutter-plugins
+apps/artist_portal/.flutter-plugins-dependencies
 
 apps/server/__pycache__
 apps/server/.env

@@ -14,8 +14,21 @@ reports/db_sync/
 apps/server/storage/uploads/*
 !apps/server/storage/uploads/.gitkeep
 apps/server/test_bootstrap.db
+test_bootstrap.db
+tmp_*.sql
+tmp_*.sql.gz.b64
+tmp_*.yml
+tmp_deploy_branch/
+tmp_release_mgmt/
+reports/db_sync/*.json
+wp-codex-bridge.env
 
 apps/client/.dart_tool/
 apps/client/build/
 apps/client/.flutter-plugins
 apps/client/.flutter-plugins-dependencies
+
+apps/artist_portal/.dart_tool/
+apps/artist_portal/build/
+apps/artist_portal/.flutter-plugins
+apps/artist_portal/.flutter-plugins-dependencies

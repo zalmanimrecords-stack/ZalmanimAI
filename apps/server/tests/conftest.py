@@ -1,7 +1,7 @@
 import os
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///test_bootstrap.db")
-os.environ.setdefault("JWT_SECRET", "test-jwt-secret")
+os.environ.setdefault("JWT_SECRET", "test-jwt-secret-that-is-long-enough-123")
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,6 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.api.routes import router as api_router
 from app.db.session import Base, engine as app_engine, get_db
 from app.main import app
 from app.models.models import User
@@ -24,6 +25,8 @@ TEST_ENGINE = create_engine(
 TestingSessionLocal = sessionmaker(bind=TEST_ENGINE, autoflush=False, autocommit=False)
 
 app.router.on_startup.clear()
+Base.metadata.create_all(bind=app_engine)
+api_router.on_startup.clear()
 
 
 def override_get_db():
@@ -41,12 +44,11 @@ app.dependency_overrides[get_db] = override_get_db
 def reset_database():
     Base.metadata.drop_all(bind=TEST_ENGINE)
     Base.metadata.create_all(bind=TEST_ENGINE)
-    # mail_settings and other code paths use SessionLocal() (app engine), not the test override
-    Base.metadata.drop_all(bind=app_engine)
+    # mail_settings and other code paths use SessionLocal() (app engine), not the test override.
+    # Keep that schema present for startup code, but do not tear it down between tests.
     Base.metadata.create_all(bind=app_engine)
     yield
     Base.metadata.drop_all(bind=TEST_ENGINE)
-    Base.metadata.drop_all(bind=app_engine)
 
 
 @pytest.fixture

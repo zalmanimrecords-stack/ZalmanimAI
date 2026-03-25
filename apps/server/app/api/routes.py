@@ -5,10 +5,11 @@ import io
 import json
 import logging
 import os
+import re
 import secrets
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from urllib.parse import urlencode, urlparse
+from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
 
 import httpx
 from PIL import Image, ImageOps
@@ -30,6 +31,40 @@ from app.api.deps import (
 from app.api.campaign_routes import router as campaign_router
 from app.api.campaign_request_routes import router as campaign_request_router
 from app.api.inbox_routes import _create_pending_release_inbox_message, router as inbox_router
+from app.api.mail_templates import (
+    _apply_demo_rejection_placeholders,
+    _artist_portal_url,
+    _build_demo_receipt_body,
+    _build_demo_receipt_html,
+    _build_demo_receipt_subject,
+    _build_demo_submission_summary,
+    _build_groover_invite_html,
+    _default_demo_approval_body,
+    _default_demo_approval_subject,
+    _default_demo_receipt_body,
+    _default_demo_receipt_subject,
+    _default_demo_rejection_body,
+    _default_demo_rejection_subject,
+    _default_groover_invite_body,
+    _default_groover_invite_subject,
+    _default_portal_invite_body,
+    _default_portal_invite_subject,
+    _default_password_reset_body,
+    _default_password_reset_subject,
+    _default_update_profile_invite_body,
+    _default_update_profile_invite_subject,
+    _ensure_demo_mailing_list,
+    _get_demo_approval_subject_and_body,
+    _get_demo_receipt_subject_and_body,
+    _get_demo_rejection_subject_and_body,
+    _get_groover_invite_subject_and_body,
+    _get_portal_invite_subject_and_body,
+    _get_password_reset_subject_and_body,
+    _get_update_profile_invite_subject_and_body,
+    _safe_json_dict,
+    _safe_json_list,
+    _upsert_demo_mailing_subscriber,
+)
 from app.core.config import settings
 from app.db.session import Base, engine, get_db
 from app.models import models as models_module  # noqa: F401 - register all tables with Base
@@ -53,10 +88,52 @@ from app.models.models import (
     PendingReleaseToken,
     Release,
     release_artists_table,
+    migrate_legacy_social_connection_tokens,
     SocialConnection,
     SystemLog,
     User,
     UserIdentity,
+)
+from app.api.oauth_helpers import (
+    _GOOGLE_AUTH_SCOPES,
+    _build_facebook_auth_url,
+    _build_google_auth_url,
+    _build_oauth_state,
+    _build_provider_auth_url,
+    _decode_oauth_state,
+    _exchange_facebook_code,
+    _exchange_google_code,
+    _exchange_provider_code,
+    _fetch_facebook_userinfo,
+    _fetch_google_userinfo,
+    _fetch_provider_profile,
+    _oauth_callback_url,
+    _origin_from_url,
+    _redirect_with_fragment_params,
+    _redirect_with_params,
+    _sanitize_redirect_target,
+)
+from app.api.pending_release_helpers import (
+    _get_valid_artist_registration_token,
+    _get_valid_pending_release_token,
+    _normalize_public_image_url_path_for_match,
+    _notify_pending_release_artist,
+    _pending_release_comment_out,
+    _pending_release_form_link,
+    _pending_release_image_options,
+    _pending_release_notifications_muted,
+    _pending_release_selected_image_id,
+    _pending_release_upload_path_from_public_url,
+    _resolve_pending_release_from_token,
+    _save_pending_release_data,
+    _serialize_pending_release,
+    _serialize_pending_release_detail,
+)
+from app.api.upload_helpers import (
+    _bytes_to_jpg_3000_square,
+    _read_upload_bytes,
+    _sanitize_filename_component,
+    _unique_filename,
 )
 from app.services import auth_rate_limit
 from app.schemas.schemas import (
@@ -157,18 +234,6 @@ router.include_router(campaign_router)
 router.include_router(campaign_request_router)
 router.include_router(inbox_router)
 
-_GOOGLE_AUTH_SCOPES = [
-    "openid",
-    "email",
-    "profile",
-    "https://www.googleapis.com/auth/gmail.send",
-    "https://www.googleapis.com/auth/gmail.compose",
-]
-
-
-def _artist_portal_url() -> str:
-    return (settings.artist_portal_base_url or "").strip() or "https://artists.zalmanim.com"
-
 
 def _artist_registration_link(raw_token: str) -> str:
     portal_url = _artist_portal_url().rstrip("/")
@@ -229,171 +294,16 @@ def _generate_temporary_password(length: int = 12) -> str:
     alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@$%*"
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
-_FACEBOOK_AUTH_SCOPES = ["email", "public_profile"]
 _ALLOWED_USER_ROLES = {"admin", "manager", "artist"}
 _ALLOWED_DEMO_STATUSES = {"demo", "in_review", "approved", "rejected", "pending_release"}
 _DEMO_MAILING_LIST_NAME = "Artists Demo Intake"
 _ALLOWED_PENDING_RELEASE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
-
-
-def _oauth_callback_url(request: Request, provider: str) -> str:
-    return str(request.url_for("oauth_callback", provider=provider))
-
-
-
-def _build_oauth_state(*, provider: str, purpose: str, app_redirect: str, user_id: int | None = None) -> str:
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
-    payload = {
-        "provider": provider,
-        "purpose": purpose,
-        "app_redirect": app_redirect,
-        "user_id": user_id,
-        "exp": int(expires_at.timestamp()),
-    }
-    from jose import jwt
-
-    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
-
-
-
-def _decode_oauth_state(state: str) -> dict:
-    from jose import JWTError, jwt
-
-    try:
-        return jwt.decode(state, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
-    except JWTError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OAuth state") from exc
-
-
-
-def _build_google_auth_url(*, request: Request, state: str) -> str:
-    if not settings.google_client_id or not settings.google_client_secret:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Google OAuth is not configured")
-    query = {
-        "client_id": settings.google_client_id,
-        "redirect_uri": _oauth_callback_url(request, "google"),
-        "response_type": "code",
-        "scope": " ".join(_GOOGLE_AUTH_SCOPES),
-        "access_type": "offline",
-        "include_granted_scopes": "true",
-        "prompt": "consent",
-        "state": state,
-    }
-    return f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(query)}"
-
-
-
-def _exchange_google_code(*, request: Request, code: str) -> dict:
-    response = httpx.post(
-        "https://oauth2.googleapis.com/token",
-        data={
-            "client_id": settings.google_client_id,
-            "client_secret": settings.google_client_secret,
-            "code": code,
-            "grant_type": "authorization_code",
-            "redirect_uri": _oauth_callback_url(request, "google"),
-        },
-        timeout=20.0,
-    )
-    if response.status_code >= 400:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Google token exchange failed: {response.text[:300]}")
-    payload = response.json()
-    if not payload.get("access_token"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Google token exchange returned no access_token")
-    return payload
-
-
-
-def _fetch_google_userinfo(access_token: str) -> dict:
-    response = httpx.get(
-        "https://openidconnect.googleapis.com/v1/userinfo",
-        headers={"Authorization": f"Bearer {access_token}"},
-        timeout=20.0,
-    )
-    if response.status_code >= 400:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to load Google profile: {response.text[:300]}")
-    data = response.json()
-    if not data.get("email"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Google profile did not include email")
-    return data
-
-
-
-def _build_facebook_auth_url(*, request: Request, state: str) -> str:
-    if not settings.meta_client_id or not settings.meta_client_secret:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Facebook OAuth is not configured")
-    query = {
-        "client_id": settings.meta_client_id,
-        "redirect_uri": _oauth_callback_url(request, "facebook"),
-        "response_type": "code",
-        "scope": ",".join(_FACEBOOK_AUTH_SCOPES),
-        "state": state,
-    }
-    return f"https://www.facebook.com/v22.0/dialog/oauth?{urlencode(query)}"
-
-
-
-def _exchange_facebook_code(*, request: Request, code: str) -> dict:
-    response = httpx.get(
-        "https://graph.facebook.com/v22.0/oauth/access_token",
-        params={
-            "client_id": settings.meta_client_id,
-            "client_secret": settings.meta_client_secret,
-            "code": code,
-            "redirect_uri": _oauth_callback_url(request, "facebook"),
-        },
-        timeout=20.0,
-    )
-    if response.status_code >= 400:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Facebook token exchange failed: {response.text[:300]}")
-    payload = response.json()
-    if not payload.get("access_token"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Facebook token exchange returned no access_token")
-    return payload
-
-
-
-def _fetch_facebook_userinfo(access_token: str) -> dict:
-    response = httpx.get(
-        "https://graph.facebook.com/me",
-        params={"fields": "id,name,email", "access_token": access_token},
-        timeout=20.0,
-    )
-    if response.status_code >= 400:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to load Facebook profile: {response.text[:300]}")
-    data = response.json()
-    if not data.get("email"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Facebook profile did not include email")
-    return data
-
-
-
-def _build_provider_auth_url(provider: str, *, request: Request, state: str) -> str:
-    if provider == "google":
-        return _build_google_auth_url(request=request, state=state)
-    if provider == "facebook":
-        return _build_facebook_auth_url(request=request, state=state)
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unsupported auth provider")
-
-
-
-def _exchange_provider_code(provider: str, *, request: Request, code: str) -> dict:
-    if provider == "google":
-        return _exchange_google_code(request=request, code=code)
-    if provider == "facebook":
-        return _exchange_facebook_code(request=request, code=code)
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unsupported auth provider")
-
-
-
-def _fetch_provider_profile(provider: str, access_token: str) -> tuple[str, str, str | None]:
-    if provider == "google":
-        profile = _fetch_google_userinfo(access_token)
-        return str(profile.get("sub") or ""), str(profile.get("email") or "").strip(), profile.get("name")
-    if provider == "facebook":
-        profile = _fetch_facebook_userinfo(access_token)
-        return str(profile.get("id") or ""), str(profile.get("email") or "").strip(), profile.get("name")
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unsupported auth provider")
+MAX_RELEASE_UPLOAD_BYTES = 100 * 1024 * 1024
+MAX_ARTIST_DEMO_UPLOAD_BYTES = 25 * 1024 * 1024
+MAX_ARTIST_MEDIA_UPLOAD_BYTES = 25 * 1024 * 1024
+MAX_PENDING_RELEASE_IMAGE_BYTES = 10 * 1024 * 1024
+MAX_CATALOG_IMPORT_BYTES = 10 * 1024 * 1024
+MAX_RESTORE_BYTES = 5 * 1024 * 1024
 
 
 
@@ -616,13 +526,6 @@ def _gmail_connection_status(db: Session) -> tuple[bool, str]:
 
 
 
-def _redirect_with_params(base_url: str, **params: str) -> RedirectResponse:
-    clean_params = {k: v for k, v in params.items() if v}
-    separator = "&" if "?" in base_url else "?"
-    url = f"{base_url}{separator}{urlencode(clean_params)}" if clean_params else base_url
-    return RedirectResponse(url=url)
-
-
 def _default_demo_approval_subject(artist_name: str) -> str:
     safe_name = (artist_name or "there").strip()
     return f"Your demo was approved, {safe_name}"
@@ -742,377 +645,6 @@ def _get_demo_receipt_subject_and_body(item: DemoSubmission) -> tuple[str, str]:
     return subject, body
 
 
-def _default_portal_invite_subject() -> str:
-    return "Your Zalmanim Artists Portal access"
-
-
-def _default_portal_invite_body(display_name: str, portal_url: str, username: str, temporary_password: str) -> str:
-    return (
-        f"Hi {display_name},\n\n"
-        "Your access to the Zalmanim Artists Portal is ready.\n\n"
-        "Inside the portal you can update your profile, upload media, upload releases, submit demos, "
-        "and change your password.\n\n"
-        f"Portal link: {portal_url}\n"
-        f"Username: {username}\n"
-        f"Temporary password: {temporary_password}\n\n"
-        "Please sign in and change your password after your first login.\n\n"
-        "If you have any questions, reply to this email.\n"
-    )
-
-
-def _get_portal_invite_subject_and_body(
-    display_name: str, portal_url: str, username: str, temporary_password: str
-) -> tuple[str, str]:
-    """Resolve portal invite subject and body from settings or defaults. Placeholders: {display_name}, {portal_url}, {username}, {temporary_password}."""
-    mail = get_effective_mail_config_for_api()
-    subject = (mail.get("portal_invite_subject") or "").strip()
-    body = (mail.get("portal_invite_body") or "").strip()
-    if not subject:
-        subject = _default_portal_invite_subject()
-    else:
-        subject = (
-            subject.replace("{display_name}", display_name)
-            .replace("{portal_url}", portal_url)
-            .replace("{username}", username)
-            .replace("{temporary_password}", temporary_password)
-        )
-    if not body:
-        body = _default_portal_invite_body(display_name, portal_url, username, temporary_password)
-    else:
-        body = (
-            body.replace("{display_name}", display_name)
-            .replace("{portal_url}", portal_url)
-            .replace("{username}", username)
-            .replace("{temporary_password}", temporary_password)
-        )
-    return subject, body
-
-
-def _default_groover_invite_subject() -> str:
-    return "Thanks for reaching out on Groover"
-
-
-def _default_groover_invite_body(display_name: str, registration_url: str, portal_url: str) -> str:
-    return (
-        f"Hi {display_name},\n\n"
-        "I hope you are doing well. I am Simon from Zalmanim Music,\n"
-        "and I would like to introduce you to our work.\n\n"
-        "We are a music label and an internet magazine that works with electronic music, focusing on underground dance music such as Techno, Psytech, and sometimes some variants of house. "
-        "We are also releasing some Ambient and chill out to ease the mind.\n\n"
-        "We also work on a new label focused only on Psytech and Prog Trance named SiYu Music.\n\n"
-        "We also have an internet magazine at www.zalmanim.com and we promote music on our YouTube channel https://www.youtube.com/channel/UCa24JK3VKaYJwVlQCiSqzqg\n\n"
-        "I invite you to listen to our music and be impressed by it. You can\n"
-        "find out our label music at the following link:\n"
-        "https://soundcloud.com/zalmanim\n\n"
-        "We've been in contact over Groover.\n\n"
-        "To continue, please complete your artist registration form here:\n"
-        f"{registration_url}\n\n"
-        "Once you complete the form, you will be able to sign in to our artist portal:\n"
-        f"{portal_url}\n\n"
-        "So, if you are interested in releasing music with the label, please\n"
-        "send me some unreleased music.\n\n"
-        "If you are interested in sharing your music on our YouTube channel,\n"
-        "please send me some artwork and the music file.\n\n"
-        "If you're interested in an interview or short article, please send us a short bio and pictures or any written material, and we will see if it suits both of us.\n\n"
-        "Peace,\n"
-        "Best regards,\n"
-        "Simon Rosenfeld\n"
-        "Founder & A&R | Zalmanim & SiYu Rec\n"
-        "🌐 www.zalmanim.com\n\n"
-        "🎧 Join our SoundCloud promo group:\n"
-        "https://influenceplanner.com/invite/Anyone\n\n"
-        "💬 Join our WhatsApp artist community:\n"
-        "https://chat.whatsapp.com/Bc4EpRLdpIwEV7lAzYzdSy\n"
-    )
-
-
-def _get_groover_invite_subject_and_body(
-    display_name: str,
-    registration_url: str,
-    portal_url: str,
-) -> tuple[str, str]:
-    """Resolve Groover invite email from settings or defaults."""
-    mail = get_effective_mail_config_for_api()
-    subject = (mail.get("groover_invite_subject") or "").strip()
-    body = (mail.get("groover_invite_body") or "").strip()
-    replacements = {
-        "{display_name}": display_name,
-        "{registration_url}": registration_url,
-        "{portal_url}": portal_url,
-    }
-    if not subject:
-        subject = _default_groover_invite_subject()
-    if not body:
-        body = _default_groover_invite_body(display_name, registration_url, portal_url)
-    for token, value in replacements.items():
-        subject = subject.replace(token, value)
-        body = body.replace(token, value)
-    return subject, body
-
-
-def _build_groover_invite_html(
-    *,
-    body_text: str,
-    registration_url: str,
-    portal_url: str,
-) -> str:
-    escaped = html.escape(body_text)
-    registration_prompt = html.escape("To continue, please complete your artist registration form here:")
-    portal_prompt = html.escape("Once you complete the form, you will be able to sign in to our artist portal:")
-    registration_placeholder = "__GROOVER_REGISTRATION_LINK__"
-    portal_placeholder = "__GROOVER_PORTAL_LINK__"
-
-    escaped = escaped.replace(
-        registration_prompt,
-        '<span style="color:#c62828;font-weight:700;">'
-        "To continue, please complete your artist registration form here:"
-        "</span>",
-    )
-    escaped = escaped.replace(
-        portal_prompt,
-        '<span style="color:#c62828;font-weight:700;">'
-        "Once you complete the form, you will be able to sign in to our artist portal:"
-        "</span>",
-    )
-    escaped = escaped.replace(html.escape(registration_url), registration_placeholder)
-    escaped = escaped.replace(html.escape(portal_url), portal_placeholder)
-
-    body_html = "<p>" + escaped.replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
-    body_html = body_html.replace(
-        registration_placeholder,
-        f'<a href="{html.escape(registration_url)}" '
-        'style="color:#c62828;font-weight:700;text-decoration:underline;">'
-        "Complete your artist registration form"
-        "</a>",
-    )
-    body_html = body_html.replace(
-        portal_placeholder,
-        f'<a href="{html.escape(portal_url)}" style="font-weight:600;text-decoration:underline;">'
-        "Sign in to the artist portal"
-        "</a>",
-    )
-    return body_html
-
-
-def _default_update_profile_invite_subject() -> str:
-    return "Update your artist page and see your releases"
-
-
-def _default_update_profile_invite_body(
-    display_name: str,
-    portal_url: str,
-    username: str,
-    temporary_password: str | None,
-) -> str:
-    password_line = (
-        f"Temporary password: {temporary_password}"
-        if (temporary_password or "").strip()
-        else "Use your existing password."
-    )
-    return (
-        f"Hi {display_name},\n\n"
-        "We'd love you to update your artist page and see your releases on the label.\n\n"
-        f"Portal: {portal_url}\n"
-        f"Username: {username}\n"
-        f"{password_line}\n\n"
-        "Please sign in, change your password if needed, and update your profile and releases.\n\n"
-        "If you have any questions, reply to this email.\n"
-    )
-
-
-def _get_update_profile_invite_subject_and_body(
-    display_name: str,
-    portal_url: str,
-    username: str,
-    temporary_password: str | None,
-) -> tuple[str, str]:
-    """Resolve update-profile invite subject and body from settings or defaults."""
-    mail = get_effective_mail_config_for_api()
-    subject = (mail.get("update_profile_invite_subject") or "").strip()
-    body = (mail.get("update_profile_invite_body") or "").strip()
-    password_line = (
-        f"Temporary password: {temporary_password}"
-        if (temporary_password or "").strip()
-        else "Use your existing password."
-    )
-    replacements = {
-        "{display_name}": display_name,
-        "{portal_url}": portal_url,
-        "{username}": username,
-        "{temporary_password}": (temporary_password or "").strip(),
-        "{password_line}": password_line,
-    }
-    if not subject:
-        subject = _default_update_profile_invite_subject()
-    if not body:
-        body = _default_update_profile_invite_body(display_name, portal_url, username, temporary_password)
-    for token, value in replacements.items():
-        subject = subject.replace(token, value)
-        body = body.replace(token, value)
-    return subject, body
-
-
-def _default_password_reset_subject() -> str:
-    return "Password reset"
-
-
-def _default_password_reset_body(reset_link: str, expiry_minutes: int) -> str:
-    return (
-        f"Use this link to reset your password (valid for {expiry_minutes} minutes):\n\n"
-        f"{reset_link}\n\n"
-        "If you did not request this, ignore this email."
-    )
-
-
-def _get_password_reset_subject_and_body(reset_link: str, expiry_minutes: int) -> tuple[str, str]:
-    """Resolve password-reset subject and body from settings or defaults."""
-    mail = get_effective_mail_config_for_api()
-    subject = (mail.get("password_reset_subject") or "").strip()
-    body = (mail.get("password_reset_body") or "").strip()
-    replacements = {
-        "{reset_link}": reset_link,
-        "{expiry_minutes}": str(expiry_minutes),
-    }
-    if not subject:
-        subject = _default_password_reset_subject()
-    if not body:
-        body = _default_password_reset_body(reset_link, expiry_minutes)
-    for token, value in replacements.items():
-        subject = subject.replace(token, value)
-        body = body.replace(token, value)
-    return subject, body
-
-
-def _get_demo_rejection_subject_and_body(item: DemoSubmission) -> tuple[str, str]:
-    """Resolve rejection email subject and body from settings or defaults; replace placeholders."""
-    mail = get_effective_mail_config_for_api()
-    subject = (mail.get("demo_rejection_subject") or "").strip()
-    body = (mail.get("demo_rejection_body") or "").strip()
-    if not subject:
-        subject = _default_demo_rejection_subject(item.artist_name)
-    else:
-        subject = _apply_demo_rejection_placeholders(subject, item)
-    if not body:
-        body = _default_demo_rejection_body(item.artist_name)
-    else:
-        body = _apply_demo_rejection_placeholders(body, item)
-    return subject, body
-
-
-def _build_demo_submission_summary(item: DemoSubmission) -> list[tuple[str, str]]:
-    fields = _safe_json_dict(item.fields_json)
-    links = _safe_json_list(item.links_json)
-    submission_links = ", ".join(
-        str(link).strip() for link in links if str(link).strip()
-    )
-    return [
-        ("Artist name", item.artist_name),
-        ("Contact name", item.contact_name or "-"),
-        ("Email", item.email),
-        ("Phone", item.phone or "-"),
-        ("Genre", item.genre or "-"),
-        ("City", item.city or "-"),
-        ("Links", submission_links or "-"),
-        ("Message", item.message or "-"),
-        ("Email consent", "Yes" if item.consent_to_emails else "No"),
-        ("Source", item.source or "-"),
-    ]
-
-
-def _build_demo_receipt_subject(artist_name: str) -> str:
-    safe_name = (artist_name or "there").strip()
-    return f"Demo received from {safe_name}"
-
-
-def _build_demo_receipt_body(item: DemoSubmission) -> str:
-    recipient_name = (item.contact_name or item.artist_name or "there").strip()
-    lines = [
-        f"Hi {recipient_name},",
-        "",
-        "We received your demo and it will enter treatment soon.",
-        "",
-        "Submission summary:",
-    ]
-    for label, value in _build_demo_submission_summary(item):
-        lines.append(f"- {label}: {value}")
-    lines.extend([
-        "",
-        "Thanks for sending your music to Zalmanim.",
-        "",
-        "Best regards,",
-        "Zalmanim",
-    ])
-    return "\n".join(lines)
-
-
-def _build_demo_receipt_html(item: DemoSubmission) -> str:
-    recipient_name = html.escape((item.contact_name or item.artist_name or "there").strip())
-    rows = "\n".join(
-        f"<tr><td style='padding:8px 12px;font-weight:600;border:1px solid #e5ddd2;'>{html.escape(label)}</td>"
-        f"<td style='padding:8px 12px;border:1px solid #e5ddd2;'>{html.escape(value)}</td></tr>"
-        for label, value in _build_demo_submission_summary(item)
-    )
-    return (
-        f"<p>Hi {recipient_name},</p>"
-        "<p>We received your demo and it will enter treatment soon.</p>"
-        "<p><strong>Submission summary</strong></p>"
-        "<table style='border-collapse:collapse;border:1px solid #e5ddd2;'>"
-        f"{rows}"
-        "</table>"
-        "<p>Thanks for sending your music to Zalmanim.</p>"
-        "<p>Best regards,<br/>Zalmanim</p>"
-    )
-
-
-def _ensure_demo_mailing_list(db: Session) -> MailingList:
-    mailing_list = db.query(MailingList).filter(MailingList.name == _DEMO_MAILING_LIST_NAME).first()
-    if mailing_list:
-        return mailing_list
-    mailing_list = MailingList(
-        name=_DEMO_MAILING_LIST_NAME,
-        description="Artists who submitted demos and consented to marketing and operational emails.",
-        default_language="en",
-    )
-    db.add(mailing_list)
-    db.flush()
-    return mailing_list
-
-
-def _upsert_demo_mailing_subscriber(db: Session, item: DemoSubmission) -> None:
-    if not item.consent_to_emails:
-        return
-    mailing_list = _ensure_demo_mailing_list(db)
-    subscriber = (
-        db.query(MailingSubscriber)
-        .filter(MailingSubscriber.list_id == mailing_list.id, MailingSubscriber.email == item.email)
-        .first()
-    )
-    consent_source = (item.source_site_url or item.source or "demo_submission").strip() or "demo_submission"
-    consent_at = item.consent_at or datetime.now(timezone.utc)
-    display_name = (item.contact_name or item.artist_name or "").strip() or None
-    notes = f"Auto-added from demo submission #{item.id}."
-    if subscriber:
-        subscriber.full_name = display_name
-        subscriber.status = "subscribed"
-        subscriber.consent_source = consent_source
-        subscriber.consent_at = consent_at
-        subscriber.unsubscribed_at = None
-        subscriber.notes = notes
-        return
-    db.add(
-        MailingSubscriber(
-            list_id=mailing_list.id,
-            email=item.email,
-            full_name=display_name,
-            status="subscribed",
-            consent_source=consent_source,
-            consent_at=consent_at,
-            unsubscribe_token=secrets.token_urlsafe(24),
-            notes=notes,
-        )
-    )
-
-
 def _normalize_demo_status(value: str | None, *, allow_empty: bool = False) -> str | None:
     raw = (value or "").strip().lower()
     if not raw:
@@ -1179,14 +711,20 @@ def _validate_demo_ingest_token(request: Request) -> None:
         or request.headers.get("x-labelops-demo-token")
         or ""
     ).strip()
-    if provided != expected:
-        append_system_log(
-            "warning",
-            "auth",
-            "Demo token rejected",
-            details=_request_identity_details(request),
-        )
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid demo submission token")
+    if provided and secrets.compare_digest(provided, expected):
+        return
+    allowed_origins = set(settings.public_demo_allowed_origin_list())
+    for header_name in ("origin", "referer"):
+        origin = _origin_from_url(request.headers.get(header_name))
+        if origin and origin in allowed_origins:
+            return
+    append_system_log(
+        "warning",
+        "auth",
+        "Demo token rejected",
+        details=_request_identity_details(request),
+    )
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid demo submission token")
 
 
 def _request_source(request: Request) -> str:
@@ -1223,249 +761,7 @@ def _log_auth_attempt(
     append_system_log(level, "auth", event, details=_request_identity_details(request, email))
 
 
-def _safe_json_dict(raw: str | None) -> dict:
-    try:
-        data = json.loads(raw or "{}") or {}
-    except (json.JSONDecodeError, TypeError):
-        data = {}
-    return data if isinstance(data, dict) else {}
 
-
-def _safe_json_list(raw: str | None) -> list:
-    try:
-        data = json.loads(raw or "[]") or []
-    except (json.JSONDecodeError, TypeError):
-        data = []
-    return data if isinstance(data, list) else []
-
-
-def _pending_release_form_link(raw_token: str) -> str:
-    portal_url = (_artist_portal_url()).rstrip("/")
-    return f"{portal_url}/#/pending-release?token={raw_token}"
-
-
-def _serialize_pending_release(
-    pr: PendingRelease,
-    *,
-    last_reminder_sent_at: datetime | None = None,
-) -> PendingReleaseOut:
-    artist_data = _safe_json_dict(pr.artist_data_json)
-    release_data = _safe_json_dict(pr.release_data_json)
-    return PendingReleaseOut(
-        id=pr.id,
-        campaign_request_id=pr.campaign_request_id,
-        demo_submission_id=getattr(pr, "demo_submission_id", None),
-        artist_id=pr.artist_id,
-        artist_name=pr.artist_name,
-        artist_email=pr.artist_email,
-        artist_data=artist_data,
-        release_title=pr.release_title,
-        release_data=release_data,
-        status=pr.status,
-        created_at=pr.created_at,
-        updated_at=pr.updated_at,
-        last_reminder_sent_at=last_reminder_sent_at,
-    )
-
-
-def _pending_release_image_options(release_data: dict) -> list[PendingReleaseImageOptionOut]:
-    raw_items = release_data.get("image_options")
-    if not isinstance(raw_items, list):
-        return []
-    out: list[PendingReleaseImageOptionOut] = []
-    for item in raw_items:
-        if not isinstance(item, dict):
-            continue
-        image_id = (item.get("id") or "").strip() if isinstance(item.get("id"), str) else ""
-        url = (item.get("url") or "").strip() if isinstance(item.get("url"), str) else ""
-        if not image_id or not url:
-            continue
-        created_at = None
-        raw_created_at = item.get("created_at")
-        if isinstance(raw_created_at, str):
-            try:
-                created_at = (
-                    datetime.fromisoformat(raw_created_at.replace("Z", "+00:00"))
-                    if raw_created_at
-                    else None
-                )
-            except ValueError:
-                created_at = None
-        out.append(
-            PendingReleaseImageOptionOut(
-                id=image_id,
-                url=url,
-                filename=(item.get("filename") or "").strip() or None,
-                created_at=created_at,
-            )
-        )
-    return out
-
-
-def _pending_release_upload_path_from_public_url(url: str) -> tuple[str, str] | None:
-    """Map a stored public URL to (absolute filesystem path, kind: label|reference)."""
-    try:
-        parsed = urlparse(url)
-        path = (parsed.path or url).split("?")[0]
-    except Exception:
-        path = url.split("?")[0]
-    label_marker = "/public/pending-release-label-image/"
-    ref_marker = "/public/pending-release-reference-image/"
-    if label_marker in path:
-        filename = path.split(label_marker, 1)[1].strip("/")
-        sub = "pending_release_label_images"
-    elif ref_marker in path:
-        filename = path.split(ref_marker, 1)[1].strip("/")
-        sub = "pending_release_references"
-    else:
-        return None
-    if not filename or filename != os.path.basename(filename) or ".." in filename:
-        return None
-    if "/" in filename or "\\" in filename:
-        return None
-    full = os.path.join(settings.upload_dir, sub, filename)
-    kind = "label" if sub == "pending_release_label_images" else "reference"
-    return (full, kind)
-
-
-def _normalize_public_image_url_path_for_match(url: str) -> str:
-    """Path-only compare for pending-release public image URLs (handles absolute vs relative)."""
-    raw = (url or "").strip()
-    if not raw:
-        return ""
-    try:
-        parsed = urlparse(raw)
-        path = (parsed.path or raw).split("?")[0]
-    except Exception:
-        path = raw.split("?")[0]
-    return path.rstrip("/")
-
-
-def _bytes_to_jpg_3000_square(data: bytes) -> bytes:
-    """Resize/crop to 3000x3000 JPEG (RGB, high quality)."""
-    raw = Image.open(io.BytesIO(data))
-    raw = ImageOps.exif_transpose(raw)
-    raw = raw.convert("RGB")
-    out_img = ImageOps.fit(raw, (3000, 3000), method=Image.Resampling.LANCZOS)
-    buf = io.BytesIO()
-    out_img.save(buf, format="JPEG", quality=92, optimize=True)
-    return buf.getvalue()
-
-
-def _pending_release_selected_image_id(release_data: dict) -> str | None:
-    raw = release_data.get("selected_image_id")
-    if isinstance(raw, str) and raw.strip():
-        return raw.strip()
-    return None
-
-
-def _pending_release_notifications_muted(release_data: dict) -> bool:
-    return release_data.get("notifications_muted") is True
-
-
-def _pending_release_comment_out(comment: PendingReleaseComment) -> PendingReleaseCommentOut:
-    return PendingReleaseCommentOut.model_validate(comment)
-
-
-def _serialize_pending_release_detail(
-    pr: PendingRelease,
-    *,
-    last_reminder_sent_at: datetime | None = None,
-) -> PendingReleaseDetailOut:
-    base = _serialize_pending_release(pr, last_reminder_sent_at=last_reminder_sent_at)
-    release_data = _safe_json_dict(pr.release_data_json)
-    comments = [_pending_release_comment_out(item) for item in (pr.comments or [])]
-    return PendingReleaseDetailOut(
-        **base.model_dump(),
-        image_options=_pending_release_image_options(release_data),
-        selected_image_id=_pending_release_selected_image_id(release_data),
-        notifications_muted=_pending_release_notifications_muted(release_data),
-        comments=comments,
-    )
-
-
-def _save_pending_release_data(pr: PendingRelease, release_data: dict) -> None:
-    pr.release_data_json = json.dumps(release_data if isinstance(release_data, dict) else {})
-
-
-def _notify_pending_release_artist(
-    pr: PendingRelease,
-    *,
-    subject: str,
-    body_lines: list[str],
-) -> None:
-    release_data = _safe_json_dict(pr.release_data_json)
-    if _pending_release_notifications_muted(release_data):
-        return
-    to_email = (pr.artist_email or "").strip().lower()
-    if not to_email or not is_email_configured():
-        return
-    portal_url = (_artist_portal_url()).rstrip("/")
-    body = "\n".join(
-        [
-            *body_lines,
-            "",
-            f"Artist portal: {portal_url}",
-            "",
-            "You can mute future pending release update emails from the release page in the artist portal.",
-            "",
-            "Best regards,",
-            "Zalmanim",
-        ]
-    )
-    success, message = send_email_service(
-        to_email=to_email,
-        subject=subject,
-        body_text=body,
-    )
-    if not success:
-        logging.getLogger(__name__).warning(
-            "Failed to send pending release update email to %s: %s",
-            to_email,
-            message,
-        )
-
-
-def _resolve_pending_release_from_token(db: Session, row: PendingReleaseToken) -> PendingRelease | None:
-    if getattr(row, "pending_release_id", None):
-        pr = db.query(PendingRelease).filter(PendingRelease.id == row.pending_release_id).first()
-        if pr:
-            return pr
-    if row.campaign_request_id is not None:
-        return db.query(PendingRelease).filter(PendingRelease.campaign_request_id == row.campaign_request_id).first()
-    return None
-
-
-def _get_valid_pending_release_token(db: Session, token: str) -> PendingReleaseToken:
-    token_hash = hashlib.sha256(token.encode()).hexdigest()
-    row = (
-        db.query(PendingReleaseToken)
-        .filter(
-            PendingReleaseToken.token_hash == token_hash,
-            PendingReleaseToken.used_at.is_(None),
-            PendingReleaseToken.expires_at > datetime.now(timezone.utc),
-        )
-        .first()
-    )
-    if not row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid or expired token")
-    return row
-
-
-def _get_valid_artist_registration_token(db: Session, token: str) -> ArtistRegistrationToken:
-    token_hash = hashlib.sha256(token.encode()).hexdigest()
-    row = (
-        db.query(ArtistRegistrationToken)
-        .filter(
-            ArtistRegistrationToken.token_hash == token_hash,
-            ArtistRegistrationToken.used_at.is_(None),
-            ArtistRegistrationToken.expires_at > datetime.now(timezone.utc),
-        )
-        .first()
-    )
-    if not row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid or expired token")
-    return row
 
 @router.on_event("startup")
 def init_db() -> None:
@@ -1535,6 +831,19 @@ def init_db() -> None:
             conn.commit()
     except Exception as e:
         logging.getLogger(__name__).warning("DB migration (auth/users): %s", e)
+
+    try:
+        with Session(engine) as db:
+            migrated_connections = migrate_legacy_social_connection_tokens(db)
+        if migrated_connections:
+            append_system_log(
+                "info",
+                "system",
+                "Encrypted legacy social tokens",
+                details=f"Migrated {migrated_connections} social connection rows to encrypted token storage.",
+            )
+    except Exception as e:
+        logging.getLogger(__name__).warning("DB migration (social token encryption): %s", e)
 
     with Session(engine) as db:
         admin = db.query(User).filter(User.email == "admin").first()
@@ -1771,8 +1080,8 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     new_password = payload.new_password or ""
     if not token or not new_password:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Token and new password are required")
-    if len(new_password) < 6:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 6 characters")
+    if len(new_password) < 12:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 12 characters")
     token_hash = _password_reset_token_hash(token)
     now = datetime.now(timezone.utc)
     row = (
@@ -2117,7 +1426,8 @@ def get_me(
 
 @router.get("/auth/{provider}/start")
 def start_provider_login(provider: str, request: Request, redirect_uri: str) -> dict:
-    state = _build_oauth_state(provider=provider, purpose="login", app_redirect=redirect_uri)
+    safe_redirect = _sanitize_redirect_target(redirect_uri)
+    state = _build_oauth_state(provider=provider, purpose="login", app_redirect=safe_redirect)
     return {"auth_url": _build_provider_auth_url(provider, request=request, state=state)}
 
 
@@ -2128,7 +1438,8 @@ def start_google_mail_connect(
     user: UserContext = Depends(get_current_lm_user),
 ) -> dict:
     require_admin(user)
-    state = _build_oauth_state(provider="google", purpose="connect_gmail", app_redirect=redirect_uri, user_id=user.user_id)
+    safe_redirect = _sanitize_redirect_target(redirect_uri)
+    state = _build_oauth_state(provider="google", purpose="connect_gmail", app_redirect=safe_redirect, user_id=user.user_id)
     return {"auth_url": _build_google_auth_url(request=request, state=state)}
 
 
@@ -2142,7 +1453,9 @@ def oauth_callback(
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
     state_payload = _decode_oauth_state(state)
-    app_redirect = state_payload.get("app_redirect") or settings.oauth_success_redirect or "/"
+    app_redirect = _sanitize_redirect_target(
+        state_payload.get("app_redirect") or settings.oauth_success_redirect or settings.admin_app_base_url or "/"
+    )
     if error:
         return _redirect_with_params(app_redirect, social_error=error, provider=provider)
     if not code:
@@ -2182,7 +1495,7 @@ def oauth_callback(
             scopes=scopes,
         )
     app_token = create_access_token(str(user.id))
-    return _redirect_with_params(
+    return _redirect_with_fragment_params(
         app_redirect,
         token=app_token,
         role=user.role,
@@ -2760,8 +2073,8 @@ def admin_set_artist_password(
     artist = db.query(Artist).filter(Artist.id == artist_id).first()
     if not artist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
-    if not payload.password or len(payload.password) < 6:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 6 characters")
+    if not payload.password or len(payload.password) < 12:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 12 characters")
     artist.password_hash = hash_password(payload.password)
     db.commit()
     return {"ok": True, "message": "Password set. Artist can sign in at the artist portal."}
@@ -3207,11 +2520,14 @@ def upload_release(
 
     os.makedirs(settings.upload_dir, exist_ok=True)
     extension = os.path.splitext(file.filename or "")[1]
+    if not extension:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Release file must have an extension")
     filename = f"{uuid.uuid4().hex}{extension}"
     path = os.path.join(settings.upload_dir, filename)
+    content = _read_upload_bytes(file, max_bytes=MAX_RELEASE_UPLOAD_BYTES, description="Release file")
 
     with open(path, "wb") as out:
-        out.write(file.file.read())
+        out.write(content)
 
     release = Release(artist_id=user.artist_id, title=title, status="submitted", file_path=path)
     db.add(release)
@@ -3312,8 +2628,8 @@ def artist_change_password(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password not set. Contact the label.")
     if not verify_password(payload.current_password, artist.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Current password is incorrect")
-    if not payload.new_password or len(payload.new_password) < 6:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be at least 6 characters")
+    if not payload.new_password or len(payload.new_password) < 12:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be at least 12 characters")
     artist.password_hash = hash_password(payload.new_password)
     db.commit()
     return {"ok": True, "message": "Password updated."}
@@ -3363,10 +2679,13 @@ def artist_submit_demo(
         demo_uploads_dir = os.path.join(settings.upload_dir, "demo_uploads")
         os.makedirs(demo_uploads_dir, exist_ok=True)
         ext = os.path.splitext(file.filename)[1]
+        if ext.lower() not in {".mp3"}:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only MP3 files are allowed for demos")
         stored_name = f"{uuid.uuid4().hex}{ext}"
         path = os.path.join(demo_uploads_dir, stored_name)
+        content = _read_upload_bytes(file, max_bytes=MAX_ARTIST_DEMO_UPLOAD_BYTES, description="Demo file")
         with open(path, "wb") as out:
-            out.write(file.file.read())
+            out.write(content)
         demo_file_path = path
 
     fields = {"track_name": track_name_clean, "musical_style": musical_style_clean}
@@ -3471,7 +2790,7 @@ def artist_upload_media(
     require_artist(user)
     if not file.filename or not file.filename.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Filename required")
-    content = file.file.read()
+    content = _read_upload_bytes(file, max_bytes=MAX_ARTIST_MEDIA_UPLOAD_BYTES, description="Media file")
     size = len(content)
     used = _artist_media_used_bytes(db, user.artist_id)
     if used + size > ARTIST_MEDIA_QUOTA_BYTES:
@@ -3656,12 +2975,15 @@ def public_upload_pending_release_reference_image(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only image files are allowed (jpg, jpeg, png, gif, webp).",
         )
+    if not (file.content_type or "").lower().startswith("image/"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only image content types are allowed.")
     reference_dir = os.path.join(settings.upload_dir, "pending_release_references")
     os.makedirs(reference_dir, exist_ok=True)
     stored_name = f"{uuid.uuid4().hex}{ext}"
     path = os.path.join(reference_dir, stored_name)
+    content = _read_upload_bytes(file, max_bytes=MAX_PENDING_RELEASE_IMAGE_BYTES, description="Reference image")
     with open(path, "wb") as out:
-        out.write(file.file.read())
+        out.write(content)
     return PendingReleaseReferenceUploadOut(
         url=str(request.url_for("public_pending_release_reference_image_file", filename=stored_name)),
         filename=filename or stored_name,
@@ -3945,12 +3267,16 @@ def admin_upload_pending_release_image(
     ext = os.path.splitext(filename)[1].lower()
     if ext not in _ALLOWED_PENDING_RELEASE_IMAGE_EXTENSIONS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only image files are allowed.")
+    if not (file.content_type or "").lower().startswith("image/"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only image content types are allowed.")
     image_dir = os.path.join(settings.upload_dir, "pending_release_label_images")
     os.makedirs(image_dir, exist_ok=True)
-    stored_name = f"{uuid.uuid4().hex}{ext}"
+    base_name = _pending_release_label_image_base_name(pending_release)
+    stored_name = _unique_filename(image_dir, base_name, ext)
     path = os.path.join(image_dir, stored_name)
+    content = _read_upload_bytes(file, max_bytes=MAX_PENDING_RELEASE_IMAGE_BYTES, description="Label image")
     with open(path, "wb") as out:
-        out.write(file.file.read())
+        out.write(content)
     release_data = _safe_json_dict(pending_release.release_data_json)
     image_options = release_data.get("image_options")
     if not isinstance(image_options, list):
@@ -3959,7 +3285,7 @@ def admin_upload_pending_release_image(
         {
             "id": uuid.uuid4().hex,
             "url": str(request.url_for("public_pending_release_label_image_file", filename=stored_name)),
-            "filename": filename or stored_name,
+            "filename": stored_name,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
     )
@@ -4487,8 +3813,8 @@ def public_artist_registration_submit(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
     if not payload.artist_name.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Artist name is required")
-    if not payload.password or len(payload.password) < 6:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 6 characters")
+    if not payload.password or len(payload.password) < 12:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 12 characters")
 
     artist.name = payload.artist_name.strip()[:120]
     artist.notes = (payload.notes or "").strip()
@@ -5064,7 +4390,12 @@ async def import_catalog_csv(
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Upload a CSV file")
     try:
-        raw = await file.read()
+        raw = await file.read(MAX_CATALOG_IMPORT_BYTES + 1)
+        if len(raw) > MAX_CATALOG_IMPORT_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Catalog import is too large. Maximum allowed size is {MAX_CATALOG_IMPORT_BYTES // (1024 * 1024)}MB.",
+            )
     except Exception as e:
         logger.exception("Catalog import: failed to read upload")
         raise HTTPException(
@@ -5575,7 +4906,12 @@ def upload_restore(
     if not file.filename or not file.filename.lower().endswith(".json"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Upload a JSON backup file")
     try:
-        body = file.file.read()
+        body = file.file.read(MAX_RESTORE_BYTES + 1)
+        if len(body) > MAX_RESTORE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Restore file is too large. Maximum allowed size is {MAX_RESTORE_BYTES // (1024 * 1024)}MB.",
+            )
         data = json.loads(body.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid JSON: {e}") from e
