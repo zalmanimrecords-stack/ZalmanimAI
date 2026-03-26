@@ -150,7 +150,23 @@ def test_settings_validate_runtime_rejects_unsafe_production_defaults():
 
     message = str(exc.value)
     assert "CORS_ALLOWED_ORIGINS" in message
-    assert "TRUSTED_HOSTS" in message
+
+
+def test_trusted_host_list_derives_known_production_domains():
+    config = Settings(
+        _env_file=None,
+        environment="production",
+        database_url="sqlite:///prod.db",
+        jwt_secret="x" * 32,
+        cors_allowed_origins="https://lm.zalmanim.com,https://artists.zalmanim.com",
+        oauth_redirect_base="https://lmapi.zalmanim.com/api/admin/social/callback",
+    )
+
+    trusted_hosts = config.trusted_host_list()
+
+    assert "lm.zalmanim.com" in trusted_hosts
+    assert "artists.zalmanim.com" in trusted_hosts
+    assert "lmapi.zalmanim.com" in trusted_hosts
 
 
 def test_public_demo_submission_allows_configured_origin_without_secret_header(client, monkeypatch):

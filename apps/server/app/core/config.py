@@ -14,6 +14,11 @@ def _origin_from_url(value: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
+def _host_from_url(value: str) -> str:
+    parsed = urlparse((value or "").strip())
+    return (parsed.hostname or "").strip().lower()
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -92,12 +97,27 @@ class Settings(BaseSettings):
         return _split_csv(self.cors_allowed_origins)
 
     def trusted_host_list(self) -> list[str]:
-        configured = _split_csv(self.trusted_hosts)
-        if configured:
-            return configured
-        if self.is_production():
-            return []
-        return ["localhost", "127.0.0.1", "testserver"]
+        hosts: list[str] = []
+        for host in _split_csv(self.trusted_hosts):
+            normalized = host.strip().lower()
+            if normalized and normalized not in hosts:
+                hosts.append(normalized)
+        for candidate in (
+            self.admin_app_base_url,
+            self.artist_portal_base_url,
+            self.password_reset_base_url,
+            self.oauth_redirect_base,
+            self.oauth_success_redirect,
+            self.zalmanim_website_url,
+        ):
+            host = _host_from_url(candidate)
+            if host and host not in hosts:
+                hosts.append(host)
+        if not self.is_production():
+            for host in ("localhost", "127.0.0.1", "testserver"):
+                if host not in hosts:
+                    hosts.append(host)
+        return hosts
 
     def oauth_allowed_redirect_origin_list(self) -> list[str]:
         origins: list[str] = []
