@@ -262,6 +262,7 @@ def test_admin_restore_rejects_oversized_upload(client, admin_headers, monkeypat
 
     assert response.status_code == 400
     assert "too large" in response.json()["detail"]
+    assert "5 bytes" in response.json()["detail"]
 
 
 def test_social_connection_tokens_are_encrypted_at_rest(db_session, monkeypatch):

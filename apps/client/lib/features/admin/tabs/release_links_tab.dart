@@ -8,14 +8,9 @@ import '../../../core/zalmanim_icons.dart';
 import '../admin_dashboard_delegate.dart';
 
 class ReleaseLinksTab extends StatefulWidget {
-  const ReleaseLinksTab({
-    super.key,
-    required this.delegate,
-    this.focusMinisites = false,
-  });
+  const ReleaseLinksTab({super.key, required this.delegate});
 
   final AdminDashboardDelegate delegate;
-  final bool focusMinisites;
 
   @override
   State<ReleaseLinksTab> createState() => _ReleaseLinksTabState();
@@ -45,6 +40,22 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
   };
 
   String _platformLabel(String key) => _platformLabels[key] ?? key;
+
+  /// Best URL to open the release minisite in a browser (public page when published, else preview).
+  String? _minisiteExternalUrl(Release release) {
+    final publicRaw = release.minisitePublicUrl?.trim() ?? '';
+    final previewRaw = release.minisitePreviewUrl?.trim() ?? '';
+    if (release.minisiteIsPublic && publicRaw.isNotEmpty) {
+      return delegate.apiClient.resolveMediaUrl(publicRaw);
+    }
+    if (previewRaw.isNotEmpty) {
+      return delegate.apiClient.resolveMediaUrl(previewRaw);
+    }
+    if (publicRaw.isNotEmpty) {
+      return delegate.apiClient.resolveMediaUrl(publicRaw);
+    }
+    return null;
+  }
 
   @override
   void initState() {
@@ -393,6 +404,26 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
                     title: const Text('Public link open to the world'),
                     onChanged: (value) => setDialogState(() => isPublic.value = value),
                   ),
+                  if (publicUrl.isNotEmpty || previewUrl.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      'Open minisite',
+                      style: Theme.of(dialogContext).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 6),
+                    if (publicUrl.isNotEmpty)
+                      _minisiteUrlRow(
+                        dialogContext,
+                        label: 'Public',
+                        url: publicUrl,
+                      ),
+                    if (previewUrl.isNotEmpty)
+                      _minisiteUrlRow(
+                        dialogContext,
+                        label: 'Preview',
+                        url: previewUrl,
+                      ),
+                  ],
                   const SizedBox(height: 12),
                   TextField(
                     controller: descriptionController,
@@ -487,6 +518,41 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
     );
   }
 
+  Widget _minisiteUrlRow(
+    BuildContext context, {
+    required String label,
+    required String url,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: 2),
+                SelectableText(url),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Open in browser',
+            icon: const Icon(Icons.open_in_new),
+            onPressed: () => _openUrl(url),
+          ),
+        ],
+      ),
+    );
+  }
+
   List<Map<String, dynamic>> _sortedAdminReleases() {
     final list = List<Map<String, dynamic>>.from(
       delegate.adminReleasesList.map((e) => e as Map<String, dynamic>),
@@ -528,26 +594,24 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
         children: [
           Row(
             children: [
-              Text(
-                widget.focusMinisites ? 'Release Minisites' : 'Release Link Discovery',
+              const Text(
+                'Release links & minisites',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(width: 12),
-              if (!widget.focusMinisites)
-                FilledButton.tonalIcon(
-                  onPressed: bulkScanCount == 0
-                      ? null
-                      : () => _scanAllMissingReleaseLinks(sortedReleases),
-                  icon: const Icon(ZalmanimIcons.sync, size: 18),
-                  label: Text('Scan all missing links ($bulkScanCount)'),
-                ),
+              FilledButton.tonalIcon(
+                onPressed: bulkScanCount == 0
+                    ? null
+                    : () => _scanAllMissingReleaseLinks(sortedReleases),
+                icon: const Icon(ZalmanimIcons.sync, size: 18),
+                label: Text('Scan all missing links ($bulkScanCount)'),
+              ),
             ],
           ),
           const SizedBox(height: 8),
           Text(
-            widget.focusMinisites
-                ? 'Open any release to style its minisite, choose a theme, publish it, and send the link to the artist.'
-                : 'Click a release to review every link candidate that was found. Releases waiting for review are listed first.',
+            'Scan and review streaming/store links, then configure each release’s public minisite (theme, copy, publish). '
+            'Releases waiting for link review are listed first.',
             style: TextStyle(
               fontSize: 12,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -588,9 +652,7 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
                                     const CircleAvatar(child: Icon(Icons.album_outlined)),
                               ),
                             ),
-                      onTap: () => widget.focusMinisites
-                          ? _configureMinisite(release)
-                          : _reviewReleaseLinks(release),
+                      onTap: () => _reviewReleaseLinks(release),
                       title: Text(
                         release.title,
                         maxLines: 1,
@@ -647,6 +709,20 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
                                 label: const Text('Minisite'),
                                 onPressed: () => _configureMinisite(release),
                               ),
+                              Builder(
+                                builder: (_) {
+                                  final minisiteUrl = _minisiteExternalUrl(release);
+                                  return IconButton(
+                                    tooltip: minisiteUrl == null
+                                        ? 'Configure minisite first'
+                                        : 'Open minisite in browser',
+                                    icon: const Icon(Icons.open_in_new, size: 20),
+                                    onPressed: minisiteUrl == null
+                                        ? null
+                                        : () => _openUrl(minisiteUrl),
+                                  );
+                                },
+                              ),
                               if (release.lastLinkScanAt != null &&
                                   release.lastLinkScanAt!.trim().isNotEmpty)
                                 Chip(
@@ -659,11 +735,9 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
                         ],
                       ),
                       trailing: OutlinedButton.icon(
-                        icon: Icon(widget.focusMinisites ? Icons.palette_outlined : Icons.chevron_right),
-                        label: Text(widget.focusMinisites ? 'Minisite' : 'Open'),
-                        onPressed: () => widget.focusMinisites
-                            ? _configureMinisite(release)
-                            : _reviewReleaseLinks(release),
+                        icon: const Icon(Icons.chevron_right),
+                        label: const Text('Open'),
+                        onPressed: () => _reviewReleaseLinks(release),
                       ),
                       isThreeLine: true,
                     ),

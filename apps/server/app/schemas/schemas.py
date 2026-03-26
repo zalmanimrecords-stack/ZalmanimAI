@@ -172,6 +172,8 @@ class ArtistUpdate(BaseModel):
     address: str | None = None
     source_row: str | None = None
     linktree: str | None = None
+    profile_image_media_id: int | None = None  # Artist media ID for Linktree profile image
+    logo_media_id: int | None = None  # Artist media ID for Linktree logo
 
 
 class ArtistSelfUpdate(BaseModel):

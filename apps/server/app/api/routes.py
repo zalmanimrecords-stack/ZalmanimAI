@@ -324,6 +324,14 @@ MAX_CATALOG_IMPORT_BYTES = 10 * 1024 * 1024
 MAX_RESTORE_BYTES = 5 * 1024 * 1024
 
 
+def _format_byte_limit(size_bytes: int) -> str:
+    if size_bytes >= 1024 * 1024:
+        return f"{size_bytes // (1024 * 1024)}MB"
+    if size_bytes >= 1024:
+        return f"{size_bytes // 1024}KB"
+    return f"{size_bytes} bytes"
+
+
 
 def _serialize_user(user: User) -> UserOut:
     artist_name = user.artist.name if getattr(user, "artist", None) else None
@@ -5493,7 +5501,7 @@ def upload_restore(
         if len(body) > MAX_RESTORE_BYTES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Restore file is too large. Maximum allowed size is {MAX_RESTORE_BYTES // (1024 * 1024)}MB.",
+                detail=f"Restore file is too large. Maximum allowed size is {_format_byte_limit(MAX_RESTORE_BYTES)}.",
             )
         data = json.loads(body.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
