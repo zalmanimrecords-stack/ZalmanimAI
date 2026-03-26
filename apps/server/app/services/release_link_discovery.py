@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
@@ -11,6 +12,7 @@ from urllib.parse import quote_plus, unquote, urlparse
 import httpx
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.config import settings
 from app.models.models import Release, ReleaseLinkCandidate, ReleaseLinkScanRun
 
 
@@ -43,6 +45,7 @@ REVIEW_MIN_CONFIDENCE = 0.45
 SCAN_RETRY_INTERVAL = timedelta(days=1)
 HTTP_TIMEOUT = 12.0
 MAX_WEB_CANDIDATES_PER_PLATFORM = 8
+MAX_COVER_IMAGE_BYTES = 12 * 1024 * 1024
 
 
 @dataclass
@@ -227,6 +230,88 @@ def _strip_html(value: str | None) -> str:
     return " ".join(unescape(re.sub(r"<[^>]+>", " ", value or "")).split())
 
 
+def _safe_filename_fragment(value: str | None) -> str:
+    cleaned = re.sub(r"[^a-z0-9_-]+", "-", _normalize_text(value) or "release")
+    cleaned = cleaned.strip("-")
+    return cleaned[:80] or "release"
+
+
+def _candidate_artwork_url(raw_payload: dict | None) -> str | None:
+    if not isinstance(raw_payload, dict):
+        return None
+    value = str(raw_payload.get("artwork_url") or "").strip()
+    return value or None
+
+
+def _image_extension_from_response(response: httpx.Response, source_url: str) -> str:
+    content_type = (response.headers.get("content-type") or "").lower()
+    if "png" in content_type:
+        return ".png"
+    if "webp" in content_type:
+        return ".webp"
+    if "gif" in content_type:
+        return ".gif"
+    parsed_path = (urlparse(source_url).path or "").lower()
+    for suffix in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
+        if parsed_path.endswith(suffix):
+            return suffix
+    return ".jpg"
+
+
+def _download_release_cover_image(release: Release, artwork_url: str) -> bool:
+    artwork_url = (artwork_url or "").strip()
+    if not artwork_url:
+        return False
+    try:
+        response = httpx.get(
+            artwork_url,
+            timeout=HTTP_TIMEOUT,
+            follow_redirects=True,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        response.raise_for_status()
+    except Exception:
+        return False
+    content_type = (response.headers.get("content-type") or "").lower()
+    if content_type and "image/" not in content_type:
+        return False
+    content = response.content
+    if not content or len(content) > MAX_COVER_IMAGE_BYTES:
+        return False
+    target_dir = os.path.join(settings.upload_dir, "release_covers")
+    os.makedirs(target_dir, exist_ok=True)
+    extension = _image_extension_from_response(response, artwork_url)
+    filename = f"release_{release.id}_{_safe_filename_fragment(release.title)}{extension}"
+    path = os.path.join(target_dir, filename)
+    with open(path, "wb") as handle:
+        handle.write(content)
+    old_path = (getattr(release, "cover_image_path", None) or "").strip()
+    if old_path and old_path != path and os.path.isfile(old_path):
+        try:
+            os.remove(old_path)
+        except OSError:
+            pass
+    release.cover_image_path = path
+    release.cover_image_source_url = artwork_url
+    release.cover_image_updated_at = datetime.now(timezone.utc)
+    return True
+
+
+def _maybe_update_release_cover(release: Release, candidates: Iterable[DiscoveryCandidate], *, force: bool = False) -> bool:
+    if not force and (getattr(release, "cover_image_path", None) or "").strip():
+        return False
+    ranked = sorted(
+        (candidate for candidate in candidates if _candidate_artwork_url(candidate.raw_payload)),
+        key=lambda candidate: candidate.confidence,
+        reverse=True,
+    )
+    for candidate in ranked:
+        artwork_url = _candidate_artwork_url(candidate.raw_payload)
+        if artwork_url and _download_release_cover_image(release, artwork_url):
+            return True
+    return False
+
+
 def parse_platform_links(raw: str | None) -> dict[str, str]:
     try:
         data = json.loads(raw or "{}") or {}
@@ -281,6 +366,17 @@ def _candidate_from_payload(
     )
 
 
+def _extract_first_match(text: str, patterns: tuple[str, ...]) -> str | None:
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+        if match:
+            value = match.groupdict().get("value") or match.group(1)
+            value = unescape(str(value or "")).strip()
+            if value:
+                return value
+    return None
+
+
 class ItunesSearchAdapter(ReleaseLinkAdapter):
     platform = "apple_music"
 
@@ -313,7 +409,11 @@ class ItunesSearchAdapter(ReleaseLinkAdapter):
                     candidate_title=item.get("collectionName") or item.get("trackName"),
                     candidate_artist=item.get("artistName"),
                     source_type="api",
-                    raw_payload={"provider": "itunes_search", "item": item},
+                    raw_payload={
+                        "provider": "itunes_search",
+                        "item": item,
+                        "artwork_url": item.get("artworkUrl100") or item.get("artworkUrl60"),
+                    },
                 )
             )
         return PlatformDiscoveryResult(platform=self.platform, status="ok", candidates=candidates)
@@ -356,7 +456,11 @@ class DeezerSearchAdapter(ReleaseLinkAdapter):
                     candidate_title=album_title or item.get("title"),
                     candidate_artist=artist_name,
                     source_type="api",
-                    raw_payload={"provider": "deezer_search", "item": item},
+                    raw_payload={
+                        "provider": "deezer_search",
+                        "item": item,
+                        "artwork_url": album.get("cover_xl") or album.get("cover_big") or album.get("cover_medium"),
+                    },
                 )
             )
         return PlatformDiscoveryResult(platform=self.platform, status="ok", candidates=candidates)
@@ -404,7 +508,12 @@ class YouTubeSearchAdapter(ReleaseLinkAdapter):
                     candidate_title=_extract_title_from_text(title_text, release_title),
                     candidate_artist=_extract_artist_from_text(title_text, artist_names) or artist,
                     source_type="web_search",
-                    raw_payload={"provider": "youtube_results", "title": title_text, "query": query},
+                    raw_payload={
+                        "provider": "youtube_results",
+                        "title": title_text,
+                        "query": query,
+                        "artwork_url": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+                    },
                 )
             )
             if len(candidates) >= MAX_WEB_CANDIDATES_PER_PLATFORM:
@@ -470,11 +579,102 @@ class BandcampSearchAdapter(ReleaseLinkAdapter):
                         "title": title_text,
                         "artist": artist_text,
                         "query": query,
+                        "artwork_url": _extract_first_match(
+                            block,
+                            (
+                                r'<img[^>]+src="(?P<value>[^"]+)"',
+                                r'data-original="(?P<value>[^"]+)"',
+                            ),
+                        ),
                     },
                 )
             )
             if len(candidates) >= MAX_WEB_CANDIDATES_PER_PLATFORM:
                 break
+        return PlatformDiscoveryResult(platform=self.platform, status="ok", candidates=candidates)
+
+
+class HtmlSearchAdapter(ReleaseLinkAdapter):
+    def __init__(
+        self,
+        platform: str,
+        search_url: str,
+        query_param: str,
+        url_patterns: tuple[str, ...],
+        query_hints: tuple[str, ...] = (),
+    ) -> None:
+        self.platform = platform
+        self.search_url = search_url
+        self.query_param = query_param
+        self.url_patterns = url_patterns
+        self.query_hints = query_hints
+
+    def _queries(self, release_title: str, artist_names: list[str]) -> list[str]:
+        artist = artist_names[0] if artist_names else ""
+        queries = [" ".join(part for part in (release_title, artist) if part).strip()]
+        for hint in self.query_hints:
+            queries.append(" ".join(part for part in (release_title, artist, hint) if part).strip())
+        deduped: list[str] = []
+        for query in queries:
+            query = query.strip()
+            if query and query not in deduped:
+                deduped.append(query)
+        return deduped
+
+    def discover(self, release_title: str, artist_names: list[str]) -> PlatformDiscoveryResult:
+        candidates: list[DiscoveryCandidate] = []
+        errors: list[str] = []
+        seen_urls: set[str] = set()
+        for query in self._queries(release_title, artist_names):
+            try:
+                response = httpx.get(
+                    self.search_url,
+                    params={self.query_param: query},
+                    timeout=HTTP_TIMEOUT,
+                    follow_redirects=True,
+                    headers={"User-Agent": "Mozilla/5.0"},
+                )
+                response.raise_for_status()
+            except Exception as exc:
+                errors.append(str(exc))
+                continue
+            for pattern in self.url_patterns:
+                for match in re.finditer(pattern, response.text, re.IGNORECASE):
+                    url = unescape(match.groupdict().get("url") or match.group(1) or "").strip()
+                    if url.startswith("/"):
+                        parsed_base = urlparse(str(response.url))
+                        url = f"{parsed_base.scheme}://{parsed_base.netloc}{url}"
+                    if not url or url in seen_urls:
+                        continue
+                    seen_urls.add(url)
+                    start = max(match.start() - 260, 0)
+                    end = min(match.end() + 260, len(response.text))
+                    snippet = _strip_html(response.text[start:end])
+                    candidates.append(
+                        _candidate_from_payload(
+                            platform=self.platform,
+                            url=url,
+                            release_title=release_title,
+                            artist_names=artist_names,
+                            candidate_title=_extract_title_from_text(snippet, release_title),
+                            candidate_artist=_extract_artist_from_text(snippet, artist_names),
+                            source_type="web_search",
+                            raw_payload={
+                                "provider": "html_search",
+                                "query": query,
+                                "snippet": snippet[:240],
+                            },
+                        )
+                    )
+                    if len(candidates) >= MAX_WEB_CANDIDATES_PER_PLATFORM:
+                        return PlatformDiscoveryResult(platform=self.platform, status="ok", candidates=candidates)
+        if not candidates and errors:
+            return PlatformDiscoveryResult(
+                platform=self.platform,
+                status="failed",
+                candidates=[],
+                error_message="; ".join(errors[:2]),
+            )
         return PlatformDiscoveryResult(platform=self.platform, status="ok", candidates=candidates)
 
 
@@ -619,29 +819,52 @@ def _build_adapter_registry() -> dict[str, ReleaseLinkAdapter]:
         "deezer": DeezerSearchAdapter(),
         "youtube": YouTubeSearchAdapter(),
         "bandcamp": BandcampSearchAdapter(),
-        "spotify": DuckDuckGoWebSearchAdapter(
+        "spotify": HtmlSearchAdapter(
             "spotify",
-            ("open.spotify.com",),
+            "https://open.spotify.com/search",
+            "q",
+            (
+                r'(?P<url>https://open\.spotify\.com/(?:album|track)/[a-zA-Z0-9]+)',
+                r'(?P<url>/album/[a-zA-Z0-9]+)',
+                r'(?P<url>/track/[a-zA-Z0-9]+)',
+            ),
             query_hints=("album", "track", "release"),
         ),
-        "soundcloud": DuckDuckGoWebSearchAdapter(
+        "soundcloud": HtmlSearchAdapter(
             "soundcloud",
-            ("soundcloud.com", "on.soundcloud.com"),
+            "https://soundcloud.com/search/sounds",
+            "q",
+            (
+                r"(?P<url>https://soundcloud\.com/[^\"'<>\\s]+/[^\"'<>\\s]+)",
+            ),
             query_hints=("track", "premiere", "release"),
         ),
-        "beatport": DuckDuckGoWebSearchAdapter(
+        "beatport": HtmlSearchAdapter(
             "beatport",
-            ("beatport.com",),
+            "https://www.beatport.com/search",
+            "q",
+            (
+                r"(?P<url>https://www\.beatport\.com/(?:release|track)/[^\"'<>\\s]+)",
+            ),
             query_hints=("release", "track"),
         ),
-        "tidal": DuckDuckGoWebSearchAdapter(
+        "tidal": HtmlSearchAdapter(
             "tidal",
-            ("tidal.com",),
+            "https://listen.tidal.com/search",
+            "q",
+            (
+                r'(?P<url>https://listen\.tidal\.com/(?:album|track)/[0-9]+)',
+                r'(?P<url>https://tidal\.com/browse/(?:album|track)/[0-9]+)',
+            ),
             query_hints=("album", "track"),
         ),
-        "amazon_music": DuckDuckGoWebSearchAdapter(
+        "amazon_music": HtmlSearchAdapter(
             "amazon_music",
-            ("music.amazon.", "amazon."),
+            "https://music.amazon.com/search",
+            "keywords",
+            (
+                r"(?P<url>https://music\.amazon\.[^/\"'<>\\s]+/(?:albums|tracks)/[^\"'<>\\s]+)",
+            ),
             query_hints=("album", "song"),
         ),
     }
@@ -822,9 +1045,12 @@ def process_release_link_scan_run(db: Session, run_id: int) -> bool:
             _release_artist_names(release),
             platforms=_platforms_from_run(run),
         )
+        discovered_candidates: list[DiscoveryCandidate] = []
         for result in results:
             for candidate in result.candidates:
+                discovered_candidates.append(candidate)
                 _upsert_release_link_candidate(db, release=release, candidate=candidate)
+        _maybe_update_release_cover(release, discovered_candidates)
         run.summary_json = json.dumps(_scan_summary(results))
         run.status = "completed"
         run.completed_at = datetime.now(timezone.utc)
@@ -898,6 +1124,13 @@ def approve_release_link_candidate(db: Session, candidate: ReleaseLinkCandidate)
             sibling.reviewed_at = datetime.now(timezone.utc)
     candidate.status = "approved"
     candidate.reviewed_at = datetime.now(timezone.utc)
+    try:
+        raw_payload = json.loads(candidate.raw_payload_json or "{}") or {}
+    except (json.JSONDecodeError, TypeError):
+        raw_payload = {}
+    artwork_url = _candidate_artwork_url(raw_payload)
+    if artwork_url:
+        _download_release_cover_image(release, artwork_url)
     db.commit()
     db.refresh(release)
     return release

@@ -354,6 +354,8 @@ class ReleaseOut(BaseModel):
     title: str
     status: str
     file_path: str | None
+    cover_image_url: str | None = None
+    cover_image_source_url: str | None = None
     platform_links: dict[str, str] = {}
     pending_link_candidates_count: int = 0
     last_link_scan_at: datetime | None = None
@@ -403,6 +405,8 @@ class ReleaseOut(BaseModel):
             title=release.title,
             status=release.status,
             file_path=release.file_path,
+            cover_image_url=f"/public/releases/{release.id}/cover-image" if getattr(release, "cover_image_path", None) else None,
+            cover_image_source_url=getattr(release, "cover_image_source_url", None),
             platform_links=platform_links,
             pending_link_candidates_count=pending_count,
             last_link_scan_at=last_scan_at,

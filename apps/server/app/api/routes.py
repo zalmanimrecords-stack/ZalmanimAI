@@ -842,6 +842,9 @@ def init_db() -> None:
                 "ALTER TABLE label_inbox_messages ADD COLUMN IF NOT EXISTS admin_read_at TIMESTAMP WITH TIME ZONE"
             ))
             conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS platform_links_json TEXT DEFAULT '{}'"))
+            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS cover_image_path VARCHAR(500)"))
+            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS cover_image_source_url VARCHAR(1000)"))
+            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS cover_image_updated_at TIMESTAMP WITH TIME ZONE"))
             conn.execute(text(
                 "UPDATE mail_settings SET emails_per_hour = 10 WHERE id = 1 AND (emails_per_hour IS NULL OR emails_per_hour = 5)"
             ))
@@ -1426,6 +1429,28 @@ def public_artist_logo(
     if not media or not os.path.isfile(media.stored_path):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
     return FileResponse(media.stored_path, filename=media.filename, media_type=media.content_type)
+
+
+@router.get("/public/releases/{release_id}/cover-image", response_class=FileResponse)
+def public_release_cover_image(
+    release_id: int,
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    release = db.query(Release).filter(Release.id == release_id).first()
+    if not release or not (release.cover_image_path or "").strip():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No release cover image")
+    path = (release.cover_image_path or "").strip()
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Release cover image not found")
+    ext = os.path.splitext(path)[1].lower()
+    media_type = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+    }.get(ext, "application/octet-stream")
+    return FileResponse(path, filename=os.path.basename(path), media_type=media_type)
 
 
 @router.get("/auth/me", response_model=UserOut)

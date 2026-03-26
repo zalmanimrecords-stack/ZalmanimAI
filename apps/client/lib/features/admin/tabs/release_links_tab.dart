@@ -220,9 +220,26 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
                                 double.tryParse(candidate['confidence']?.toString() ?? '') ??
                                 0;
                             final url = (candidate['url'] ?? '').toString();
+                            final artworkUrl = delegate.apiClient.resolveMediaUrl(
+                              (candidate['raw_payload'] as Map?)?['artwork_url']?.toString(),
+                            );
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                if (artworkUrl.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 8),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: Image.network(
+                                        artworkUrl,
+                                        height: 120,
+                                        width: 120,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                                      ),
+                                    ),
+                                  ),
                                 Wrap(
                                   spacing: 8,
                                   runSpacing: 8,
@@ -370,11 +387,25 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
                   final rawRelease = sortedReleases[index];
                   final release = Release.fromJson(rawRelease);
                   final artistNames = release.artistNames.join(', ');
+                  final coverImageUrl = delegate.apiClient.resolveMediaUrl(release.coverImageUrl);
                   final approvedLinks = release.platformLinks.entries.toList()
                     ..sort((a, b) => _platformLabel(a.key).compareTo(_platformLabel(b.key)));
                   return Card(
                     margin: const EdgeInsets.only(bottom: 8),
                     child: ListTile(
+                      leading: coverImageUrl.isEmpty
+                          ? const CircleAvatar(child: Icon(Icons.album_outlined))
+                          : ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: Image.network(
+                                coverImageUrl,
+                                width: 56,
+                                height: 56,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) =>
+                                    const CircleAvatar(child: Icon(Icons.album_outlined)),
+                              ),
+                            ),
                       onTap: () => _reviewReleaseLinks(release),
                       title: Text(
                         release.title,

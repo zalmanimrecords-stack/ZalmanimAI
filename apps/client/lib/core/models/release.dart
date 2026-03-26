@@ -8,6 +8,8 @@ class Release {
     required this.title,
     required this.status,
     this.filePath,
+    this.coverImageUrl,
+    this.coverImageSourceUrl,
     this.platformLinks = const {},
     this.pendingLinkCandidatesCount = 0,
     this.lastLinkScanAt,
@@ -21,6 +23,8 @@ class Release {
   final String title;
   final String status;
   final String? filePath;
+  final String? coverImageUrl;
+  final String? coverImageSourceUrl;
   final Map<String, String> platformLinks;
   final int pendingLinkCandidatesCount;
   final String? lastLinkScanAt;
@@ -64,6 +68,8 @@ class Release {
       title: (json['title'] as String?) ?? '',
       status: (json['status'] as String?) ?? '',
       filePath: json['file_path'] as String?,
+      coverImageUrl: json['cover_image_url'] as String?,
+      coverImageSourceUrl: json['cover_image_source_url'] as String?,
       platformLinks: platformLinks,
       pendingLinkCandidatesCount: pendingCount is int
           ? pendingCount
@@ -81,6 +87,8 @@ class Release {
         'title': title,
         'status': status,
         'file_path': filePath,
+        'cover_image_url': coverImageUrl,
+        'cover_image_source_url': coverImageSourceUrl,
         'platform_links': platformLinks,
         'pending_link_candidates_count': pendingLinkCandidatesCount,
         'last_link_scan_at': lastLinkScanAt,

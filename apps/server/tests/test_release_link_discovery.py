@@ -261,6 +261,7 @@ def test_youtube_search_adapter_parses_candidates(monkeypatch):
     assert result.candidates[0].url == "https://www.youtube.com/watch?v=abc123xyz00"
     assert result.candidates[0].match_title == "Ocean Echo"
     assert result.candidates[0].match_artist == "Maya Waves"
+    assert result.candidates[0].raw_payload["artwork_url"] == "https://i.ytimg.com/vi/abc123xyz00/hqdefault.jpg"
 
 
 def test_bandcamp_search_adapter_parses_candidates(monkeypatch):
@@ -287,3 +288,48 @@ def test_bandcamp_search_adapter_parses_candidates(monkeypatch):
     assert result.candidates[0].url == "https://artist.bandcamp.com/album/ocean-echo"
     assert result.candidates[0].match_title == "Ocean Echo"
     assert result.candidates[0].match_artist == "Maya Waves"
+
+
+def test_process_release_link_scan_run_updates_release_cover_from_candidate_artwork(db_session, monkeypatch):
+    artist = Artist(name="Maya Waves", email="maya-cover@example.com", notes="")
+    release = Release(title="Ocean Echo", status="from_catalog", artist=artist)
+    release.artists.append(artist)
+    db_session.add_all([artist, release])
+    db_session.flush()
+    run = ReleaseLinkScanRun(release_id=release.id, status="queued", trigger_type="manual")
+    db_session.add(run)
+    db_session.commit()
+
+    def fake_discover(release_title, artist_names, *, platforms=None):
+        return [
+            PlatformDiscoveryResult(
+                platform="youtube",
+                status="ok",
+                candidates=[
+                    DiscoveryCandidate(
+                        platform="youtube",
+                        url="https://www.youtube.com/watch?v=abc123xyz00",
+                        match_title=release_title,
+                        match_artist=artist_names[0],
+                        confidence=0.98,
+                        source_type="web_search",
+                        raw_payload={"artwork_url": "https://img.example.com/ocean-echo.jpg"},
+                    )
+                ],
+            )
+        ]
+
+    def fake_download(release_row, artwork_url):
+        release_row.cover_image_path = f"/tmp/release_{release_row.id}.jpg"
+        release_row.cover_image_source_url = artwork_url
+        return True
+
+    monkeypatch.setattr("app.services.release_link_discovery.discover_release_links", fake_discover)
+    monkeypatch.setattr("app.services.release_link_discovery._download_release_cover_image", fake_download)
+
+    processed = process_release_link_scan_run(db_session, run.id)
+
+    assert processed is True
+    db_session.refresh(release)
+    assert release.cover_image_path == f"/tmp/release_{release.id}.jpg"
+    assert release.cover_image_source_url == "https://img.example.com/ocean-echo.jpg"
