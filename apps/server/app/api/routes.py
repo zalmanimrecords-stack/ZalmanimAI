@@ -1424,6 +1424,25 @@ def _release_minisite_theme(theme_key: str) -> dict[str, str]:
     return themes.get(theme_key, themes["nebula"])
 
 
+def _release_minisite_platform_links(release: Release) -> dict[str, str]:
+    links = parse_platform_links(getattr(release, "platform_links_json", None))
+    best_candidates: dict[str, tuple[float, str]] = {}
+    for candidate in getattr(release, "link_candidates", []) or []:
+        if getattr(candidate, "status", "") in {"rejected", "auto_rejected"}:
+            continue
+        platform = str(getattr(candidate, "platform", "") or "").strip()
+        url = str(getattr(candidate, "url", "") or "").strip()
+        if not platform or not url or links.get(platform):
+            continue
+        confidence = float(getattr(candidate, "confidence", 0.0) or 0.0)
+        current = best_candidates.get(platform)
+        if current is None or confidence > current[0]:
+            best_candidates[platform] = (confidence, url)
+    for platform, (_, url) in best_candidates.items():
+        links[platform] = url
+    return links
+
+
 def _release_minisite_html(request: Request, release: Release, config: dict) -> str:
     theme_name = str(config.get("theme") or "nebula").strip() or "nebula"
     theme = _release_minisite_theme(theme_name)
@@ -1434,7 +1453,7 @@ def _release_minisite_html(request: Request, release: Release, config: dict) -> 
     description = str(config.get("description") or "").strip()
     download_url = str(config.get("download_url") or "").strip()
     gallery_urls = _release_minisite_gallery_urls(request, release, config)
-    platform_links = parse_platform_links(getattr(release, "platform_links_json", None))
+    platform_links = _release_minisite_platform_links(release)
     artist_extra = {}
     if getattr(release, "artist", None) is not None and getattr(release.artist, "extra_json", None):
         try:

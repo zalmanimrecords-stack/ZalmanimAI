@@ -191,6 +191,114 @@ def test_update_release_minisite_returns_preview_and_public_urls(client, db_sess
     assert "Download Release" in public_response.text
 
 
+def test_release_minisite_shows_best_scanned_links_when_no_approved_links(client, db_session):
+    artist = Artist(name="Maya Waves", email="maya-minisite-links@example.com", notes="")
+    release = Release(
+        title="Ocean Echo",
+        status="from_catalog",
+        artist=artist,
+        minisite_slug="ocean-echo-links",
+        minisite_is_public=True,
+        minisite_json=json.dumps({"preview_token": "preview-123", "theme": "nebula"}),
+    )
+    release.artists.append(artist)
+    db_session.add_all([artist, release])
+    db_session.flush()
+    db_session.add_all(
+        [
+            ReleaseLinkCandidate(
+                release_id=release.id,
+                platform="youtube",
+                url="https://www.youtube.com/watch?v=ocean-echo",
+                match_title="Ocean Echo",
+                match_artist="Maya Waves",
+                confidence=0.95,
+                status="pending_review",
+                source_type="web_search",
+                raw_payload_json="{}",
+            ),
+            ReleaseLinkCandidate(
+                release_id=release.id,
+                platform="spotify",
+                url="https://open.spotify.com/album/ocean-echo",
+                match_title="Ocean Echo",
+                match_artist="Maya Waves",
+                confidence=0.78,
+                status="pending_review",
+                source_type="web_search",
+                raw_payload_json="{}",
+            ),
+            ReleaseLinkCandidate(
+                release_id=release.id,
+                platform="spotify",
+                url="https://open.spotify.com/album/ocean-echo-low",
+                match_title="Ocean Echo",
+                match_artist="Maya Waves",
+                confidence=0.52,
+                status="pending_review",
+                source_type="web_search",
+                raw_payload_json="{}",
+            ),
+            ReleaseLinkCandidate(
+                release_id=release.id,
+                platform="deezer",
+                url="https://www.deezer.com/album/ocean-echo",
+                match_title="Ocean Echo",
+                match_artist="Maya Waves",
+                confidence=0.97,
+                status="rejected",
+                source_type="web_search",
+                raw_payload_json="{}",
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get("/api/public/release-sites/ocean-echo-links")
+
+    assert response.status_code == 200
+    assert "https://www.youtube.com/watch?v=ocean-echo" in response.text
+    assert "https://open.spotify.com/album/ocean-echo" in response.text
+    assert "https://open.spotify.com/album/ocean-echo-low" not in response.text
+    assert "https://www.deezer.com/album/ocean-echo" not in response.text
+
+
+def test_release_minisite_prefers_approved_links_over_pending_candidates(client, db_session):
+    artist = Artist(name="Maya Waves", email="maya-minisite-approved@example.com", notes="")
+    release = Release(
+        title="Ocean Echo",
+        status="from_catalog",
+        artist=artist,
+        platform_links_json=json.dumps({"spotify": "https://open.spotify.com/album/ocean-echo-approved"}),
+        minisite_slug="ocean-echo-approved",
+        minisite_is_public=True,
+        minisite_json=json.dumps({"preview_token": "preview-123", "theme": "nebula"}),
+    )
+    release.artists.append(artist)
+    db_session.add_all([artist, release])
+    db_session.flush()
+    db_session.add(
+        ReleaseLinkCandidate(
+            release_id=release.id,
+            platform="spotify",
+            url="https://open.spotify.com/album/ocean-echo-pending",
+            match_title="Ocean Echo",
+            match_artist="Maya Waves",
+            confidence=0.99,
+            status="pending_review",
+            source_type="web_search",
+            raw_payload_json="{}",
+        )
+    )
+    db_session.commit()
+
+    response = client.get("/api/public/release-sites/ocean-echo-approved")
+
+    assert response.status_code == 200
+    assert "https://open.spotify.com/album/ocean-echo-approved" in response.text
+    assert "https://open.spotify.com/album/ocean-echo-pending" not in response.text
+
+
 def test_send_release_minisite_to_artist_uses_public_url_when_available(client, db_session, admin_headers, monkeypatch):
     artist = Artist(name="Maya Waves", email="maya-send@example.com", notes="")
     release = Release(
