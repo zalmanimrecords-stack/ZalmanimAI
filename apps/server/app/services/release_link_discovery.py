@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from html import unescape
 from typing import Iterable
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import quote_plus, unquote, urlparse
 
 import httpx
 from sqlalchemy.orm import Session, joinedload
@@ -42,6 +42,7 @@ AUTO_REJECT_CONFIDENCE = 0.34
 REVIEW_MIN_CONFIDENCE = 0.45
 SCAN_RETRY_INTERVAL = timedelta(days=1)
 HTTP_TIMEOUT = 12.0
+MAX_WEB_CANDIDATES_PER_PLATFORM = 8
 
 
 @dataclass
@@ -96,6 +97,24 @@ def _contains_version_noise(value: str | None) -> bool:
     )
 
 
+def _looks_like_release_page(url: str, platform: str) -> bool:
+    path = (urlparse(url).path or "").lower()
+    platform_paths = {
+        "spotify": ("/album/", "/track/"),
+        "apple_music": ("/album/",),
+        "youtube": ("/watch", "/playlist", "/browse/"),
+        "soundcloud": tuple(),
+        "beatport": ("/release/", "/track/"),
+        "bandcamp": ("/album/", "/track/"),
+        "deezer": ("/album/", "/track/"),
+        "tidal": ("/album/", "/track/"),
+        "amazon_music": ("/albums/", "/tracks/", "/playlists/"),
+    }.get(platform, tuple())
+    if not platform_paths:
+        return True
+    return any(part in path for part in platform_paths)
+
+
 def _token_set(value: str | None) -> set[str]:
     return {token for token in _normalize_text(value).split() if len(token) >= 2}
 
@@ -146,6 +165,10 @@ def _official_domain_bonus(url: str, platform: str) -> float:
     return 0.1 if any(part in host for part in expected) else 0.0
 
 
+def _release_page_bonus(url: str, platform: str) -> float:
+    return 0.08 if _looks_like_release_page(url, platform) else -0.12
+
+
 def compute_candidate_confidence(
     release_title: str,
     artist_names: list[str],
@@ -157,6 +180,7 @@ def compute_candidate_confidence(
     title_score = _title_similarity(release_title, candidate_title)
     artist_score = _artist_similarity(artist_names, candidate_artist)
     confidence = (title_score * 0.65) + (artist_score * 0.25) + _official_domain_bonus(url, platform)
+    confidence += _release_page_bonus(url, platform)
     if candidate_title and _contains_version_noise(candidate_title) and not _contains_version_noise(release_title):
         confidence -= 0.18
     if candidate_artist and artist_names and artist_score < 0.2:
@@ -164,6 +188,39 @@ def compute_candidate_confidence(
     if "/search" in url or "search?" in url:
         confidence -= 0.25
     return max(0.0, min(confidence, 1.0))
+
+
+def _extract_artist_from_text(text: str | None, artist_names: list[str]) -> str | None:
+    value = (text or "").strip()
+    if not value:
+        return None
+    lowered = value.lower()
+    for artist in artist_names:
+        if artist and artist.lower() in lowered:
+            return artist
+    for separator in (" - ", " | ", " by ", " · "):
+        if separator in value:
+            left, right = value.split(separator, 1)
+            for part in (left.strip(), right.strip()):
+                if part and len(part) <= 120:
+                    return part
+    return None
+
+
+def _extract_title_from_text(text: str | None, release_title: str) -> str | None:
+    value = " ".join((text or "").strip().split())
+    if not value:
+        return None
+    normalized_release = _normalize_text(release_title)
+    if normalized_release and normalized_release in _normalize_text(value):
+        return release_title
+    for separator in (" - ", " | ", " · ", " — "):
+        if separator in value:
+            left, right = value.split(separator, 1)
+            for part in (left.strip(), right.strip()):
+                if _normalize_text(release_title) in _normalize_text(part):
+                    return part
+    return value[:200]
 
 
 def parse_platform_links(raw: str | None) -> dict[str, str]:
@@ -302,27 +359,77 @@ class DeezerSearchAdapter(ReleaseLinkAdapter):
 
 
 class DuckDuckGoWebSearchAdapter(ReleaseLinkAdapter):
-    def __init__(self, platform: str, allowed_domains: tuple[str, ...]) -> None:
+    def __init__(
+        self,
+        platform: str,
+        allowed_domains: tuple[str, ...],
+        query_hints: tuple[str, ...] = (),
+    ) -> None:
         self.platform = platform
         self.allowed_domains = allowed_domains
+        self.query_hints = query_hints
 
-    def discover(self, release_title: str, artist_names: list[str]) -> PlatformDiscoveryResult:
+    def _queries(self, release_title: str, artist_names: list[str]) -> list[str]:
         artist = artist_names[0] if artist_names else ""
         domains_part = " OR ".join(f"site:{domain}" for domain in self.allowed_domains)
-        query = f'{domains_part} "{release_title}" "{artist}"'.strip()
-        try:
-            response = httpx.get(
-                "https://duckduckgo.com/html/",
-                params={"q": query},
-                timeout=HTTP_TIMEOUT,
-                follow_redirects=True,
-                headers={"User-Agent": "LabelOps/1.0"},
-            )
-            response.raise_for_status()
-        except Exception as exc:
-            return PlatformDiscoveryResult(platform=self.platform, status="failed", candidates=[], error_message=str(exc))
+        base_terms = [f'"{release_title}"', f'"{artist}"' if artist else ""]
+        queries = [f"{domains_part} {' '.join(term for term in base_terms if term).strip()}".strip()]
+        for hint in self.query_hints:
+            parts = [domains_part, f'"{release_title}"']
+            if artist:
+                parts.append(f'"{artist}"')
+            parts.append(hint)
+            queries.append(" ".join(part for part in parts if part).strip())
+        deduped: list[str] = []
+        for query in queries:
+            if query and query not in deduped:
+                deduped.append(query)
+        return deduped
 
+    def _decode_duckduckgo_url(self, value: str) -> str:
+        url = unescape((value or "").strip())
+        if "duckduckgo.com/l/?" not in url:
+            return url
+        parsed = urlparse(url)
+        for part in parsed.query.split("&"):
+            if part.startswith("uddg="):
+                return unquote(part.split("=", 1)[1]).strip()
+        return url
+
+    def _candidate_from_result(
+        self,
+        *,
+        url: str,
+        release_title: str,
+        artist_names: list[str],
+        title_text: str,
+        snippet_text: str,
+        query: str,
+    ) -> DiscoveryCandidate:
+        candidate_artist = _extract_artist_from_text(title_text, artist_names) or _extract_artist_from_text(
+            snippet_text,
+            artist_names,
+        )
+        candidate_title = _extract_title_from_text(title_text, release_title)
+        return _candidate_from_payload(
+            platform=self.platform,
+            url=url,
+            release_title=release_title,
+            artist_names=artist_names,
+            candidate_title=candidate_title,
+            candidate_artist=candidate_artist or snippet_text,
+            source_type="web_search",
+            raw_payload={
+                "provider": "duckduckgo_html",
+                "query": query,
+                "title": title_text,
+                "snippet": snippet_text,
+            },
+        )
+
+    def discover(self, release_title: str, artist_names: list[str]) -> PlatformDiscoveryResult:
         candidates: list[DiscoveryCandidate] = []
+        seen_urls: set[str] = set()
         pattern = re.compile(
             r'<a[^>]+class="result__a"[^>]+href="(?P<url>[^"]+)"[^>]*>(?P<title>.*?)</a>',
             re.IGNORECASE | re.DOTALL,
@@ -331,37 +438,58 @@ class DuckDuckGoWebSearchAdapter(ReleaseLinkAdapter):
             r'<a[^>]+class="result__a"[^>]+href="[^"]+"[^>]*>.*?</a>(?P<rest>.*?)</div>',
             re.IGNORECASE | re.DOTALL,
         )
-        seen_urls: set[str] = set()
-        for match in pattern.finditer(response.text):
-            url = unescape(match.group("url")).strip()
-            if not url or url in seen_urls:
-                continue
-            host = (urlparse(url).netloc or "").lower()
-            if not any(domain in host for domain in self.allowed_domains):
-                continue
-            seen_urls.add(url)
-            title_html = re.sub(r"<[^>]+>", " ", match.group("title"))
-            title_text = " ".join(unescape(title_html).split())
-            rest_match = snippet_pattern.search(response.text[match.start():match.start() + 1200])
-            snippet_text = ""
-            if rest_match:
-                snippet_text = " ".join(
-                    unescape(re.sub(r"<[^>]+>", " ", rest_match.group("rest"))).split()
+        errors: list[str] = []
+        for query in self._queries(release_title, artist_names):
+            try:
+                response = httpx.get(
+                    "https://duckduckgo.com/html/",
+                    params={"q": query},
+                    timeout=HTTP_TIMEOUT,
+                    follow_redirects=True,
+                    headers={"User-Agent": "LabelOps/1.0"},
                 )
-            candidates.append(
-                _candidate_from_payload(
-                    platform=self.platform,
-                    url=url,
-                    release_title=release_title,
-                    artist_names=artist_names,
-                    candidate_title=title_text,
-                    candidate_artist=snippet_text,
-                    source_type="web_search",
-                    raw_payload={"provider": "duckduckgo_html", "title": title_text, "snippet": snippet_text},
+                response.raise_for_status()
+            except Exception as exc:
+                errors.append(str(exc))
+                continue
+
+            for match in pattern.finditer(response.text):
+                url = self._decode_duckduckgo_url(match.group("url"))
+                if not url or url in seen_urls:
+                    continue
+                host = (urlparse(url).netloc or "").lower()
+                if not any(domain in host for domain in self.allowed_domains):
+                    continue
+                seen_urls.add(url)
+                title_html = re.sub(r"<[^>]+>", " ", match.group("title"))
+                title_text = " ".join(unescape(title_html).split())
+                rest_match = snippet_pattern.search(response.text[match.start():match.start() + 1200])
+                snippet_text = ""
+                if rest_match:
+                    snippet_text = " ".join(
+                        unescape(re.sub(r"<[^>]+>", " ", rest_match.group("rest"))).split()
+                    )
+                candidates.append(
+                    self._candidate_from_result(
+                        url=url,
+                        release_title=release_title,
+                        artist_names=artist_names,
+                        title_text=title_text,
+                        snippet_text=snippet_text,
+                        query=query,
+                    )
                 )
-            )
-            if len(candidates) >= 5:
+                if len(candidates) >= MAX_WEB_CANDIDATES_PER_PLATFORM:
+                    break
+            if len(candidates) >= MAX_WEB_CANDIDATES_PER_PLATFORM:
                 break
+        if not candidates and errors:
+            return PlatformDiscoveryResult(
+                platform=self.platform,
+                status="failed",
+                candidates=[],
+                error_message="; ".join(errors[:2]),
+            )
         return PlatformDiscoveryResult(platform=self.platform, status="ok", candidates=candidates)
 
 
@@ -369,13 +497,41 @@ def _build_adapter_registry() -> dict[str, ReleaseLinkAdapter]:
     return {
         "apple_music": ItunesSearchAdapter(),
         "deezer": DeezerSearchAdapter(),
-        "spotify": DuckDuckGoWebSearchAdapter("spotify", ("open.spotify.com",)),
-        "youtube": DuckDuckGoWebSearchAdapter("youtube", ("music.youtube.com", "youtube.com")),
-        "soundcloud": DuckDuckGoWebSearchAdapter("soundcloud", ("soundcloud.com", "on.soundcloud.com")),
-        "beatport": DuckDuckGoWebSearchAdapter("beatport", ("beatport.com",)),
-        "bandcamp": DuckDuckGoWebSearchAdapter("bandcamp", ("bandcamp.com",)),
-        "tidal": DuckDuckGoWebSearchAdapter("tidal", ("tidal.com",)),
-        "amazon_music": DuckDuckGoWebSearchAdapter("amazon_music", ("music.amazon.", "amazon.")),
+        "spotify": DuckDuckGoWebSearchAdapter(
+            "spotify",
+            ("open.spotify.com",),
+            query_hints=("album", "track", "release"),
+        ),
+        "youtube": DuckDuckGoWebSearchAdapter(
+            "youtube",
+            ("music.youtube.com", "youtube.com", "youtu.be"),
+            query_hints=("official audio", "topic", "album"),
+        ),
+        "soundcloud": DuckDuckGoWebSearchAdapter(
+            "soundcloud",
+            ("soundcloud.com", "on.soundcloud.com"),
+            query_hints=("track", "premiere", "release"),
+        ),
+        "beatport": DuckDuckGoWebSearchAdapter(
+            "beatport",
+            ("beatport.com",),
+            query_hints=("release", "track"),
+        ),
+        "bandcamp": DuckDuckGoWebSearchAdapter(
+            "bandcamp",
+            ("bandcamp.com",),
+            query_hints=("album", "track"),
+        ),
+        "tidal": DuckDuckGoWebSearchAdapter(
+            "tidal",
+            ("tidal.com",),
+            query_hints=("album", "track"),
+        ),
+        "amazon_music": DuckDuckGoWebSearchAdapter(
+            "amazon_music",
+            ("music.amazon.", "amazon."),
+            query_hints=("album", "song"),
+        ),
     }
 
 
