@@ -10,6 +10,12 @@ class Release {
     this.filePath,
     this.coverImageUrl,
     this.coverImageSourceUrl,
+    this.minisiteSlug,
+    this.minisiteIsPublic = false,
+    this.minisiteTheme,
+    this.minisitePreviewUrl,
+    this.minisitePublicUrl,
+    this.minisite = const {},
     this.platformLinks = const {},
     this.pendingLinkCandidatesCount = 0,
     this.lastLinkScanAt,
@@ -25,6 +31,12 @@ class Release {
   final String? filePath;
   final String? coverImageUrl;
   final String? coverImageSourceUrl;
+  final String? minisiteSlug;
+  final bool minisiteIsPublic;
+  final String? minisiteTheme;
+  final String? minisitePreviewUrl;
+  final String? minisitePublicUrl;
+  final Map<String, dynamic> minisite;
   final Map<String, String> platformLinks;
   final int pendingLinkCandidatesCount;
   final String? lastLinkScanAt;
@@ -70,6 +82,14 @@ class Release {
       filePath: json['file_path'] as String?,
       coverImageUrl: json['cover_image_url'] as String?,
       coverImageSourceUrl: json['cover_image_source_url'] as String?,
+      minisiteSlug: json['minisite_slug'] as String?,
+      minisiteIsPublic: json['minisite_is_public'] as bool? ?? false,
+      minisiteTheme: json['minisite_theme'] as String?,
+      minisitePreviewUrl: json['minisite_preview_url'] as String?,
+      minisitePublicUrl: json['minisite_public_url'] as String?,
+      minisite: json['minisite'] is Map
+          ? Map<String, dynamic>.from(json['minisite'] as Map)
+          : const {},
       platformLinks: platformLinks,
       pendingLinkCandidatesCount: pendingCount is int
           ? pendingCount
@@ -89,6 +109,12 @@ class Release {
         'file_path': filePath,
         'cover_image_url': coverImageUrl,
         'cover_image_source_url': coverImageSourceUrl,
+        'minisite_slug': minisiteSlug,
+        'minisite_is_public': minisiteIsPublic,
+        'minisite_theme': minisiteTheme,
+        'minisite_preview_url': minisitePreviewUrl,
+        'minisite_public_url': minisitePublicUrl,
+        'minisite': minisite,
         'platform_links': platformLinks,
         'pending_link_candidates_count': pendingLinkCandidatesCount,
         'last_link_scan_at': lastLinkScanAt,

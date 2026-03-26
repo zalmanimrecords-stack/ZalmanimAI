@@ -122,6 +122,110 @@ def test_approve_release_link_candidate_replaces_previous_approved_for_platform(
     assert json.loads(release.platform_links_json)["spotify"] == "https://open.spotify.com/album/new-link"
 
 
+def test_reject_release_link_candidate_removes_matching_approved_link(client, db_session, admin_headers):
+    artist = Artist(name="Maya Waves", email="maya-reject@example.com", notes="")
+    release = Release(
+        title="Ocean Echo",
+        status="from_catalog",
+        artist=artist,
+        platform_links_json=json.dumps({"spotify": "https://open.spotify.com/album/ocean-echo"}),
+    )
+    release.artists.append(artist)
+    db_session.add_all([artist, release])
+    db_session.flush()
+    candidate = ReleaseLinkCandidate(
+        release_id=release.id,
+        platform="spotify",
+        url="https://open.spotify.com/album/ocean-echo",
+        match_title="Ocean Echo",
+        match_artist="Maya Waves",
+        confidence=0.91,
+        status="approved",
+        source_type="web_search",
+        raw_payload_json="{}",
+    )
+    db_session.add(candidate)
+    db_session.commit()
+
+    response = client.post(
+        f"/api/admin/releases/{release.id}/link-candidates/{candidate.id}/reject",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    db_session.refresh(release)
+    assert json.loads(release.platform_links_json) == {}
+
+
+def test_update_release_minisite_returns_preview_and_public_urls(client, db_session, admin_headers):
+    artist = Artist(name="Maya Waves", email="maya-minisite@example.com", notes="")
+    release = Release(title="Ocean Echo", status="from_catalog", artist=artist)
+    release.artists.append(artist)
+    db_session.add_all([artist, release])
+    db_session.commit()
+
+    response = client.patch(
+        f"/api/admin/releases/{release.id}/minisite",
+        headers=admin_headers,
+        json={
+            "theme": "paperwave",
+            "description": "A textured release page",
+            "download_url": "https://downloads.example.com/ocean-echo.zip",
+            "gallery_urls": ["https://img.example.com/ocean-echo.jpg"],
+            "is_public": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["minisite_theme"] == "paperwave"
+    assert payload["minisite_is_public"] is True
+    assert payload["minisite_preview_url"]
+    assert payload["minisite_public_url"]
+
+    preview_response = client.get(payload["minisite_preview_url"])
+    public_response = client.get(payload["minisite_public_url"])
+    assert preview_response.status_code == 200
+    assert public_response.status_code == 200
+    assert "Ocean Echo" in public_response.text
+    assert "Download Release" in public_response.text
+
+
+def test_send_release_minisite_to_artist_uses_public_url_when_available(client, db_session, admin_headers, monkeypatch):
+    artist = Artist(name="Maya Waves", email="maya-send@example.com", notes="")
+    release = Release(
+        title="Ocean Echo",
+        status="from_catalog",
+        artist=artist,
+        minisite_slug="ocean-echo-1",
+        minisite_is_public=True,
+        minisite_json=json.dumps({"preview_token": "preview-123", "theme": "nebula"}),
+    )
+    release.artists.append(artist)
+    db_session.add_all([artist, release])
+    db_session.commit()
+
+    sent_messages: list[tuple[str, str, str]] = []
+
+    def fake_send_email_service(*, to_email, subject, body_text, body_html=None):
+        sent_messages.append((to_email, subject, body_text))
+        return True, None
+
+    monkeypatch.setattr("app.api.routes.send_email_service", fake_send_email_service)
+
+    response = client.post(
+        f"/api/admin/releases/{release.id}/minisite/send",
+        headers=admin_headers,
+        json={"message": "Share this with your audience."},
+    )
+
+    assert response.status_code == 200
+    assert len(sent_messages) == 1
+    assert sent_messages[0][0] == "maya-send@example.com"
+    assert "/public/release-sites/ocean-echo-1" in sent_messages[0][2]
+    assert "preview_token" not in sent_messages[0][2]
+
+
 def test_process_release_link_scan_run_dedupes_existing_rejected_candidate(db_session, monkeypatch):
     artist = Artist(name="Maya Waves", email="maya3@example.com", notes="")
     release = Release(title="Ocean Echo", status="from_catalog", artist=artist)

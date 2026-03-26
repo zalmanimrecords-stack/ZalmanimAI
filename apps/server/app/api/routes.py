@@ -198,6 +198,8 @@ from app.schemas.schemas import (
     PendingReleaseSubmit,
     ReleaseLinkCandidateOut,
     ReleaseLinkCandidateReviewResponse,
+    ReleaseMinisiteSendRequest,
+    ReleaseMinisiteUpdateRequest,
     ReleaseLinkScanRequest,
     ReleaseLinkScanResponse,
     ReleaseOut,
@@ -845,6 +847,9 @@ def init_db() -> None:
             conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS cover_image_path VARCHAR(500)"))
             conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS cover_image_source_url VARCHAR(1000)"))
             conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS cover_image_updated_at TIMESTAMP WITH TIME ZONE"))
+            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS minisite_slug VARCHAR(160)"))
+            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS minisite_is_public BOOLEAN DEFAULT false NOT NULL"))
+            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS minisite_json TEXT DEFAULT '{}'"))
             conn.execute(text(
                 "UPDATE mail_settings SET emails_per_hour = 10 WHERE id = 1 AND (emails_per_hour IS NULL OR emails_per_hour = 5)"
             ))
@@ -1314,7 +1319,241 @@ _LINKTREE_LABELS = {
 def _linktree_image_url(request: Request, artist_id: int, kind: str) -> str:
     """Build public URL for artist profile image or logo (no auth)."""
     base = str(request.base_url).rstrip("/")
-    return f"{base}/public/artist/{artist_id}/{kind}"
+    return f"{base}/api/public/artist/{artist_id}/{kind}"
+
+
+def _release_base_url(request: Request) -> str:
+    return f"{str(request.base_url).rstrip('/')}/api"
+
+
+def _release_minisite_config(release: Release) -> dict:
+    try:
+        data = json.loads(getattr(release, "minisite_json", "{}") or "{}") or {}
+    except (json.JSONDecodeError, TypeError):
+        data = {}
+    return data if isinstance(data, dict) else {}
+
+
+def _slugify_release_value(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", (value or "").strip().lower()).strip("-")[:120] or "release"
+
+
+def _ensure_release_minisite_identity(release: Release) -> dict:
+    config = _release_minisite_config(release)
+    changed = False
+    if not (getattr(release, "minisite_slug", None) or "").strip():
+        release.minisite_slug = f"{_slugify_release_value(release.title)}-{release.id}"
+        changed = True
+    if not str(config.get("preview_token") or "").strip():
+        config["preview_token"] = secrets.token_urlsafe(18)
+        changed = True
+    if not str(config.get("theme") or "").strip():
+        config["theme"] = "nebula"
+        changed = True
+    if changed:
+        release.minisite_json = json.dumps(config)
+    return config
+
+
+def _release_minisite_preview_url(request: Request, release: Release, config: dict | None = None) -> str | None:
+    config = config or _release_minisite_config(release)
+    slug = (getattr(release, "minisite_slug", None) or "").strip()
+    token = str(config.get("preview_token") or "").strip()
+    if not slug or not token:
+        return None
+    return f"{_release_base_url(request)}/public/release-sites/{slug}?preview_token={token}"
+
+
+def _release_minisite_public_url(request: Request, release: Release) -> str | None:
+    slug = (getattr(release, "minisite_slug", None) or "").strip()
+    if not slug or not getattr(release, "minisite_is_public", False):
+        return None
+    return f"{_release_base_url(request)}/public/release-sites/{slug}"
+
+
+def _release_minisite_gallery_urls(request: Request, release: Release, config: dict) -> list[str]:
+    urls: list[str] = []
+    if getattr(release, "cover_image_path", None):
+        urls.append(f"{_release_base_url(request)}/public/releases/{release.id}/cover-image")
+    raw_gallery = config.get("gallery_urls")
+    if isinstance(raw_gallery, list):
+        for item in raw_gallery:
+            value = str(item or "").strip()
+            if value and value not in urls:
+                urls.append(value)
+    return urls
+
+
+def _release_minisite_theme(theme_key: str) -> dict[str, str]:
+    themes = {
+        "nebula": {
+            "bg": "radial-gradient(circle at top, #1f355e 0%, #07111f 55%, #02060c 100%)",
+            "panel": "rgba(8, 17, 30, 0.72)",
+            "text": "#f2f7ff",
+            "muted": "#b8c8df",
+            "accent": "#7ad8ff",
+            "border": "rgba(122, 216, 255, 0.22)",
+        },
+        "sunset_poster": {
+            "bg": "linear-gradient(145deg, #f7d794 0%, #f19066 45%, #6d214f 100%)",
+            "panel": "rgba(87, 25, 74, 0.78)",
+            "text": "#fff7ef",
+            "muted": "#ffe3cb",
+            "accent": "#ffd166",
+            "border": "rgba(255, 209, 102, 0.28)",
+        },
+        "paperwave": {
+            "bg": "linear-gradient(180deg, #f5efe1 0%, #dfe7dc 100%)",
+            "panel": "rgba(255, 252, 246, 0.88)",
+            "text": "#263126",
+            "muted": "#51624f",
+            "accent": "#1f7a6c",
+            "border": "rgba(31, 122, 108, 0.18)",
+        },
+    }
+    return themes.get(theme_key, themes["nebula"])
+
+
+def _release_minisite_html(request: Request, release: Release, config: dict) -> str:
+    theme_name = str(config.get("theme") or "nebula").strip() or "nebula"
+    theme = _release_minisite_theme(theme_name)
+    artist_names = [a.name for a in getattr(release, "artists", []) or [] if (a.name or "").strip()]
+    if not artist_names and getattr(release, "artist", None) is not None and (release.artist.name or "").strip():
+        artist_names = [release.artist.name.strip()]
+    artist_name = ", ".join(artist_names) or "Unknown Artist"
+    description = str(config.get("description") or "").strip()
+    download_url = str(config.get("download_url") or "").strip()
+    gallery_urls = _release_minisite_gallery_urls(request, release, config)
+    platform_links = parse_platform_links(getattr(release, "platform_links_json", None))
+    artist_extra = {}
+    if getattr(release, "artist", None) is not None and getattr(release.artist, "extra_json", None):
+        try:
+            artist_extra = json.loads(release.artist.extra_json) or {}
+        except (json.JSONDecodeError, TypeError):
+            artist_extra = {}
+    artist_blurb = str(artist_extra.get("full_name") or artist_extra.get("artist_brand") or "").strip()
+    socials = []
+    for key in ("website", "instagram", "spotify", "soundcloud", "youtube", "apple_music", "linktree"):
+        value = str(artist_extra.get(key) or "").strip()
+        if value:
+            socials.append((key.replace("_", " ").title(), value if "://" in value else f"https://{value}"))
+    links_markup = "".join(
+        f'<a class="pill" href="{html.escape(url)}" target="_blank" rel="noopener">{html.escape(label.replace("_", " ").title())}</a>'
+        for label, url in sorted(platform_links.items())
+    )
+    gallery_markup = "".join(
+        f'<img src="{html.escape(url)}" alt="{html.escape(release.title)} artwork" />'
+        for url in gallery_urls
+    )
+    social_markup = "".join(
+        f'<a class="social" href="{html.escape(url)}" target="_blank" rel="noopener">{html.escape(label)}</a>'
+        for label, url in socials
+    )
+    release_date = release.created_at.strftime("%Y-%m-%d") if getattr(release, "created_at", None) else ""
+    download_markup = (
+        f'<a class="cta" href="{html.escape(download_url)}" target="_blank" rel="noopener">Download Release</a>'
+        if download_url
+        else ""
+    )
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{html.escape(release.title)} | {html.escape(artist_name)}</title>
+  <style>
+    :root {{
+      --bg: {theme["bg"]};
+      --panel: {theme["panel"]};
+      --text: {theme["text"]};
+      --muted: {theme["muted"]};
+      --accent: {theme["accent"]};
+      --border: {theme["border"]};
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--text);
+      background: var(--bg);
+      min-height: 100vh;
+    }}
+    .wrap {{
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 28px 18px 60px;
+    }}
+    .hero {{
+      display: grid;
+      grid-template-columns: minmax(220px, 360px) 1fr;
+      gap: 24px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      padding: 24px;
+      backdrop-filter: blur(14px);
+      box-shadow: 0 20px 70px rgba(0,0,0,.22);
+    }}
+    .hero img {{
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      object-fit: cover;
+      border-radius: 22px;
+      border: 1px solid var(--border);
+    }}
+    .eyebrow {{ color: var(--muted); text-transform: uppercase; letter-spacing: .18em; font-size: 12px; }}
+    h1 {{ margin: 10px 0 8px; font-size: clamp(36px, 6vw, 70px); line-height: .96; }}
+    h2 {{ margin: 0 0 16px; font-size: clamp(20px, 2vw, 26px); color: var(--muted); font-weight: 500; }}
+    p {{ line-height: 1.7; }}
+    .meta {{ display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }}
+    .pill, .social {{
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 10px 14px; border-radius: 999px; text-decoration: none;
+      color: var(--text); border: 1px solid var(--border); background: rgba(255,255,255,.04);
+      margin: 0 10px 10px 0;
+    }}
+    .cta {{
+      display: inline-block; margin-top: 10px; text-decoration: none; font-weight: 700;
+      background: var(--accent); color: #07111f; padding: 14px 18px; border-radius: 999px;
+    }}
+    .section {{
+      margin-top: 24px; background: var(--panel); border: 1px solid var(--border);
+      border-radius: 24px; padding: 20px;
+    }}
+    .gallery {{
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px;
+    }}
+    .gallery img {{
+      width: 100%; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 18px; border: 1px solid var(--border);
+    }}
+    @media (max-width: 780px) {{
+      .hero {{ grid-template-columns: 1fr; }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div>{f'<img src="{html.escape(gallery_urls[0])}" alt="{html.escape(release.title)} cover" />' if gallery_urls else ''}</div>
+      <div>
+        <div class="eyebrow">Release Minisite</div>
+        <h1>{html.escape(release.title)}</h1>
+        <h2>{html.escape(artist_name)}</h2>
+        <div class="meta">
+          {f'<span class="pill">Created {html.escape(release_date)}</span>' if release_date else ''}
+          <span class="pill">Theme: {html.escape(theme_name)}</span>
+        </div>
+        {f'<p>{html.escape(description)}</p>' if description else ''}
+        {f'<p>{html.escape(artist_blurb)}</p>' if artist_blurb else ''}
+        {download_markup}
+        <div style="margin-top:18px;">{links_markup}</div>
+      </div>
+    </div>
+    {f'<div class="section"><h3>Images</h3><div class="gallery">{gallery_markup}</div></div>' if gallery_markup else ''}
+    {f'<div class="section"><h3>Artist Links</h3><div>{social_markup}</div></div>' if social_markup else ''}
+  </div>
+</body>
+</html>"""
 
 
 @router.get("/public/linktree/{artist_id}", response_model=LinktreeOut)
@@ -1451,6 +1690,25 @@ def public_release_cover_image(
         ".webp": "image/webp",
     }.get(ext, "application/octet-stream")
     return FileResponse(path, filename=os.path.basename(path), media_type=media_type)
+
+
+@router.get("/public/release-sites/{slug}", response_class=HTMLResponse)
+def public_release_minisite(
+    slug: str,
+    request: Request,
+    preview_token: str | None = Query(None),
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    release = db.query(Release).filter(Release.minisite_slug == (slug or "").strip()).first()
+    if not release:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Release minisite not found")
+    config = _release_minisite_config(release)
+    token_value = (preview_token or "").strip()
+    expected_preview = str(config.get("preview_token") or "").strip()
+    is_public = bool(getattr(release, "minisite_is_public", False))
+    if not is_public and token_value != expected_preview:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Release minisite not found")
+    return HTMLResponse(_release_minisite_html(request, release, config))
 
 
 @router.get("/auth/me", response_model=UserOut)
@@ -4066,6 +4324,116 @@ def reject_release_link_candidate_route(
         release=ReleaseOut.from_release(release),
         candidate=ReleaseLinkCandidateOut.from_candidate(candidate),
     )
+
+
+@router.patch("/admin/releases/{release_id}/minisite", response_model=ReleaseOut)
+def update_release_minisite(
+    release_id: int,
+    payload: ReleaseMinisiteUpdateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> ReleaseOut:
+    require_admin(user)
+    release = (
+        db.query(Release)
+        .options(
+            joinedload(Release.artists),
+            joinedload(Release.artist),
+            joinedload(Release.link_candidates),
+            joinedload(Release.link_scan_runs),
+        )
+        .filter(Release.id == release_id)
+        .first()
+    )
+    if not release:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Release not found")
+    config = _ensure_release_minisite_identity(release)
+    if payload.theme is not None:
+        config["theme"] = str(payload.theme or "").strip() or "nebula"
+    if payload.description is not None:
+        config["description"] = str(payload.description or "").strip()
+    if payload.download_url is not None:
+        config["download_url"] = str(payload.download_url or "").strip()
+    if payload.gallery_urls is not None:
+        config["gallery_urls"] = [str(item or "").strip() for item in payload.gallery_urls if str(item or "").strip()]
+    if payload.is_public is not None:
+        release.minisite_is_public = bool(payload.is_public)
+    release.minisite_json = json.dumps(config)
+    db.commit()
+    db.refresh(release)
+    return ReleaseOut.from_release(release)
+
+
+@router.post("/admin/releases/{release_id}/minisite/send", response_model=ReleaseOut)
+def send_release_minisite_to_artist(
+    release_id: int,
+    payload: ReleaseMinisiteSendRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> ReleaseOut:
+    require_admin(user)
+    release = (
+        db.query(Release)
+        .options(joinedload(Release.artists), joinedload(Release.artist))
+        .filter(Release.id == release_id)
+        .first()
+    )
+    if not release:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Release not found")
+    recipients = []
+    for artist in (getattr(release, "artists", None) or []):
+        email = (getattr(artist, "email", None) or "").strip().lower()
+        if email:
+            recipients.append((artist.name or "Artist", email))
+    if not recipients and getattr(release, "artist", None) is not None:
+        email = (release.artist.email or "").strip().lower()
+        if email:
+            recipients.append((release.artist.name or "Artist", email))
+    if not recipients:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This release has no artist email to send to.")
+    config = _ensure_release_minisite_identity(release)
+    release.minisite_json = json.dumps(config)
+    db.commit()
+    preview_url = _release_minisite_preview_url(request, release, config)
+    public_url = _release_minisite_public_url(request, release)
+    target_url = public_url or preview_url
+    if not target_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not generate minisite link.")
+    sent = False
+    for artist_name, email in recipients:
+        body = "\n\n".join(
+            part
+            for part in [
+                f"Hi {artist_name},",
+                f'Your release minisite for "{release.title}" is ready.',
+                (payload.message or "").strip(),
+                f"Open it here: {target_url}",
+            ]
+            if part
+        )
+        ok, _ = send_email_service(
+            to_email=email,
+            subject=f'Release minisite for "{release.title}"',
+            body_text=body,
+            body_html=None,
+        )
+        sent = sent or ok
+    if not sent:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Could not send minisite email.")
+    release = (
+        db.query(Release)
+        .options(
+            joinedload(Release.artists),
+            joinedload(Release.artist),
+            joinedload(Release.link_candidates),
+            joinedload(Release.link_scan_runs),
+        )
+        .filter(Release.id == release_id)
+        .first()
+    )
+    return ReleaseOut.from_release(release)
 
 
 # ---- Reports ----

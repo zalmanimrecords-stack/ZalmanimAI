@@ -356,6 +356,12 @@ class ReleaseOut(BaseModel):
     file_path: str | None
     cover_image_url: str | None = None
     cover_image_source_url: str | None = None
+    minisite_slug: str | None = None
+    minisite_is_public: bool = False
+    minisite_theme: str | None = None
+    minisite_preview_url: str | None = None
+    minisite_public_url: str | None = None
+    minisite: dict = {}
     platform_links: dict[str, str] = {}
     pending_link_candidates_count: int = 0
     last_link_scan_at: datetime | None = None
@@ -374,6 +380,7 @@ class ReleaseOut(BaseModel):
         if not artist_names and getattr(release, "artist", None):
             artist_names = [release.artist.name]
         platform_links: dict[str, str] = {}
+        minisite_data: dict[str, object] = {}
         raw_links = getattr(release, "platform_links_json", None)
         if raw_links:
             try:
@@ -386,6 +393,14 @@ class ReleaseOut(BaseModel):
                     }
             except (json.JSONDecodeError, TypeError):
                 platform_links = {}
+        raw_minisite = getattr(release, "minisite_json", None)
+        if raw_minisite:
+            try:
+                data = json.loads(raw_minisite) or {}
+                if isinstance(data, dict):
+                    minisite_data = data
+            except (json.JSONDecodeError, TypeError):
+                minisite_data = {}
         pending_count = 0
         for candidate in getattr(release, "link_candidates", []) or []:
             if getattr(candidate, "status", "") == "pending_review":
@@ -405,8 +420,27 @@ class ReleaseOut(BaseModel):
             title=release.title,
             status=release.status,
             file_path=release.file_path,
-            cover_image_url=f"/public/releases/{release.id}/cover-image" if getattr(release, "cover_image_path", None) else None,
+            cover_image_url=f"/api/public/releases/{release.id}/cover-image" if getattr(release, "cover_image_path", None) else None,
             cover_image_source_url=getattr(release, "cover_image_source_url", None),
+            minisite_slug=getattr(release, "minisite_slug", None),
+            minisite_is_public=bool(getattr(release, "minisite_is_public", False)),
+            minisite_theme=str(minisite_data.get("theme") or "").strip() or None,
+            minisite_preview_url=(
+                f"/api/public/release-sites/{release.minisite_slug}?preview_token={str(minisite_data.get('preview_token') or '').strip()}"
+                if getattr(release, "minisite_slug", None) and str(minisite_data.get("preview_token") or "").strip()
+                else None
+            ),
+            minisite_public_url=(
+                f"/api/public/release-sites/{release.minisite_slug}"
+                if getattr(release, "minisite_slug", None) and bool(getattr(release, "minisite_is_public", False))
+                else None
+            ),
+            minisite={
+                "theme": str(minisite_data.get("theme") or "").strip(),
+                "description": str(minisite_data.get("description") or "").strip(),
+                "download_url": str(minisite_data.get("download_url") or "").strip(),
+                "gallery_urls": minisite_data.get("gallery_urls") if isinstance(minisite_data.get("gallery_urls"), list) else [],
+            },
             platform_links=platform_links,
             pending_link_candidates_count=pending_count,
             last_link_scan_at=last_scan_at,
@@ -475,6 +509,18 @@ class ReleaseLinkScanResponse(BaseModel):
 class ReleaseLinkCandidateReviewResponse(BaseModel):
     release: ReleaseOut
     candidate: ReleaseLinkCandidateOut
+
+
+class ReleaseMinisiteUpdateRequest(BaseModel):
+    theme: str | None = None
+    is_public: bool | None = None
+    description: str | None = None
+    download_url: str | None = None
+    gallery_urls: list[str] | None = None
+
+
+class ReleaseMinisiteSendRequest(BaseModel):
+    message: str | None = None
 
 
 # Catalog metadata (Proton CSV export schema) - one row per track

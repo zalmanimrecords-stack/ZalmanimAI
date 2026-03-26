@@ -271,7 +271,7 @@ class _ReleasesTabState extends State<ReleasesTab> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Use the Link discovery tab to scan and review streaming/store links for releases.',
+            'Use the Link discovery tab to scan and review streaming/store links, and the Minisites tab to publish a themed public release page.',
             style: TextStyle(
               fontSize: 12,
               color: Theme.of(context).colorScheme.onSurfaceVariant,

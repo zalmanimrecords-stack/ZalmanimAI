@@ -296,6 +296,54 @@ class ApiClient with ApiClientAuthOps, ApiClientAdminOps {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> updateReleaseMinisite({
+    required String token,
+    required int releaseId,
+    String? theme,
+    bool? isPublic,
+    String? description,
+    String? downloadUrl,
+    List<String>? galleryUrls,
+  }) async {
+    final response = await http.patch(
+      Uri.parse('$baseUrl/admin/releases/$releaseId/minisite'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        if (theme != null) 'theme': theme,
+        if (isPublic != null) 'is_public': isPublic,
+        if (description != null) 'description': description,
+        if (downloadUrl != null) 'download_url': downloadUrl,
+        if (galleryUrls != null) 'gallery_urls': galleryUrls,
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Update minisite failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> sendReleaseMinisite({
+    required String token,
+    required int releaseId,
+    String? message,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/admin/releases/$releaseId/minisite/send'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        if (message != null && message.trim().isNotEmpty) 'message': message.trim(),
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Send minisite failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   /// Set one or more artists for a release (e.g. when sync did not match).
   Future<Map<String, dynamic>> updateReleaseArtists({
     required String token,

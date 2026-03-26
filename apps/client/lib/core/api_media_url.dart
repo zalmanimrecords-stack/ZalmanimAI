@@ -19,7 +19,9 @@ String resolveApiMediaUrl(String apiBaseUrl, String? rawUrl) {
     return origin.resolve(p.substring(1)).toString();
   }
   final path = parsed.path.isEmpty ? '/' : parsed.path;
-  if (path.contains('/public/pending-release') || path.contains('/public/releases/')) {
+  if (path.contains('/public/pending-release') ||
+      path.contains('/public/releases/') ||
+      path.contains('/public/release-sites/')) {
     var p = path;
     if (!p.startsWith('/api')) {
       p = '/api$p';

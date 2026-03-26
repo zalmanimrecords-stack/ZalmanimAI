@@ -1200,6 +1200,12 @@ def approve_release_link_candidate(db: Session, candidate: ReleaseLinkCandidate)
 
 
 def reject_release_link_candidate(db: Session, candidate: ReleaseLinkCandidate) -> ReleaseLinkCandidate:
+    release = candidate.release
+    if release is not None:
+        links = parse_platform_links(release.platform_links_json)
+        if links.get(candidate.platform) == candidate.url:
+            links.pop(candidate.platform, None)
+            release.platform_links_json = json.dumps(links)
     candidate.status = "rejected"
     candidate.reviewed_at = datetime.now(timezone.utc)
     db.commit()
