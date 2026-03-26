@@ -31,19 +31,17 @@ def main() -> None:
     while True:
         try:
             _touch_heartbeat()
-            db = SessionLocal()
-            try:
+            with SessionLocal() as db:
                 campaigns = get_campaigns_ready_to_send(db, limit=5)
                 for campaign in campaigns:
                     run_campaign_send(db, campaign.id)
                     _touch_heartbeat()
                 ensure_periodic_release_link_scan_runs(db, limit=5)
-                scan_runs = get_release_link_runs_ready_to_scan(db, limit=5)
-                for run in scan_runs:
-                    process_release_link_scan_run(db, run.id)
+                scan_run_ids = [run.id for run in get_release_link_runs_ready_to_scan(db, limit=5)]
+            for run_id in scan_run_ids:
+                with SessionLocal() as db:
+                    process_release_link_scan_run(db, run_id)
                     _touch_heartbeat()
-            finally:
-                db.close()
         except OperationalError as e:
             print(f"worker error: {e}", flush=True)
             engine.dispose()
