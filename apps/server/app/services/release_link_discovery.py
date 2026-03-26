@@ -223,6 +223,10 @@ def _extract_title_from_text(text: str | None, release_title: str) -> str | None
     return value[:200]
 
 
+def _strip_html(value: str | None) -> str:
+    return " ".join(unescape(re.sub(r"<[^>]+>", " ", value or "")).split())
+
+
 def parse_platform_links(raw: str | None) -> dict[str, str]:
     try:
         data = json.loads(raw or "{}") or {}
@@ -355,6 +359,122 @@ class DeezerSearchAdapter(ReleaseLinkAdapter):
                     raw_payload={"provider": "deezer_search", "item": item},
                 )
             )
+        return PlatformDiscoveryResult(platform=self.platform, status="ok", candidates=candidates)
+
+
+class YouTubeSearchAdapter(ReleaseLinkAdapter):
+    platform = "youtube"
+
+    def discover(self, release_title: str, artist_names: list[str]) -> PlatformDiscoveryResult:
+        artist = artist_names[0] if artist_names else ""
+        query = " ".join(part for part in (release_title, artist, "official audio") if part).strip()
+        try:
+            response = httpx.get(
+                "https://www.youtube.com/results",
+                params={"search_query": query},
+                timeout=HTTP_TIMEOUT,
+                follow_redirects=True,
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            response.raise_for_status()
+        except Exception as exc:
+            return PlatformDiscoveryResult(platform=self.platform, status="failed", candidates=[], error_message=str(exc))
+
+        candidates: list[DiscoveryCandidate] = []
+        seen_urls: set[str] = set()
+        pattern = re.compile(
+            r'"videoId":"(?P<video_id>[^"]+)".{0,600}?"title":\{"runs":\[\{"text":"(?P<title>[^"]+)"\}\]',
+            re.DOTALL,
+        )
+        for match in pattern.finditer(response.text):
+            video_id = match.group("video_id").strip()
+            if not video_id:
+                continue
+            url = f"https://www.youtube.com/watch?v={video_id}"
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+            title_text = _strip_html(match.group("title"))
+            candidates.append(
+                _candidate_from_payload(
+                    platform=self.platform,
+                    url=url,
+                    release_title=release_title,
+                    artist_names=artist_names,
+                    candidate_title=_extract_title_from_text(title_text, release_title),
+                    candidate_artist=_extract_artist_from_text(title_text, artist_names) or artist,
+                    source_type="web_search",
+                    raw_payload={"provider": "youtube_results", "title": title_text, "query": query},
+                )
+            )
+            if len(candidates) >= MAX_WEB_CANDIDATES_PER_PLATFORM:
+                break
+        return PlatformDiscoveryResult(platform=self.platform, status="ok", candidates=candidates)
+
+
+class BandcampSearchAdapter(ReleaseLinkAdapter):
+    platform = "bandcamp"
+
+    def discover(self, release_title: str, artist_names: list[str]) -> PlatformDiscoveryResult:
+        artist = artist_names[0] if artist_names else ""
+        query = " ".join(part for part in (release_title, artist) if part).strip()
+        try:
+            response = httpx.get(
+                "https://bandcamp.com/search",
+                params={"q": query, "item_type": "a"},
+                timeout=HTTP_TIMEOUT,
+                follow_redirects=True,
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            response.raise_for_status()
+        except Exception as exc:
+            return PlatformDiscoveryResult(platform=self.platform, status="failed", candidates=[], error_message=str(exc))
+
+        candidates: list[DiscoveryCandidate] = []
+        seen_urls: set[str] = set()
+        item_pattern = re.compile(
+            r'<li class="searchresult.*?</li>',
+            re.IGNORECASE | re.DOTALL,
+        )
+        url_pattern = re.compile(r'<a[^>]+href="(?P<url>[^"]+)"', re.IGNORECASE)
+        heading_pattern = re.compile(r'<div class="heading">.*?<a[^>]*>(?P<title>.*?)</a>', re.IGNORECASE | re.DOTALL)
+        subhead_pattern = re.compile(r'<div class="subhead">(?P<artist>.*?)</div>', re.IGNORECASE | re.DOTALL)
+        for item_match in item_pattern.finditer(response.text):
+            block = item_match.group(0)
+            url_match = url_pattern.search(block)
+            if not url_match:
+                continue
+            url = unescape(url_match.group("url")).strip()
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            heading_match = heading_pattern.search(block)
+            subhead_match = subhead_pattern.search(block)
+            title_text = ""
+            artist_text = ""
+            if heading_match:
+                title_text = _strip_html(heading_match.group("title"))
+            if subhead_match:
+                artist_text = _strip_html(subhead_match.group("artist"))
+            candidates.append(
+                _candidate_from_payload(
+                    platform=self.platform,
+                    url=url,
+                    release_title=release_title,
+                    artist_names=artist_names,
+                    candidate_title=_extract_title_from_text(title_text, release_title),
+                    candidate_artist=_extract_artist_from_text(artist_text, artist_names) or artist_text,
+                    source_type="web_search",
+                    raw_payload={
+                        "provider": "bandcamp_search",
+                        "title": title_text,
+                        "artist": artist_text,
+                        "query": query,
+                    },
+                )
+            )
+            if len(candidates) >= MAX_WEB_CANDIDATES_PER_PLATFORM:
+                break
         return PlatformDiscoveryResult(platform=self.platform, status="ok", candidates=candidates)
 
 
@@ -497,15 +617,12 @@ def _build_adapter_registry() -> dict[str, ReleaseLinkAdapter]:
     return {
         "apple_music": ItunesSearchAdapter(),
         "deezer": DeezerSearchAdapter(),
+        "youtube": YouTubeSearchAdapter(),
+        "bandcamp": BandcampSearchAdapter(),
         "spotify": DuckDuckGoWebSearchAdapter(
             "spotify",
             ("open.spotify.com",),
             query_hints=("album", "track", "release"),
-        ),
-        "youtube": DuckDuckGoWebSearchAdapter(
-            "youtube",
-            ("music.youtube.com", "youtube.com", "youtu.be"),
-            query_hints=("official audio", "topic", "album"),
         ),
         "soundcloud": DuckDuckGoWebSearchAdapter(
             "soundcloud",
@@ -516,11 +633,6 @@ def _build_adapter_registry() -> dict[str, ReleaseLinkAdapter]:
             "beatport",
             ("beatport.com",),
             query_hints=("release", "track"),
-        ),
-        "bandcamp": DuckDuckGoWebSearchAdapter(
-            "bandcamp",
-            ("bandcamp.com",),
-            query_hints=("album", "track"),
         ),
         "tidal": DuckDuckGoWebSearchAdapter(
             "tidal",

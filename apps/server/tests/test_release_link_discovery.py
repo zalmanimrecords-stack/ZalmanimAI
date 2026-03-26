@@ -4,6 +4,8 @@ from app.models.models import Artist, Release, ReleaseLinkCandidate, ReleaseLink
 from app.services.release_link_discovery import (
     DiscoveryCandidate,
     PlatformDiscoveryResult,
+    BandcampSearchAdapter,
+    YouTubeSearchAdapter,
     ensure_periodic_release_link_scan_runs,
     process_release_link_scan_run,
 )
@@ -235,3 +237,53 @@ def test_ensure_periodic_release_link_scan_runs_skips_release_with_pending_revie
 
     assert created == 0
     assert db_session.query(ReleaseLinkScanRun).filter(ReleaseLinkScanRun.release_id == release.id).count() == 0
+
+
+def test_youtube_search_adapter_parses_candidates(monkeypatch):
+    class FakeResponse:
+        text = (
+            '"videoId":"abc123xyz00","title":{"runs":[{"text":"Maya Waves - Ocean Echo (Official Audio)"}]}'
+            '"videoId":"def456uvw11","title":{"runs":[{"text":"Someone Else - Different Song"}]}'
+        )
+
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr(
+        "app.services.release_link_discovery.httpx.get",
+        lambda *args, **kwargs: FakeResponse(),
+    )
+
+    result = YouTubeSearchAdapter().discover("Ocean Echo", ["Maya Waves"])
+
+    assert result.status == "ok"
+    assert result.candidates
+    assert result.candidates[0].url == "https://www.youtube.com/watch?v=abc123xyz00"
+    assert result.candidates[0].match_title == "Ocean Echo"
+    assert result.candidates[0].match_artist == "Maya Waves"
+
+
+def test_bandcamp_search_adapter_parses_candidates(monkeypatch):
+    class FakeResponse:
+        text = """
+        <li class="searchresult band">
+          <div class="heading"><a href="https://artist.bandcamp.com/album/ocean-echo">Ocean Echo</a></div>
+          <div class="subhead">by Maya Waves</div>
+        </li>
+        """
+
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr(
+        "app.services.release_link_discovery.httpx.get",
+        lambda *args, **kwargs: FakeResponse(),
+    )
+
+    result = BandcampSearchAdapter().discover("Ocean Echo", ["Maya Waves"])
+
+    assert result.status == "ok"
+    assert result.candidates
+    assert result.candidates[0].url == "https://artist.bandcamp.com/album/ocean-echo"
+    assert result.candidates[0].match_title == "Ocean Echo"
+    assert result.candidates[0].match_artist == "Maya Waves"
