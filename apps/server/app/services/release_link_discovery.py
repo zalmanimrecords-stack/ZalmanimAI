@@ -74,6 +74,29 @@ class ReleaseLinkAdapter:
         raise NotImplementedError
 
 
+class FallbackAdapter(ReleaseLinkAdapter):
+    def __init__(self, platform: str, *adapters: ReleaseLinkAdapter) -> None:
+        self.platform = platform
+        self.adapters = adapters
+
+    def discover(self, release_title: str, artist_names: list[str]) -> PlatformDiscoveryResult:
+        errors: list[str] = []
+        for adapter in self.adapters:
+            result = adapter.discover(release_title, artist_names)
+            if result.candidates:
+                return result
+            if result.error_message:
+                errors.append(result.error_message)
+            if result.status not in {"failed", "unsupported"}:
+                continue
+        return PlatformDiscoveryResult(
+            platform=self.platform,
+            status="failed" if errors else "ok",
+            candidates=[],
+            error_message="; ".join(errors[:2]) if errors else None,
+        )
+
+
 def _normalize_text(value: str | None) -> str:
     value = unescape((value or "").strip().lower())
     value = re.sub(r"\([^)]*\)", " ", value)
@@ -819,53 +842,93 @@ def _build_adapter_registry() -> dict[str, ReleaseLinkAdapter]:
         "deezer": DeezerSearchAdapter(),
         "youtube": YouTubeSearchAdapter(),
         "bandcamp": BandcampSearchAdapter(),
-        "spotify": HtmlSearchAdapter(
+        "spotify": FallbackAdapter(
             "spotify",
-            "https://open.spotify.com/search",
-            "q",
-            (
-                r'(?P<url>https://open\.spotify\.com/(?:album|track)/[a-zA-Z0-9]+)',
-                r'(?P<url>/album/[a-zA-Z0-9]+)',
-                r'(?P<url>/track/[a-zA-Z0-9]+)',
+            HtmlSearchAdapter(
+                "spotify",
+                "https://open.spotify.com/search",
+                "q",
+                (
+                    r'(?P<url>https://open\.spotify\.com/(?:album|track)/[a-zA-Z0-9]+)',
+                    r'(?P<url>/album/[a-zA-Z0-9]+)',
+                    r'(?P<url>/track/[a-zA-Z0-9]+)',
+                ),
+                query_hints=("album", "track", "release"),
             ),
-            query_hints=("album", "track", "release"),
+            DuckDuckGoWebSearchAdapter(
+                "spotify",
+                ("open.spotify.com",),
+                query_hints=("album", "track", "release"),
+            ),
         ),
-        "soundcloud": HtmlSearchAdapter(
+        "soundcloud": FallbackAdapter(
             "soundcloud",
-            "https://soundcloud.com/search/sounds",
-            "q",
-            (
-                r"(?P<url>https://soundcloud\.com/[^\"'<>\\s]+/[^\"'<>\\s]+)",
+            HtmlSearchAdapter(
+                "soundcloud",
+                "https://soundcloud.com/search/sounds",
+                "q",
+                (
+                    r"(?P<url>https://soundcloud\.com/[^\"'<>\\s]+/[^\"'<>\\s]+)",
+                ),
+                query_hints=("track", "premiere", "release"),
             ),
-            query_hints=("track", "premiere", "release"),
+            DuckDuckGoWebSearchAdapter(
+                "soundcloud",
+                ("soundcloud.com", "on.soundcloud.com"),
+                query_hints=("track", "premiere", "release"),
+            ),
         ),
-        "beatport": HtmlSearchAdapter(
+        "beatport": FallbackAdapter(
             "beatport",
-            "https://www.beatport.com/search",
-            "q",
-            (
-                r"(?P<url>https://www\.beatport\.com/(?:release|track)/[^\"'<>\\s]+)",
+            HtmlSearchAdapter(
+                "beatport",
+                "https://www.beatport.com/search",
+                "q",
+                (
+                    r"(?P<url>https://www\.beatport\.com/(?:release|track)/[^\"'<>\\s]+)",
+                ),
+                query_hints=("release", "track"),
             ),
-            query_hints=("release", "track"),
+            DuckDuckGoWebSearchAdapter(
+                "beatport",
+                ("beatport.com",),
+                query_hints=("release", "track"),
+            ),
         ),
-        "tidal": HtmlSearchAdapter(
+        "tidal": FallbackAdapter(
             "tidal",
-            "https://listen.tidal.com/search",
-            "q",
-            (
-                r'(?P<url>https://listen\.tidal\.com/(?:album|track)/[0-9]+)',
-                r'(?P<url>https://tidal\.com/browse/(?:album|track)/[0-9]+)',
+            HtmlSearchAdapter(
+                "tidal",
+                "https://listen.tidal.com/search",
+                "q",
+                (
+                    r'(?P<url>https://listen\.tidal\.com/(?:album|track)/[0-9]+)',
+                    r'(?P<url>https://tidal\.com/browse/(?:album|track)/[0-9]+)',
+                ),
+                query_hints=("album", "track"),
             ),
-            query_hints=("album", "track"),
+            DuckDuckGoWebSearchAdapter(
+                "tidal",
+                ("tidal.com",),
+                query_hints=("album", "track"),
+            ),
         ),
-        "amazon_music": HtmlSearchAdapter(
+        "amazon_music": FallbackAdapter(
             "amazon_music",
-            "https://music.amazon.com/search",
-            "keywords",
-            (
-                r"(?P<url>https://music\.amazon\.[^/\"'<>\\s]+/(?:albums|tracks)/[^\"'<>\\s]+)",
+            HtmlSearchAdapter(
+                "amazon_music",
+                "https://music.amazon.com/search",
+                "keywords",
+                (
+                    r"(?P<url>https://music\.amazon\.[^/\"'<>\\s]+/(?:albums|tracks)/[^\"'<>\\s]+)",
+                ),
+                query_hints=("album", "song"),
             ),
-            query_hints=("album", "song"),
+            DuckDuckGoWebSearchAdapter(
+                "amazon_music",
+                ("music.amazon.", "amazon."),
+                query_hints=("album", "song"),
+            ),
         ),
     }
 
