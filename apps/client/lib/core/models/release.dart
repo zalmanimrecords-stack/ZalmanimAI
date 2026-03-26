@@ -8,6 +8,9 @@ class Release {
     required this.title,
     required this.status,
     this.filePath,
+    this.platformLinks = const {},
+    this.pendingLinkCandidatesCount = 0,
+    this.lastLinkScanAt,
     required this.createdAt,
   });
 
@@ -18,6 +21,9 @@ class Release {
   final String title;
   final String status;
   final String? filePath;
+  final Map<String, String> platformLinks;
+  final int pendingLinkCandidatesCount;
+  final String? lastLinkScanAt;
   final String createdAt;
 
   bool get hasNoArtist => artistIds.isEmpty;
@@ -38,6 +44,18 @@ class Release {
             .where((e) => e.isNotEmpty)
             .toList()
         : const <String>[];
+    final rawPlatformLinks = json['platform_links'];
+    final platformLinks = <String, String>{};
+    if (rawPlatformLinks is Map) {
+      rawPlatformLinks.forEach((key, value) {
+        final k = key?.toString().trim() ?? '';
+        final v = value?.toString().trim() ?? '';
+        if (k.isNotEmpty && v.isNotEmpty) {
+          platformLinks[k] = v;
+        }
+      });
+    }
+    final pendingCount = json['pending_link_candidates_count'];
     return Release(
       id: json['id'] as int,
       artistId: json['artist_id'] as int?,
@@ -46,6 +64,11 @@ class Release {
       title: (json['title'] as String?) ?? '',
       status: (json['status'] as String?) ?? '',
       filePath: json['file_path'] as String?,
+      platformLinks: platformLinks,
+      pendingLinkCandidatesCount: pendingCount is int
+          ? pendingCount
+          : int.tryParse(pendingCount?.toString() ?? '') ?? 0,
+      lastLinkScanAt: json['last_link_scan_at']?.toString(),
       createdAt: (json['created_at']?.toString()) ?? '',
     );
   }
@@ -58,6 +81,9 @@ class Release {
         'title': title,
         'status': status,
         'file_path': filePath,
+        'platform_links': platformLinks,
+        'pending_link_candidates_count': pendingLinkCandidatesCount,
+        'last_link_scan_at': lastLinkScanAt,
         'created_at': createdAt,
       };
 }

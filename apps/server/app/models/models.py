@@ -4,7 +4,7 @@ from datetime import date
 from functools import lru_cache
 
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Table, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Table, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
 from app.core.config import settings
@@ -387,6 +387,7 @@ class Release(Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="submitted")
     file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    platform_links_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     artist: Mapped[Artist | None] = relationship(foreign_keys=[artist_id])
@@ -395,6 +396,63 @@ class Release(Base):
         secondary=release_artists_table,
         back_populates="releases",
     )
+    link_candidates: Mapped[list["ReleaseLinkCandidate"]] = relationship(
+        back_populates="release",
+        order_by="desc(ReleaseLinkCandidate.discovered_at)",
+        cascade="all, delete-orphan",
+    )
+    link_scan_runs: Mapped[list["ReleaseLinkScanRun"]] = relationship(
+        back_populates="release",
+        order_by="desc(ReleaseLinkScanRun.created_at)",
+        cascade="all, delete-orphan",
+    )
+
+
+class ReleaseLinkCandidate(Base):
+    __tablename__ = "release_link_candidates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    release_id: Mapped[int] = mapped_column(
+        ForeignKey("releases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    platform: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    match_title: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    match_artist: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    confidence: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="pending_review", nullable=False, index=True)
+    source_type: Mapped[str] = mapped_column(String(30), default="web_search", nullable=False)
+    raw_payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    discovered_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    reviewed_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    release: Mapped["Release"] = relationship(back_populates="link_candidates")
+
+
+class ReleaseLinkScanRun(Base):
+    __tablename__ = "release_link_scan_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    release_id: Mapped[int] = mapped_column(
+        ForeignKey("releases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String(30), default="queued", nullable=False, index=True)
+    trigger_type: Mapped[str] = mapped_column(String(30), default="manual", nullable=False)
+    requested_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    platforms_json: Mapped[str] = mapped_column(Text, default="[]")
+    summary_json: Mapped[str] = mapped_column(Text, default="{}")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    release: Mapped["Release"] = relationship(back_populates="link_scan_runs")
+    requested_by: Mapped["User | None"] = relationship()
 
 
 class CatalogTrack(Base):

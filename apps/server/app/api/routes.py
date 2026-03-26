@@ -87,6 +87,8 @@ from app.models.models import (
     PendingReleaseComment,
     PendingReleaseToken,
     Release,
+    ReleaseLinkCandidate,
+    ReleaseLinkScanRun,
     release_artists_table,
     migrate_legacy_social_connection_tokens,
     SocialConnection,
@@ -194,6 +196,10 @@ from app.schemas.schemas import (
     PendingReleaseReminderResponse,
     PendingReleaseSelectImageRequest,
     PendingReleaseSubmit,
+    ReleaseLinkCandidateOut,
+    ReleaseLinkCandidateReviewResponse,
+    ReleaseLinkScanRequest,
+    ReleaseLinkScanResponse,
     ReleaseOut,
     ResetPasswordRequest,
     ReleaseUpdateArtists,
@@ -218,6 +224,16 @@ from app.services.email_service import (
     test_smtp_connection,
 )
 from app.services.mail_settings import build_mail_config, get_effective_mail_config_for_api, save_mail_settings
+from app.services.release_link_discovery import (
+    SUPPORTED_RELEASE_LINK_PLATFORMS,
+    approve_release_link_candidate,
+    best_release_link,
+    ensure_periodic_release_link_scan_runs,
+    parse_platform_links,
+    process_release_link_scan_run,
+    queue_release_link_scan,
+    reject_release_link_candidate,
+)
 from app.services.system_log import append_system_log
 from app.services.agent_supervisor import build_agent_plan, get_agent_registry
 from app.services.backup_service import export_database, restore_database
@@ -825,6 +841,7 @@ def init_db() -> None:
             conn.execute(text(
                 "ALTER TABLE label_inbox_messages ADD COLUMN IF NOT EXISTS admin_read_at TIMESTAMP WITH TIME ZONE"
             ))
+            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS platform_links_json TEXT DEFAULT '{}'"))
             conn.execute(text(
                 "UPDATE mail_settings SET emails_per_hour = 10 WHERE id = 1 AND (emails_per_hour IS NULL OR emails_per_hour = 5)"
             ))
@@ -1341,13 +1358,16 @@ def public_linktree(
                 logo_url = _linktree_image_url(request, artist_id, "logo")
     releases_q = (
         db.query(Release)
-        .options(joinedload(Release.artists))
+        .options(joinedload(Release.artists), joinedload(Release.artist))
         .filter(or_(Release.artist_id == artist.id, Release.artists.any(Artist.id == artist.id)))
         .order_by(desc(Release.created_at))
         .limit(50)
     )
     releases = [
-        LinktreeRelease(title=(r.title or "").strip() or "Untitled", url=None)
+        LinktreeRelease(
+            title=(r.title or "").strip() or "Untitled",
+            url=best_release_link(parse_platform_links(getattr(r, "platform_links_json", None))),
+        )
         for r in releases_q.all()
     ]
     return LinktreeOut(
@@ -2073,8 +2093,8 @@ def admin_set_artist_password(
     artist = db.query(Artist).filter(Artist.id == artist_id).first()
     if not artist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
-    if not payload.password or len(payload.password) < 12:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 12 characters")
+    if not payload.password or len(payload.password) < 9:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 9 characters")
     artist.password_hash = hash_password(payload.password)
     db.commit()
     return {"ok": True, "message": "Password set. Artist can sign in at the artist portal."}
@@ -2402,7 +2422,12 @@ def list_artist_releases(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
     releases = (
         db.query(Release)
-        .options(joinedload(Release.artists))
+        .options(
+            joinedload(Release.artists),
+            joinedload(Release.artist),
+            joinedload(Release.link_candidates),
+            joinedload(Release.link_scan_runs),
+        )
         .filter(or_(Release.artist_id == artist_id, Release.artists.any(Artist.id == artist_id)))
         .order_by(desc(Release.created_at))
         .all()
@@ -3813,7 +3838,7 @@ def public_artist_registration_submit(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
     if not payload.artist_name.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Artist name is required")
-    if not payload.password or len(payload.password) < 12:
+    if not payload.password or len(payload.password) < 9:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 12 characters")
 
     artist.name = payload.artist_name.strip()[:120]
@@ -3864,13 +3889,158 @@ def list_admin_releases(
     require_admin(user)
     releases = (
         db.query(Release)
-        .options(joinedload(Release.artists))
+        .options(
+            joinedload(Release.artists),
+            joinedload(Release.artist),
+            joinedload(Release.link_candidates),
+            joinedload(Release.link_scan_runs),
+        )
         .order_by(desc(Release.created_at))
         .offset(offset)
         .limit(limit)
         .all()
     )
     return [ReleaseOut.from_release(r) for r in releases]
+
+
+@router.post("/admin/releases/link-scan", response_model=ReleaseLinkScanResponse)
+def queue_admin_release_link_scan(
+    payload: ReleaseLinkScanRequest,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> ReleaseLinkScanResponse:
+    require_admin(user)
+    release_ids = sorted({int(release_id) for release_id in payload.release_ids if int(release_id) > 0})
+    if not release_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one release_id is required")
+    releases = db.query(Release.id).filter(Release.id.in_(release_ids)).all()
+    found_ids = {row[0] for row in releases}
+    missing_ids = [release_id for release_id in release_ids if release_id not in found_ids]
+    if missing_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Release(s) not found: {', '.join(str(item) for item in missing_ids)}",
+        )
+    requested_platforms = None
+    if payload.platforms:
+        requested_platforms = [platform for platform in payload.platforms if platform in SUPPORTED_RELEASE_LINK_PLATFORMS]
+        if not requested_platforms:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No supported platforms were requested")
+    queued_runs = 0
+    for release_id in release_ids:
+        run = queue_release_link_scan(
+            db,
+            release_id=release_id,
+            trigger_type="manual",
+            requested_by_user_id=user.user_id,
+            platforms=requested_platforms,
+        )
+        if run.status == "queued":
+            queued_runs += 1
+    db.commit()
+    return ReleaseLinkScanResponse(
+        queued_runs=queued_runs,
+        release_ids=release_ids,
+        message=f"Queued release link scan for {len(release_ids)} release(s).",
+    )
+
+
+@router.get("/admin/releases/{release_id}/link-candidates", response_model=list[ReleaseLinkCandidateOut])
+def list_release_link_candidates(
+    release_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> list[ReleaseLinkCandidateOut]:
+    require_admin(user)
+    release = db.query(Release).filter(Release.id == release_id).first()
+    if not release:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Release not found")
+    rows = (
+        db.query(ReleaseLinkCandidate)
+        .filter(ReleaseLinkCandidate.release_id == release_id)
+        .order_by(
+            ReleaseLinkCandidate.status.asc(),
+            ReleaseLinkCandidate.platform.asc(),
+            ReleaseLinkCandidate.confidence.desc(),
+            ReleaseLinkCandidate.discovered_at.desc(),
+        )
+        .all()
+    )
+    return [ReleaseLinkCandidateOut.from_candidate(row) for row in rows]
+
+
+@router.post(
+    "/admin/releases/{release_id}/link-candidates/{candidate_id}/approve",
+    response_model=ReleaseLinkCandidateReviewResponse,
+)
+def approve_release_link_candidate_route(
+    release_id: int,
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> ReleaseLinkCandidateReviewResponse:
+    require_admin(user)
+    candidate = (
+        db.query(ReleaseLinkCandidate)
+        .options(
+            joinedload(ReleaseLinkCandidate.release).joinedload(Release.artists),
+            joinedload(ReleaseLinkCandidate.release).joinedload(Release.artist),
+            joinedload(ReleaseLinkCandidate.release).joinedload(Release.link_candidates),
+            joinedload(ReleaseLinkCandidate.release).joinedload(Release.link_scan_runs),
+        )
+        .filter(ReleaseLinkCandidate.id == candidate_id, ReleaseLinkCandidate.release_id == release_id)
+        .first()
+    )
+    if not candidate:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found")
+    release = approve_release_link_candidate(db, candidate)
+    db.refresh(candidate)
+    return ReleaseLinkCandidateReviewResponse(
+        release=ReleaseOut.from_release(release),
+        candidate=ReleaseLinkCandidateOut.from_candidate(candidate),
+    )
+
+
+@router.post(
+    "/admin/releases/{release_id}/link-candidates/{candidate_id}/reject",
+    response_model=ReleaseLinkCandidateReviewResponse,
+)
+def reject_release_link_candidate_route(
+    release_id: int,
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> ReleaseLinkCandidateReviewResponse:
+    require_admin(user)
+    candidate = (
+        db.query(ReleaseLinkCandidate)
+        .options(
+            joinedload(ReleaseLinkCandidate.release).joinedload(Release.artists),
+            joinedload(ReleaseLinkCandidate.release).joinedload(Release.artist),
+            joinedload(ReleaseLinkCandidate.release).joinedload(Release.link_candidates),
+            joinedload(ReleaseLinkCandidate.release).joinedload(Release.link_scan_runs),
+        )
+        .filter(ReleaseLinkCandidate.id == candidate_id, ReleaseLinkCandidate.release_id == release_id)
+        .first()
+    )
+    if not candidate:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found")
+    candidate = reject_release_link_candidate(db, candidate)
+    release = (
+        db.query(Release)
+        .options(
+            joinedload(Release.artists),
+            joinedload(Release.artist),
+            joinedload(Release.link_candidates),
+            joinedload(Release.link_scan_runs),
+        )
+        .filter(Release.id == release_id)
+        .first()
+    )
+    return ReleaseLinkCandidateReviewResponse(
+        release=ReleaseOut.from_release(release),
+        candidate=ReleaseLinkCandidateOut.from_candidate(candidate),
+    )
 
 
 # ---- Reports ----
@@ -3936,7 +4106,17 @@ def update_release_artists(
 ) -> ReleaseOut:
     """Set one or more artists for a release (e.g. when sync did not match)."""
     require_admin(user)
-    release = db.query(Release).options(joinedload(Release.artists)).filter(Release.id == release_id).first()
+    release = (
+        db.query(Release)
+        .options(
+            joinedload(Release.artists),
+            joinedload(Release.artist),
+            joinedload(Release.link_candidates),
+            joinedload(Release.link_scan_runs),
+        )
+        .filter(Release.id == release_id)
+        .first()
+    )
     if not release:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Release not found")
     # Resolve artist ids
@@ -4550,6 +4730,7 @@ def sync_releases_from_catalog(
     created = 0
     skipped = 0
     unmatched = 0
+    created_release_ids: list[int] = []
 
     for release_title, original_artists in by_title.items():
         # Parse artist names from catalog (comma or & separated)
@@ -4573,14 +4754,15 @@ def sync_releases_from_catalog(
             if existing:
                 skipped += 1
             else:
-                db.add(
-                    Release(
-                        artist_id=None,
-                        title=release_title,
-                        status="from_catalog",
-                        file_path=None,
-                    )
+                release = Release(
+                    artist_id=None,
+                    title=release_title,
+                    status="from_catalog",
+                    file_path=None,
                 )
+                db.add(release)
+                db.flush()
+                created_release_ids.append(release.id)
                 created += 1
             unmatched += 1
             continue
@@ -4604,6 +4786,7 @@ def sync_releases_from_catalog(
                 existing.artist_id = matched_artist_ids[0]
                 existing.artists = [db.get(Artist, aid) for aid in matched_artist_ids]
                 existing.artists = [a for a in existing.artists if a]
+                created_release_ids.append(existing.id)
                 created += 1
                 continue
 
@@ -4615,12 +4798,19 @@ def sync_releases_from_catalog(
         )
         db.add(release)
         db.flush()
+        created_release_ids.append(release.id)
         for aid in matched_artist_ids:
             a = db.get(Artist, aid)
             if a:
                 release.artists.append(a)
         created += 1
 
+    for release_id in created_release_ids:
+        queue_release_link_scan(
+            db,
+            release_id=release_id,
+            trigger_type="release_created",
+        )
     db.commit()
     return {
         "created": created,

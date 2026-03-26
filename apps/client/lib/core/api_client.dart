@@ -225,6 +225,77 @@ class ApiClient with ApiClientAuthOps, ApiClientAdminOps {
     return jsonDecode(response.body) as List<dynamic>;
   }
 
+  Future<Map<String, dynamic>> queueReleaseLinkScan({
+    required String token,
+    required List<int> releaseIds,
+    List<String>? platforms,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/admin/releases/link-scan'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'release_ids': releaseIds,
+        if (platforms != null && platforms.isNotEmpty) 'platforms': platforms,
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Queue scan failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<List<dynamic>> fetchReleaseLinkCandidates({
+    required String token,
+    required int releaseId,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/admin/releases/$releaseId/link-candidates'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Release candidates failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> approveReleaseLinkCandidate({
+    required String token,
+    required int releaseId,
+    required int candidateId,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/admin/releases/$releaseId/link-candidates/$candidateId/approve'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Approve candidate failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> rejectReleaseLinkCandidate({
+    required String token,
+    required int releaseId,
+    required int candidateId,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/admin/releases/$releaseId/link-candidates/$candidateId/reject'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Reject candidate failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   /// Set one or more artists for a release (e.g. when sync did not match).
   Future<Map<String, dynamic>> updateReleaseArtists({
     required String token,

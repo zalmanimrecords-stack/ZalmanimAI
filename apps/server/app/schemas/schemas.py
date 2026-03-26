@@ -267,7 +267,11 @@ def _artist_extra_from_model(m: BaseModel) -> dict:
         "other_1", "other_2", "other_3", "comments", "apple_music", "address", "source_row",
         "linktree", "profile_image_media_id", "logo_media_id",
     )
-    out = {k: getattr(m, k) for k in keys if getattr(m, k) is not None}
+    out = {
+        k: getattr(m, k)
+        for k in keys
+        if hasattr(m, k) and getattr(m, k) is not None
+    }
     brands = getattr(m, "artist_brands", None)
     if brands is not None and isinstance(brands, list):
         out["artist_brands"] = [b for b in brands if isinstance(b, str) and b.strip()]
@@ -350,6 +354,9 @@ class ReleaseOut(BaseModel):
     title: str
     status: str
     file_path: str | None
+    platform_links: dict[str, str] = {}
+    pending_link_candidates_count: int = 0
+    last_link_scan_at: datetime | None = None
     created_at: datetime
 
     class Config:
@@ -364,6 +371,30 @@ class ReleaseOut(BaseModel):
             artist_ids = [release.artist_id]
         if not artist_names and getattr(release, "artist", None):
             artist_names = [release.artist.name]
+        platform_links: dict[str, str] = {}
+        raw_links = getattr(release, "platform_links_json", None)
+        if raw_links:
+            try:
+                data = json.loads(raw_links) or {}
+                if isinstance(data, dict):
+                    platform_links = {
+                        str(key): str(value).strip()
+                        for key, value in data.items()
+                        if str(key).strip() and str(value).strip()
+                    }
+            except (json.JSONDecodeError, TypeError):
+                platform_links = {}
+        pending_count = 0
+        for candidate in getattr(release, "link_candidates", []) or []:
+            if getattr(candidate, "status", "") == "pending_review":
+                pending_count += 1
+        last_scan_at = None
+        for run in getattr(release, "link_scan_runs", []) or []:
+            completed_at = getattr(run, "completed_at", None)
+            created_at = getattr(run, "created_at", None)
+            candidate_time = completed_at or created_at
+            if candidate_time is not None and (last_scan_at is None or candidate_time > last_scan_at):
+                last_scan_at = candidate_time
         return cls(
             id=release.id,
             artist_id=release.artist_id,
@@ -372,6 +403,9 @@ class ReleaseOut(BaseModel):
             title=release.title,
             status=release.status,
             file_path=release.file_path,
+            platform_links=platform_links,
+            pending_link_candidates_count=pending_count,
+            last_link_scan_at=last_scan_at,
             created_at=release.created_at,
         )
 
@@ -379,6 +413,64 @@ class ReleaseOut(BaseModel):
 class ReleaseUpdateArtists(BaseModel):
     """Set one or more artists for a release (e.g. when sync did not match)."""
     artist_ids: list[int]
+
+
+class ReleaseLinkCandidateOut(BaseModel):
+    id: int
+    release_id: int
+    platform: str
+    url: str
+    match_title: str | None = None
+    match_artist: str | None = None
+    confidence: float
+    status: str
+    source_type: str
+    raw_payload: dict = {}
+    discovered_at: datetime
+    reviewed_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+    @classmethod
+    def from_candidate(cls, candidate) -> "ReleaseLinkCandidateOut":
+        raw_payload = {}
+        try:
+            data = json.loads(getattr(candidate, "raw_payload_json", "{}") or "{}") or {}
+            if isinstance(data, dict):
+                raw_payload = data
+        except (json.JSONDecodeError, TypeError):
+            raw_payload = {}
+        return cls(
+            id=candidate.id,
+            release_id=candidate.release_id,
+            platform=candidate.platform,
+            url=candidate.url,
+            match_title=candidate.match_title,
+            match_artist=candidate.match_artist,
+            confidence=float(candidate.confidence or 0.0),
+            status=candidate.status,
+            source_type=candidate.source_type,
+            raw_payload=raw_payload,
+            discovered_at=candidate.discovered_at,
+            reviewed_at=candidate.reviewed_at,
+        )
+
+
+class ReleaseLinkScanRequest(BaseModel):
+    release_ids: list[int]
+    platforms: list[str] | None = None
+
+
+class ReleaseLinkScanResponse(BaseModel):
+    queued_runs: int
+    release_ids: list[int]
+    message: str
+
+
+class ReleaseLinkCandidateReviewResponse(BaseModel):
+    release: ReleaseOut
+    candidate: ReleaseLinkCandidateOut
 
 
 # Catalog metadata (Proton CSV export schema) - one row per track

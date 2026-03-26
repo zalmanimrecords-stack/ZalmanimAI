@@ -13,6 +13,11 @@ from sqlalchemy.exc import OperationalError
 
 from app.db.session import SessionLocal, engine
 from app.services.campaign_send import get_campaigns_ready_to_send, run_campaign_send
+from app.services.release_link_discovery import (
+    ensure_periodic_release_link_scan_runs,
+    get_release_link_runs_ready_to_scan,
+    process_release_link_scan_run,
+)
 
 POLL_INTERVAL_SEC = 60
 HEARTBEAT_PATH = Path(os.environ.get("WORKER_HEARTBEAT_PATH", "/tmp/worker-heartbeat.txt"))
@@ -31,6 +36,11 @@ def main() -> None:
                 campaigns = get_campaigns_ready_to_send(db, limit=5)
                 for campaign in campaigns:
                     run_campaign_send(db, campaign.id)
+                    _touch_heartbeat()
+                ensure_periodic_release_link_scan_runs(db, limit=5)
+                scan_runs = get_release_link_runs_ready_to_scan(db, limit=5)
+                for run in scan_runs:
+                    process_release_link_scan_run(db, run.id)
                     _touch_heartbeat()
             finally:
                 db.close()
