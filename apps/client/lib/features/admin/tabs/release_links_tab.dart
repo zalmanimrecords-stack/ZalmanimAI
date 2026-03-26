@@ -9,9 +9,16 @@ import '../../../core/zalmanim_icons.dart';
 import '../admin_dashboard_delegate.dart';
 
 class ReleaseLinksTab extends StatefulWidget {
-  const ReleaseLinksTab({super.key, required this.delegate});
+  const ReleaseLinksTab({
+    super.key,
+    required this.delegate,
+    this.embedded = false,
+    this.showTitle = true,
+  });
 
   final AdminDashboardDelegate delegate;
+  final bool embedded;
+  final bool showTitle;
 
   @override
   State<ReleaseLinksTab> createState() => _ReleaseLinksTabState();
@@ -21,6 +28,7 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
   final _releasesController = ScrollController();
   /// Rough height per row for the releases list viewport (cards include minisite URLs).
   static const double _releaseItemHeight = 168;
+  bool _showOnlyReadyMinisites = false;
 
   AdminDashboardDelegate get delegate => widget.delegate;
 
@@ -37,6 +45,8 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
   };
 
   String _platformLabel(String key) => _platformLabels[key] ?? key;
+
+  bool _hasReadyMinisite(Release release) => _minisiteExternalUrl(release) != null;
 
   /// Best URL to open the release minisite in a browser (public when published, else preview).
   String? _minisiteExternalUrl(Release release) {
@@ -272,6 +282,31 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
     }
   }
 
+  Future<void> _refreshReleaseArtwork(Release release) async {
+    try {
+      final updated = await delegate.apiClient.refreshReleaseCoverArt(
+        token: delegate.token,
+        releaseId: release.id,
+      );
+      await delegate.loadReleases();
+      if (!mounted) return;
+      final refreshed = Release.fromJson(updated);
+      final hasArtwork = (refreshed.coverImageUrl?.trim().isNotEmpty ?? false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            hasArtwork
+                ? 'Artwork updated for ${release.title}'
+                : 'No artwork found yet for ${release.title}',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      delegate.showErrorSnackBar(e.toString());
+    }
+  }
+
   Future<void> _reviewReleaseLinks(Release release) async {
     List<Map<String, dynamic>> candidates = [];
     var loadingCandidates = true;
@@ -466,6 +501,9 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
     final list = List<Map<String, dynamic>>.from(
       delegate.adminReleasesList.map((e) => e as Map<String, dynamic>),
     );
+    if (_showOnlyReadyMinisites) {
+      list.retainWhere((item) => _hasReadyMinisite(Release.fromJson(item)));
+    }
     list.sort((a, b) {
       final releaseA = Release.fromJson(a);
       final releaseB = Release.fromJson(b);
@@ -480,11 +518,13 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
     return list;
   }
 
-  @override
-  Widget build(BuildContext context) {
+  List<Widget> _buildContent(BuildContext context) {
     final sortedReleases = _sortedAdminReleases();
-    final bulkScanCount = sortedReleases
-        .map(Release.fromJson)
+    final allReleases = delegate.adminReleasesList
+        .map((e) => Release.fromJson(e as Map<String, dynamic>))
+        .toList();
+    final readyMinisiteCount = allReleases.where(_hasReadyMinisite).length;
+    final bulkScanCount = allReleases
         .where(
           (release) =>
               release.platformLinks.isEmpty &&
@@ -496,161 +536,224 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
       640,
     );
 
+    return [
+      if (widget.showTitle)
+        Row(
+          children: [
+            const Text(
+              'Release link discovery',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(width: 12),
+            FilledButton.tonalIcon(
+              onPressed: bulkScanCount == 0
+                  ? null
+                  : () => _scanAllMissingReleaseLinks(
+                        allReleases.map((release) => release.toJson()).toList(),
+                      ),
+              icon: const Icon(ZalmanimIcons.sync, size: 18),
+              label: Text('Scan all missing links ($bulkScanCount)'),
+            ),
+          ],
+        )
+      else
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Releases, link discovery, minisites',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+            FilledButton.tonalIcon(
+              onPressed: bulkScanCount == 0
+                  ? null
+                  : () => _scanAllMissingReleaseLinks(
+                        allReleases.map((release) => release.toJson()).toList(),
+                      ),
+              icon: const Icon(ZalmanimIcons.sync, size: 18),
+              label: Text('Scan all missing links ($bulkScanCount)'),
+            ),
+          ],
+        ),
+      const SizedBox(height: 8),
+      Text(
+        'Scan and review streaming/store link candidates, keep minisites ready, and backfill release artwork from the best sources we can find.',
+        style: TextStyle(
+          fontSize: 12,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      ),
+      const SizedBox(height: 10),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          FilterChip(
+            label: Text('Ready minisite ($readyMinisiteCount)'),
+            selected: _showOnlyReadyMinisites,
+            onSelected: (value) => setState(() => _showOnlyReadyMinisites = value),
+          ),
+          if (_showOnlyReadyMinisites)
+            Text(
+              '${sortedReleases.length} releases shown',
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      if (sortedReleases.isEmpty)
+        const Padding(
+          padding: EdgeInsets.only(bottom: 16),
+          child: Text('No releases loaded yet for this filter.'),
+        )
+      else
+        SizedBox(
+          height: releasesListHeight,
+          child: ListView.builder(
+            controller: _releasesController,
+            itemCount: sortedReleases.length,
+            itemBuilder: (context, index) {
+              final rawRelease = sortedReleases[index];
+              final release = Release.fromJson(rawRelease);
+              final minisiteUrl = _minisiteExternalUrl(release);
+              final artistNames = release.artistNames.join(', ');
+              final coverImageUrl = delegate.apiClient.resolveMediaUrl(release.coverImageUrl);
+              final approvedLinks = release.platformLinks.entries.toList()
+                ..sort((a, b) => _platformLabel(a.key).compareTo(_platformLabel(b.key)));
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  leading: coverImageUrl.isEmpty
+                      ? const CircleAvatar(child: Icon(Icons.album_outlined))
+                      : ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.network(
+                            coverImageUrl,
+                            width: 56,
+                            height: 56,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                const CircleAvatar(child: Icon(Icons.album_outlined)),
+                          ),
+                        ),
+                  onTap: () => _reviewReleaseLinks(release),
+                  title: Text(
+                    release.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        artistNames.isEmpty ? 'No artist assigned' : artistNames,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 8),
+                      if (approvedLinks.isEmpty)
+                        const Text(
+                          'No approved release links yet.',
+                          style: TextStyle(fontSize: 12),
+                        )
+                      else
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: approvedLinks
+                              .map(
+                                (entry) => ActionChip(
+                                  label: Text(_platformLabel(entry.key)),
+                                  onPressed: () => _openUrl(entry.value),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      _buildMinisiteLinksSection(context, release),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          OutlinedButton.icon(
+                            icon: const Icon(ZalmanimIcons.sync, size: 18),
+                            label: const Text('Scan links'),
+                            onPressed: () => _scanReleaseLinks(rawRelease),
+                          ),
+                          FilledButton.tonalIcon(
+                            icon: const Icon(Icons.rule_folder_outlined, size: 18),
+                            label: Text(
+                              release.pendingLinkCandidatesCount > 0
+                                  ? 'Review (${release.pendingLinkCandidatesCount})'
+                                  : 'Review links',
+                            ),
+                            onPressed: () => _reviewReleaseLinks(release),
+                          ),
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.image_search_outlined, size: 18),
+                            label: Text(
+                              (release.coverImageUrl?.trim().isNotEmpty ?? false)
+                                  ? 'Refresh artwork'
+                                  : 'Find artwork',
+                            ),
+                            onPressed: () => _refreshReleaseArtwork(release),
+                          ),
+                          Tooltip(
+                            message: minisiteUrl == null
+                                ? 'No minisite URL for this release yet'
+                                : 'Open minisite in browser',
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.open_in_new, size: 18),
+                              label: const Text('View minisite'),
+                              onPressed: minisiteUrl == null
+                                  ? null
+                                  : () => _openUrl(minisiteUrl),
+                            ),
+                          ),
+                          if (release.lastLinkScanAt != null &&
+                              release.lastLinkScanAt!.trim().isNotEmpty)
+                            Chip(
+                              label: Text(
+                                'Last scan: ${release.lastLinkScanAt!.replaceFirst("T", " ").split(".").first}',
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  trailing: OutlinedButton.icon(
+                    icon: const Icon(Icons.chevron_right),
+                    label: const Text('Open'),
+                    onPressed: () => _reviewReleaseLinks(release),
+                  ),
+                  isThreeLine: true,
+                ),
+              );
+            },
+          ),
+        ),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final content = _buildContent(context);
+    if (widget.embedded) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: content,
+      );
+    }
     return RefreshIndicator(
       onRefresh: delegate.loadReleases,
       child: ListView(
         padding: const EdgeInsets.all(12),
-        children: [
-          Row(
-            children: [
-              const Text(
-                'Release link discovery',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(width: 12),
-              FilledButton.tonalIcon(
-                onPressed: bulkScanCount == 0
-                    ? null
-                    : () => _scanAllMissingReleaseLinks(sortedReleases),
-                icon: const Icon(ZalmanimIcons.sync, size: 18),
-                label: Text('Scan all missing links ($bulkScanCount)'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Scan and review streaming/store link candidates. '
-            'Each release shows minisite URLs: the public link is what visitors use when published. '
-            'Releases waiting for link review are listed first.',
-            style: TextStyle(
-              fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 12),
-          if (sortedReleases.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 16),
-              child: Text('No releases loaded yet.'),
-            )
-          else
-            SizedBox(
-              height: releasesListHeight,
-              child: ListView.builder(
-                controller: _releasesController,
-                itemCount: sortedReleases.length,
-                itemBuilder: (context, index) {
-                  final rawRelease = sortedReleases[index];
-                  final release = Release.fromJson(rawRelease);
-                  final minisiteUrl = _minisiteExternalUrl(release);
-                  final artistNames = release.artistNames.join(', ');
-                  final coverImageUrl = delegate.apiClient.resolveMediaUrl(release.coverImageUrl);
-                  final approvedLinks = release.platformLinks.entries.toList()
-                    ..sort((a, b) => _platformLabel(a.key).compareTo(_platformLabel(b.key)));
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    child: ListTile(
-                      leading: coverImageUrl.isEmpty
-                          ? const CircleAvatar(child: Icon(Icons.album_outlined))
-                          : ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: Image.network(
-                                coverImageUrl,
-                                width: 56,
-                                height: 56,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) =>
-                                    const CircleAvatar(child: Icon(Icons.album_outlined)),
-                              ),
-                            ),
-                      onTap: () => _reviewReleaseLinks(release),
-                      title: Text(
-                        release.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            artistNames.isEmpty ? 'No artist assigned' : artistNames,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 8),
-                          if (approvedLinks.isEmpty)
-                            const Text(
-                              'No approved release links yet.',
-                              style: TextStyle(fontSize: 12),
-                            )
-                          else
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: approvedLinks
-                                  .map(
-                                    (entry) => ActionChip(
-                                      label: Text(_platformLabel(entry.key)),
-                                      onPressed: () => _openUrl(entry.value),
-                                    ),
-                                  )
-                                  .toList(),
-                            ),
-                          _buildMinisiteLinksSection(context, release),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              OutlinedButton.icon(
-                                icon: const Icon(ZalmanimIcons.sync, size: 18),
-                                label: const Text('Scan links'),
-                                onPressed: () => _scanReleaseLinks(rawRelease),
-                              ),
-                              FilledButton.tonalIcon(
-                                icon: const Icon(Icons.rule_folder_outlined, size: 18),
-                                label: Text(
-                                  release.pendingLinkCandidatesCount > 0
-                                      ? 'Review (${release.pendingLinkCandidatesCount})'
-                                      : 'Review links',
-                                ),
-                                onPressed: () => _reviewReleaseLinks(release),
-                              ),
-                              Tooltip(
-                                message: minisiteUrl == null
-                                    ? 'No minisite URL for this release yet'
-                                    : 'Open minisite in browser',
-                                child: OutlinedButton.icon(
-                                  icon: const Icon(Icons.open_in_new, size: 18),
-                                  label: const Text('View minisite'),
-                                  onPressed: minisiteUrl == null
-                                      ? null
-                                      : () => _openUrl(minisiteUrl),
-                                ),
-                              ),
-                              if (release.lastLinkScanAt != null &&
-                                  release.lastLinkScanAt!.trim().isNotEmpty)
-                                Chip(
-                                  label: Text(
-                                    'Last scan: ${release.lastLinkScanAt!.replaceFirst("T", " ").split(".").first}',
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      trailing: OutlinedButton.icon(
-                        icon: const Icon(Icons.chevron_right),
-                        label: const Text('Open'),
-                        onPressed: () => _reviewReleaseLinks(release),
-                      ),
-                      isThreeLine: true,
-                    ),
-                  );
-                },
-              ),
-            ),
-        ],
+        children: content,
       ),
     );
   }

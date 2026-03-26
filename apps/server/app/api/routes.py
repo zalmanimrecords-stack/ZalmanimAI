@@ -236,6 +236,7 @@ from app.services.release_link_discovery import (
     parse_platform_links,
     process_release_link_scan_run,
     queue_release_link_scan,
+    refresh_release_cover_artwork,
     reject_release_link_candidate,
 )
 from app.services.system_log import append_system_log
@@ -4357,6 +4358,41 @@ def reject_release_link_candidate_route(
         release=ReleaseOut.from_release(release),
         candidate=ReleaseLinkCandidateOut.from_candidate(candidate),
     )
+
+
+@router.post("/admin/releases/{release_id}/cover-art", response_model=ReleaseOut)
+def refresh_release_cover_art_route(
+    release_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> ReleaseOut:
+    require_admin(user)
+    release = (
+        db.query(Release)
+        .options(
+            joinedload(Release.artists),
+            joinedload(Release.artist),
+            joinedload(Release.link_candidates),
+            joinedload(Release.link_scan_runs),
+        )
+        .filter(Release.id == release_id)
+        .first()
+    )
+    if not release:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Release not found")
+    refresh_release_cover_artwork(db, release, force=True)
+    release = (
+        db.query(Release)
+        .options(
+            joinedload(Release.artists),
+            joinedload(Release.artist),
+            joinedload(Release.link_candidates),
+            joinedload(Release.link_scan_runs),
+        )
+        .filter(Release.id == release_id)
+        .first()
+    )
+    return ReleaseOut.from_release(release)
 
 
 @router.patch("/admin/releases/{release_id}/minisite", response_model=ReleaseOut)

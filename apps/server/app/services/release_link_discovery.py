@@ -335,6 +335,26 @@ def _maybe_update_release_cover(release: Release, candidates: Iterable[Discovery
     return False
 
 
+def _stored_candidate_to_discovery_candidate(candidate: ReleaseLinkCandidate) -> DiscoveryCandidate | None:
+    if getattr(candidate, "status", "") in {"rejected", "auto_rejected"}:
+        return None
+    try:
+        raw_payload = json.loads(getattr(candidate, "raw_payload_json", "{}") or "{}") or {}
+    except (json.JSONDecodeError, TypeError):
+        raw_payload = {}
+    if not _candidate_artwork_url(raw_payload):
+        return None
+    return DiscoveryCandidate(
+        platform=str(getattr(candidate, "platform", "") or "").strip(),
+        url=str(getattr(candidate, "url", "") or "").strip(),
+        match_title=getattr(candidate, "match_title", None),
+        match_artist=getattr(candidate, "match_artist", None),
+        confidence=float(getattr(candidate, "confidence", 0.0) or 0.0),
+        source_type=str(getattr(candidate, "source_type", "") or "").strip() or "web_search",
+        raw_payload=raw_payload if isinstance(raw_payload, dict) else {},
+    )
+
+
 def parse_platform_links(raw: str | None) -> dict[str, str]:
     try:
         data = json.loads(raw or "{}") or {}
@@ -1219,6 +1239,42 @@ def download_release_cover_after_approve(release_id: int, artwork_url: str) -> N
         db.rollback()
     finally:
         db.close()
+
+
+def refresh_release_cover_artwork(
+    db: Session,
+    release: Release,
+    *,
+    force: bool = False,
+    platforms: list[str] | None = None,
+) -> bool:
+    stored_candidates = [
+        item
+        for item in (
+            _stored_candidate_to_discovery_candidate(candidate)
+            for candidate in (getattr(release, "link_candidates", None) or [])
+        )
+        if item is not None
+    ]
+    if _maybe_update_release_cover(release, stored_candidates, force=force):
+        db.commit()
+        db.refresh(release)
+        return True
+
+    results = discover_release_links(
+        release.title,
+        _release_artist_names(release),
+        platforms=platforms,
+    )
+    discovered_candidates: list[DiscoveryCandidate] = []
+    for result in results:
+        for candidate in result.candidates:
+            discovered_candidates.append(candidate)
+            _upsert_release_link_candidate(db, release=release, candidate=candidate)
+    updated = _maybe_update_release_cover(release, discovered_candidates, force=force)
+    db.commit()
+    db.refresh(release)
+    return updated
 
 
 def reject_release_link_candidate(db: Session, candidate: ReleaseLinkCandidate) -> ReleaseLinkCandidate:

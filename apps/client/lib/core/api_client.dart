@@ -302,6 +302,25 @@ class ApiClient with ApiClientAuthOps, ApiClientAdminOps {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> refreshReleaseCoverArt({
+    required String token,
+    required int releaseId,
+  }) async {
+    final response = await http
+        .post(
+      Uri.parse('$baseUrl/admin/releases/$releaseId/cover-art'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: '{}',
+    )
+        .timeout(const Duration(seconds: 120));
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Refresh artwork failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> updateReleaseMinisite({
     required String token,
     required int releaseId,

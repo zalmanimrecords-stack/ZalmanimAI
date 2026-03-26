@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../core/models/catalog_track.dart';
 import '../../../core/zalmanim_icons.dart';
 import '../admin_dashboard_delegate.dart';
+import 'release_links_tab.dart';
 
 /// Releases tab: catalog (import, sync, list) + releases list with set artists.
 class ReleasesTab extends StatefulWidget {
@@ -235,7 +236,7 @@ class _ReleasesTabState extends State<ReleasesTab> {
           Row(
             children: [
               const Text(
-                'Catalog (from API)',
+                'Release management',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
               const SizedBox(width: 16),
@@ -271,11 +272,17 @@ class _ReleasesTabState extends State<ReleasesTab> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Use the Link discovery tab to scan and review streaming and store links for each release.',
+            'Manage release links, artwork, and minisites in one place below.',
             style: TextStyle(
               fontSize: 12,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
+          ),
+          const SizedBox(height: 12),
+          ReleaseLinksTab(
+            delegate: delegate,
+            embedded: true,
+            showTitle: false,
           ),
         ],
       ),

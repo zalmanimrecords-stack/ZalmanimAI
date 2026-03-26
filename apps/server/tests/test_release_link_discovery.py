@@ -545,3 +545,103 @@ def test_process_release_link_scan_run_updates_release_cover_from_candidate_artw
     db_session.refresh(release)
     assert release.cover_image_path == f"/tmp/release_{release.id}.jpg"
     assert release.cover_image_source_url == "https://img.example.com/ocean-echo.jpg"
+
+
+def test_refresh_release_cover_art_route_uses_existing_candidate_artwork(client, db_session, admin_headers, monkeypatch):
+    artist = Artist(name="Maya Waves", email="maya-refresh-cover@example.com", notes="")
+    release = Release(title="Ocean Echo", status="from_catalog", artist=artist)
+    release.artists.append(artist)
+    db_session.add_all([artist, release])
+    db_session.flush()
+    db_session.add(
+        ReleaseLinkCandidate(
+            release_id=release.id,
+            platform="youtube",
+            url="https://www.youtube.com/watch?v=ocean-echo",
+            match_title="Ocean Echo",
+            match_artist="Maya Waves",
+            confidence=0.91,
+            status="pending_review",
+            source_type="web_search",
+            raw_payload_json=json.dumps({"artwork_url": "https://img.example.com/existing-cover.jpg"}),
+        )
+    )
+    db_session.commit()
+
+    calls: list[str] = []
+
+    def fake_download(release_row, artwork_url):
+        calls.append(artwork_url)
+        release_row.cover_image_path = f"/tmp/release_{release_row.id}.jpg"
+        release_row.cover_image_source_url = artwork_url
+        return True
+
+    monkeypatch.setattr(
+        "app.services.release_link_discovery._download_release_cover_image",
+        fake_download,
+    )
+
+    response = client.post(
+        f"/api/admin/releases/{release.id}/cover-art",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    assert calls == ["https://img.example.com/existing-cover.jpg"]
+    db_session.refresh(release)
+    assert release.cover_image_source_url == "https://img.example.com/existing-cover.jpg"
+
+
+def test_refresh_release_cover_art_route_discovers_artwork_when_missing(client, db_session, admin_headers, monkeypatch):
+    artist = Artist(name="Maya Waves", email="maya-discover-cover@example.com", notes="")
+    release = Release(title="Ocean Echo", status="from_catalog", artist=artist)
+    release.artists.append(artist)
+    db_session.add_all([artist, release])
+    db_session.commit()
+
+    downloaded: list[str] = []
+
+    def fake_discover(release_title, artist_names, *, platforms=None):
+        return [
+            PlatformDiscoveryResult(
+                platform="bandcamp",
+                status="ok",
+                candidates=[
+                    DiscoveryCandidate(
+                        platform="bandcamp",
+                        url="https://artist.bandcamp.com/album/ocean-echo",
+                        match_title=release_title,
+                        match_artist=artist_names[0],
+                        confidence=0.93,
+                        source_type="web_search",
+                        raw_payload={"artwork_url": "https://img.example.com/discovered-cover.jpg"},
+                    )
+                ],
+            )
+        ]
+
+    def fake_download(release_row, artwork_url):
+        downloaded.append(artwork_url)
+        release_row.cover_image_path = f"/tmp/release_{release_row.id}.jpg"
+        release_row.cover_image_source_url = artwork_url
+        return True
+
+    monkeypatch.setattr(
+        "app.services.release_link_discovery.discover_release_links",
+        fake_discover,
+    )
+    monkeypatch.setattr(
+        "app.services.release_link_discovery._download_release_cover_image",
+        fake_download,
+    )
+
+    response = client.post(
+        f"/api/admin/releases/{release.id}/cover-art",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    assert downloaded == ["https://img.example.com/discovered-cover.jpg"]
+    db_session.refresh(release)
+    assert release.cover_image_source_url == "https://img.example.com/discovered-cover.jpg"
+    assert db_session.query(ReleaseLinkCandidate).filter(ReleaseLinkCandidate.release_id == release.id).count() == 1
