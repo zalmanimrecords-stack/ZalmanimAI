@@ -77,6 +77,37 @@ class _ReleasesTabState extends State<ReleasesTab> {
     }
   }
 
+  Future<void> _scanAllMissingReleaseLinks(List<Map<String, dynamic>> releases) async {
+    final releaseIds = releases
+        .map(Release.fromJson)
+        .where(
+          (release) =>
+              release.platformLinks.isEmpty &&
+              release.pendingLinkCandidatesCount == 0,
+        )
+        .map((release) => release.id)
+        .toList();
+    if (releaseIds.isEmpty) {
+      delegate.showErrorSnackBar('No releases need link scanning right now.');
+      return;
+    }
+    try {
+      final result = await delegate.apiClient.queueReleaseLinkScan(
+        token: delegate.token,
+        releaseIds: releaseIds,
+      );
+      await delegate.loadReleases();
+      if (!mounted) return;
+      final message = (result['message'] ?? 'Release link scan queued.').toString();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      delegate.showErrorSnackBar(e.toString());
+    }
+  }
+
   Future<void> _reviewReleaseLinks(Release release) async {
     List<Map<String, dynamic>> candidates = [];
     var loadingCandidates = true;
@@ -367,6 +398,14 @@ class _ReleasesTabState extends State<ReleasesTab> {
     final catalogTracks = delegate.catalogTracksList;
     final sortedCatalog = _sortedCatalogTracks();
     final sortedReleases = _sortedAdminReleases();
+    final bulkScanCount = sortedReleases
+        .map(Release.fromJson)
+        .where(
+          (release) =>
+              release.platformLinks.isEmpty &&
+              release.pendingLinkCandidatesCount == 0,
+        )
+        .length;
     final searchQuery = delegate.releasesSearchController.text.trim();
     final catalogListHeight = math.min<double>(
       math.max<double>(sortedCatalog.length * _catalogRowHeight, 220),
@@ -482,6 +521,14 @@ class _ReleasesTabState extends State<ReleasesTab> {
                 'Releases (from API)',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
+              const SizedBox(width: 12),
+              FilledButton.tonalIcon(
+                onPressed: bulkScanCount == 0
+                    ? null
+                    : () => _scanAllMissingReleaseLinks(sortedReleases),
+                icon: const Icon(ZalmanimIcons.sync, size: 18),
+                label: Text('Scan all missing links ($bulkScanCount)'),
+              ),
               const SizedBox(width: 16),
               Text(
                 'Sort (after unassigned):',
@@ -515,7 +562,7 @@ class _ReleasesTabState extends State<ReleasesTab> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Releases without an artist are highlighted in orange.',
+            'Releases without an artist are highlighted in orange. Click a release to view every link candidate that was found.',
             style: TextStyle(
               fontSize: 12,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -548,6 +595,7 @@ class _ReleasesTabState extends State<ReleasesTab> {
                           : BorderSide(color: Theme.of(context).dividerColor),
                     ),
                     child: ListTile(
+                      onTap: () => _reviewReleaseLinks(release),
                       title: Text(
                         release.title,
                         maxLines: 1,
