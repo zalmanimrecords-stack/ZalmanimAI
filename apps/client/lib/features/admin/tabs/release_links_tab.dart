@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/models/release.dart';
@@ -18,12 +19,8 @@ class ReleaseLinksTab extends StatefulWidget {
 
 class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
   final _releasesController = ScrollController();
-  static const double _releaseItemHeight = 84;
-  static const List<String> _minisiteThemes = [
-    'nebula',
-    'sunset_poster',
-    'paperwave',
-  ];
+  /// Rough height per row for the releases list viewport (cards include minisite URLs).
+  static const double _releaseItemHeight = 168;
 
   AdminDashboardDelegate get delegate => widget.delegate;
 
@@ -41,7 +38,7 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
 
   String _platformLabel(String key) => _platformLabels[key] ?? key;
 
-  /// Best URL to open the release minisite in a browser (public page when published, else preview).
+  /// Best URL to open the release minisite in a browser (public when published, else preview).
   String? _minisiteExternalUrl(Release release) {
     final publicRaw = release.minisitePublicUrl?.trim() ?? '';
     final previewRaw = release.minisitePreviewUrl?.trim() ?? '';
@@ -55,6 +52,142 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
       return delegate.apiClient.resolveMediaUrl(publicRaw);
     }
     return null;
+  }
+
+  String? _resolveMinisiteMediaUrl(String? raw) {
+    final t = raw?.trim() ?? '';
+    if (t.isEmpty) return null;
+    return delegate.apiClient.resolveMediaUrl(t);
+  }
+
+  void _copyToClipboard(String text) {
+    Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Link copied to clipboard')),
+    );
+  }
+
+  Widget _minisiteUrlRow(
+    BuildContext context, {
+    required String label,
+    required String url,
+    required bool isVisitorLink,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: SelectableText(
+                url,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isVisitorLink ? scheme.primary : scheme.onSurface,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Copy link',
+              icon: const Icon(Icons.copy, size: 20),
+              onPressed: () => _copyToClipboard(url),
+            ),
+            IconButton(
+              tooltip: 'Open in browser',
+              icon: const Icon(Icons.open_in_new, size: 20),
+              onPressed: () => _openUrl(url),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMinisiteLinksSection(BuildContext context, Release release) {
+    final theme = Theme.of(context);
+    final publicResolved = _resolveMinisiteMediaUrl(release.minisitePublicUrl);
+    final previewResolved = _resolveMinisiteMediaUrl(release.minisitePreviewUrl);
+    final sameUrl = publicResolved != null &&
+        previewResolved != null &&
+        publicResolved == previewResolved;
+
+    if (publicResolved == null && previewResolved == null) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Text(
+          'Minisite: no URLs yet.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+
+    final children = <Widget>[
+      const SizedBox(height: 8),
+      Text(
+        'Minisite',
+        style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+      ),
+      const SizedBox(height: 6),
+    ];
+
+    if (sameUrl) {
+      final url = publicResolved;
+      final label = release.minisiteIsPublic
+          ? 'Public page — visitors use this link'
+          : 'Preview — not published yet (visitors do not have a public page)';
+      children.add(
+        _minisiteUrlRow(
+          context,
+          label: label,
+          url: url,
+          isVisitorLink: release.minisiteIsPublic,
+        ),
+      );
+    } else {
+      if (publicResolved != null) {
+        final label = release.minisiteIsPublic
+            ? 'Public page — visitors use this link'
+            : 'Public URL — not published (visitors cannot open this yet)';
+        children.add(
+          _minisiteUrlRow(
+            context,
+            label: label,
+            url: publicResolved,
+            isVisitorLink: release.minisiteIsPublic,
+          ),
+        );
+      }
+      if (previewResolved != null && !sameUrl) {
+        if (publicResolved != null) {
+          children.add(const SizedBox(height: 10));
+        }
+        children.add(
+          _minisiteUrlRow(
+            context,
+            label: 'Preview page — draft / staff view',
+            url: previewResolved,
+            isVisitorLink: false,
+          ),
+        );
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: children,
+    );
   }
 
   @override
@@ -329,230 +462,6 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
     );
   }
 
-  Future<void> _configureMinisite(Release release) async {
-    var currentRelease = release;
-    final minisite = Map<String, dynamic>.from(release.minisite);
-    final theme = ValueNotifier<String>(release.minisiteTheme ?? _minisiteThemes.first);
-    final isPublic = ValueNotifier<bool>(release.minisiteIsPublic);
-    final descriptionController =
-        TextEditingController(text: (minisite['description'] ?? '').toString());
-    final downloadController =
-        TextEditingController(text: (minisite['download_url'] ?? '').toString());
-    final galleryController = TextEditingController(
-      text: minisite['gallery_urls'] is List
-          ? (minisite['gallery_urls'] as List)
-              .map((item) => item?.toString() ?? '')
-              .where((item) => item.isNotEmpty)
-              .join('\n')
-          : '',
-    );
-    final messageController = TextEditingController();
-
-    Future<void> saveConfig(StateSetter setDialogState) async {
-      final updated = await delegate.apiClient.updateReleaseMinisite(
-        token: delegate.token,
-        releaseId: currentRelease.id,
-        theme: theme.value,
-        isPublic: isPublic.value,
-        description: descriptionController.text.trim(),
-        downloadUrl: downloadController.text.trim(),
-        galleryUrls: galleryController.text
-            .split('\n')
-            .map((line) => line.trim())
-            .where((line) => line.isNotEmpty)
-            .toList(),
-      );
-      setDialogState(() {
-        currentRelease = Release.fromJson(updated);
-      });
-      await delegate.loadReleases();
-    }
-
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) {
-          final previewUrl = currentRelease.minisitePreviewUrl == null
-              ? ''
-              : delegate.apiClient.resolveMediaUrl(currentRelease.minisitePreviewUrl);
-          final publicUrl = currentRelease.minisitePublicUrl == null
-              ? ''
-              : delegate.apiClient.resolveMediaUrl(currentRelease.minisitePublicUrl);
-          return AlertDialog(
-            title: Text('Release minisite: ${currentRelease.title}'),
-            content: SizedBox(
-              width: 640,
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  DropdownButtonFormField<String>(
-                    initialValue: theme.value,
-                    decoration: const InputDecoration(labelText: 'Theme'),
-                    items: _minisiteThemes
-                        .map((item) => DropdownMenuItem(value: item, child: Text(item)))
-                        .toList(),
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setDialogState(() => theme.value = value);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: isPublic.value,
-                    title: const Text('Public link open to the world'),
-                    onChanged: (value) => setDialogState(() => isPublic.value = value),
-                  ),
-                  if (publicUrl.isNotEmpty || previewUrl.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      'Open minisite',
-                      style: Theme.of(dialogContext).textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 6),
-                    if (publicUrl.isNotEmpty)
-                      _minisiteUrlRow(
-                        dialogContext,
-                        label: 'Public',
-                        url: publicUrl,
-                      ),
-                    if (previewUrl.isNotEmpty)
-                      _minisiteUrlRow(
-                        dialogContext,
-                        label: 'Preview',
-                        url: previewUrl,
-                      ),
-                  ],
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: descriptionController,
-                    minLines: 3,
-                    maxLines: 5,
-                    decoration: const InputDecoration(
-                      labelText: 'Release / artist description',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: downloadController,
-                    decoration: const InputDecoration(labelText: 'Download URL'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: galleryController,
-                    minLines: 3,
-                    maxLines: 5,
-                    decoration: const InputDecoration(
-                      labelText: 'Extra image URLs (one per line)',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: messageController,
-                    minLines: 2,
-                    maxLines: 4,
-                    decoration: const InputDecoration(
-                      labelText: 'Optional message when sending to artist',
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      FilledButton(
-                        onPressed: () async {
-                          try {
-                            await saveConfig(setDialogState);
-                            if (!mounted || !dialogContext.mounted) return;
-                            Navigator.of(dialogContext).pop();
-                          } catch (e) {
-                            if (mounted) delegate.showErrorSnackBar(e.toString());
-                          }
-                        },
-                        child: const Text('Save minisite'),
-                      ),
-                      OutlinedButton(
-                        onPressed: previewUrl.isEmpty ? null : () => _openUrl(previewUrl),
-                        child: const Text('Preview'),
-                      ),
-                      OutlinedButton(
-                        onPressed: publicUrl.isEmpty ? null : () => _openUrl(publicUrl),
-                        child: const Text('Open public'),
-                      ),
-                      FilledButton.tonal(
-                        onPressed: () async {
-                          try {
-                            await saveConfig(setDialogState);
-                            await delegate.apiClient.sendReleaseMinisite(
-                              token: delegate.token,
-                              releaseId: currentRelease.id,
-                              message: messageController.text.trim(),
-                            );
-                            await delegate.loadReleases();
-                            if (!mounted || !dialogContext.mounted) return;
-                            ScaffoldMessenger.of(dialogContext).showSnackBar(
-                              const SnackBar(content: Text('Minisite link sent to artist')),
-                            );
-                          } catch (e) {
-                            if (mounted) delegate.showErrorSnackBar(e.toString());
-                          }
-                        },
-                        child: const Text('Send to artist'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('Close'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _minisiteUrlRow(
-    BuildContext context, {
-    required String label,
-    required String url,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                ),
-                const SizedBox(height: 2),
-                SelectableText(url),
-              ],
-            ),
-          ),
-          IconButton(
-            tooltip: 'Open in browser',
-            icon: const Icon(Icons.open_in_new),
-            onPressed: () => _openUrl(url),
-          ),
-        ],
-      ),
-    );
-  }
-
   List<Map<String, dynamic>> _sortedAdminReleases() {
     final list = List<Map<String, dynamic>>.from(
       delegate.adminReleasesList.map((e) => e as Map<String, dynamic>),
@@ -595,7 +504,7 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
           Row(
             children: [
               const Text(
-                'Release links & minisites',
+                'Release link discovery',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(width: 12),
@@ -610,7 +519,8 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Scan and review streaming/store links, then configure each release’s public minisite (theme, copy, publish). '
+            'Scan and review streaming/store link candidates. '
+            'Each release shows minisite URLs: the public link is what visitors use when published. '
             'Releases waiting for link review are listed first.',
             style: TextStyle(
               fontSize: 12,
@@ -632,6 +542,7 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
                 itemBuilder: (context, index) {
                   final rawRelease = sortedReleases[index];
                   final release = Release.fromJson(rawRelease);
+                  final minisiteUrl = _minisiteExternalUrl(release);
                   final artistNames = release.artistNames.join(', ');
                   final coverImageUrl = delegate.apiClient.resolveMediaUrl(release.coverImageUrl);
                   final approvedLinks = release.platformLinks.entries.toList()
@@ -685,6 +596,7 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
                                   )
                                   .toList(),
                             ),
+                          _buildMinisiteLinksSection(context, release),
                           const SizedBox(height: 8),
                           Wrap(
                             spacing: 8,
@@ -704,24 +616,17 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
                                 ),
                                 onPressed: () => _reviewReleaseLinks(release),
                               ),
-                              FilledButton.icon(
-                                icon: const Icon(Icons.palette_outlined, size: 18),
-                                label: const Text('Minisite'),
-                                onPressed: () => _configureMinisite(release),
-                              ),
-                              Builder(
-                                builder: (_) {
-                                  final minisiteUrl = _minisiteExternalUrl(release);
-                                  return IconButton(
-                                    tooltip: minisiteUrl == null
-                                        ? 'Configure minisite first'
-                                        : 'Open minisite in browser',
-                                    icon: const Icon(Icons.open_in_new, size: 20),
-                                    onPressed: minisiteUrl == null
-                                        ? null
-                                        : () => _openUrl(minisiteUrl),
-                                  );
-                                },
+                              Tooltip(
+                                message: minisiteUrl == null
+                                    ? 'No minisite URL for this release yet'
+                                    : 'Open minisite in browser',
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.open_in_new, size: 18),
+                                  label: const Text('View minisite'),
+                                  onPressed: minisiteUrl == null
+                                      ? null
+                                      : () => _openUrl(minisiteUrl),
+                                ),
                               ),
                               if (release.lastLinkScanAt != null &&
                                   release.lastLinkScanAt!.trim().isNotEmpty)

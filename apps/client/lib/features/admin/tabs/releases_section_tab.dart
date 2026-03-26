@@ -6,7 +6,7 @@ import 'pending_releases_tab.dart';
 import 'release_links_tab.dart';
 import 'releases_tab.dart';
 
-/// Parent tab "Releases" with sub-tabs for catalog, links/minisites, and pending releases.
+/// Parent tab "Releases" with sub-tabs for catalog, link discovery, and pending releases.
 class ReleasesSectionTab extends StatelessWidget {
   const ReleasesSectionTab({super.key, required this.delegate});
 
@@ -35,7 +35,7 @@ class ReleasesSectionTab extends StatelessWidget {
                     size: 20,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
-                  text: 'Links & minisites',
+                  text: 'Link discovery',
                 ),
                 Tab(
                   icon: ZalmanimIcons.squidIcon(

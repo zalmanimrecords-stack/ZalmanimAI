@@ -14,7 +14,7 @@ from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
 import httpx
 from PIL import Image, ImageOps
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from sqlalchemy import desc, func, or_, text, update
 from sqlalchemy.exc import SQLAlchemyError
@@ -230,6 +230,8 @@ from app.services.release_link_discovery import (
     SUPPORTED_RELEASE_LINK_PLATFORMS,
     approve_release_link_candidate,
     best_release_link,
+    candidate_artwork_url,
+    download_release_cover_after_approve,
     ensure_periodic_release_link_scan_runs,
     parse_platform_links,
     process_release_link_scan_run,
@@ -4267,6 +4269,7 @@ def list_release_link_candidates(
 def approve_release_link_candidate_route(
     release_id: int,
     candidate_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_lm_user),
 ) -> ReleaseLinkCandidateReviewResponse:
@@ -4284,8 +4287,11 @@ def approve_release_link_candidate_route(
     )
     if not candidate:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found")
+    artwork_url = candidate_artwork_url(candidate)
     release = approve_release_link_candidate(db, candidate)
     db.refresh(candidate)
+    if artwork_url:
+        background_tasks.add_task(download_release_cover_after_approve, release.id, artwork_url)
     return ReleaseLinkCandidateReviewResponse(
         release=ReleaseOut.from_release(release),
         candidate=ReleaseLinkCandidateOut.from_candidate(candidate),

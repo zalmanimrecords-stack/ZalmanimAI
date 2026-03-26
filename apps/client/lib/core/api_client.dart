@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
@@ -267,10 +267,13 @@ class ApiClient with ApiClientAuthOps, ApiClientAdminOps {
     required int releaseId,
     required int candidateId,
   }) async {
-    final response = await http.post(
+    final response = await http
+        .post(
       Uri.parse('$baseUrl/admin/releases/$releaseId/link-candidates/$candidateId/approve'),
-      headers: _authHeaders(token),
-    );
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: '{}',
+    )
+        .timeout(const Duration(seconds: 120));
     if (response.statusCode != 200) {
       throw Exception(
         'Approve candidate failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
@@ -284,10 +287,13 @@ class ApiClient with ApiClientAuthOps, ApiClientAdminOps {
     required int releaseId,
     required int candidateId,
   }) async {
-    final response = await http.post(
+    final response = await http
+        .post(
       Uri.parse('$baseUrl/admin/releases/$releaseId/link-candidates/$candidateId/reject'),
-      headers: _authHeaders(token),
-    );
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: '{}',
+    )
+        .timeout(const Duration(seconds: 120));
     if (response.statusCode != 200) {
       throw Exception(
         'Reject candidate failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',

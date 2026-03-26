@@ -1187,16 +1187,38 @@ def approve_release_link_candidate(db: Session, candidate: ReleaseLinkCandidate)
             sibling.reviewed_at = datetime.now(timezone.utc)
     candidate.status = "approved"
     candidate.reviewed_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(release)
+    return release
+
+
+def candidate_artwork_url(candidate: ReleaseLinkCandidate) -> str | None:
     try:
         raw_payload = json.loads(candidate.raw_payload_json or "{}") or {}
     except (json.JSONDecodeError, TypeError):
         raw_payload = {}
-    artwork_url = _candidate_artwork_url(raw_payload)
-    if artwork_url:
-        _download_release_cover_image(release, artwork_url)
-    db.commit()
-    db.refresh(release)
-    return release
+    return _candidate_artwork_url(raw_payload)
+
+
+def download_release_cover_after_approve(release_id: int, artwork_url: str) -> None:
+    """Background task: download cover after approve so the HTTP response returns quickly."""
+    artwork_url = (artwork_url or "").strip()
+    if not artwork_url:
+        return
+    from app.db.session import SessionLocal
+    from app.models.models import Release
+
+    db = SessionLocal()
+    try:
+        release = db.query(Release).filter(Release.id == release_id).first()
+        if not release:
+            return
+        if _download_release_cover_image(release, artwork_url):
+            db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
 
 
 def reject_release_link_candidate(db: Session, candidate: ReleaseLinkCandidate) -> ReleaseLinkCandidate:
