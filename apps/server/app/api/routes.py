@@ -9,6 +9,7 @@ import re
 import secrets
 import uuid
 from datetime import date, datetime, timedelta, timezone
+from typing import Any
 from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
 
 import httpx
@@ -17,7 +18,7 @@ from PIL import Image, ImageOps
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from sqlalchemy import desc, func, or_, text, update
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import (
@@ -2341,6 +2342,27 @@ def get_artist(
     return ArtistOut.from_artist(artist)
 
 
+def _artist_duplicate_email_detail(
+    existing: Artist,
+    *,
+    editing_artist_id: int | None = None,
+) -> dict[str, Any]:
+    """Structured JSON for HTTP 409 when artists.email unique constraint would be violated."""
+    detail: dict[str, Any] = {
+        "message": (
+            "An artist with this email already exists. "
+            "If these are duplicate profiles for the same person, use Admin → Merge artists: "
+            "set the account that should keep this email as the target, add the other artist as a source, then merge."
+        ),
+        "existing_artist_id": existing.id,
+        "existing_artist_name": existing.name,
+        "suggest_merge": editing_artist_id is not None,
+    }
+    if editing_artist_id is not None:
+        detail["editing_artist_id"] = editing_artist_id
+    return detail
+
+
 @router.post("/artists", response_model=ArtistOut)
 def create_artist(
     payload: ArtistCreate,
@@ -2356,7 +2378,17 @@ def create_artist(
         extra_json=json.dumps(extra) if extra else "{}",
     )
     db.add(artist)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        dup = db.query(Artist).filter(Artist.email == str(payload.email)).first()
+        if dup:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=_artist_duplicate_email_detail(dup, editing_artist_id=None),
+            ) from exc
+        raise
     db.refresh(artist)
     return ArtistOut.from_artist(artist)
 
@@ -2376,7 +2408,20 @@ def update_artist(
     if payload.name is not None:
         artist.name = payload.name
     if payload.email is not None:
-        artist.email = payload.email
+        email_str = str(payload.email)
+        existing = (
+            db.query(Artist)
+            .filter(Artist.email == email_str, Artist.id != artist_id)
+            .first()
+        )
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=_artist_duplicate_email_detail(
+                    existing, editing_artist_id=artist_id
+                ),
+            )
+        artist.email = email_str
     if payload.notes is not None:
         artist.notes = payload.notes
     if payload.is_active is not None:
@@ -2389,7 +2434,26 @@ def update_artist(
             artist.extra_json = json.dumps(current)
         except (json.JSONDecodeError, TypeError):
             artist.extra_json = json.dumps(extra)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        conflict_email = (
+            str(payload.email) if payload.email is not None else artist.email
+        )
+        dup = (
+            db.query(Artist)
+            .filter(Artist.email == conflict_email, Artist.id != artist_id)
+            .first()
+        )
+        if dup:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=_artist_duplicate_email_detail(
+                    dup, editing_artist_id=artist_id
+                ),
+            ) from exc
+        raise
     db.refresh(artist)
     return ArtistOut.from_artist(artist)
 
