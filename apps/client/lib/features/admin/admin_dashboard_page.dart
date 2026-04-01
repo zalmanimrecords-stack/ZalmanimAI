@@ -3171,6 +3171,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Artist added')));
       _load();
+    } on ArtistDuplicateEmailException catch (e) {
+      await _handleArtistDuplicateEmail(e);
     } catch (e) {
       _showErrorSnackBar(e.toString());
     }
@@ -3244,8 +3246,115 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Artist updated')));
       _load();
+    } on ArtistDuplicateEmailException catch (e) {
+      await _handleArtistDuplicateEmail(e, fallbackEditingId: id);
     } catch (e) {
       _showErrorSnackBar(e.toString());
+    }
+  }
+
+  Future<void> _handleArtistDuplicateEmail(
+    ArtistDuplicateEmailException e, {
+    int? fallbackEditingId,
+  }) async {
+    if (!mounted) return;
+    final existingId = e.existingArtistId;
+    final existingName = (e.existingArtistName ?? '').trim();
+    final editingId = e.editingArtistId ?? fallbackEditingId;
+    final canMerge = e.suggestMerge &&
+        existingId != null &&
+        editingId != null &&
+        existingId != editingId;
+
+    final buf = StringBuffer(e.message);
+    if (existingId != null) {
+      buf.write('\n\nExisting artist: #');
+      buf.write(existingId);
+      if (existingName.isNotEmpty) {
+        buf.write(' ($existingName)');
+      }
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Email already in use'),
+        content: SingleChildScrollView(
+          child: SelectableText(buf.toString()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+          if (canMerge)
+            FilledButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                await _mergeArtistsFromDuplicateEmail(
+                  targetArtistId: existingId,
+                  sourceArtistId: editingId,
+                );
+              },
+              child: const Text('Merge records…'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _mergeArtistsFromDuplicateEmail({
+    required int targetArtistId,
+    required int sourceArtistId,
+  }) async {
+    if (!mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Merge artists?'),
+        content: SelectableText(
+          'The email will stay on artist #$targetArtistId (target). '
+          'Artist #$sourceArtistId will be merged into this row and deactivated. '
+          'Releases stay on their current links unless you reassign them separately.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Merge')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      setState(() => loading = true);
+      await widget.apiClient.mergeArtists(
+        token: widget.token,
+        targetArtistId: targetArtistId,
+        sourceArtistIds: [sourceArtistId],
+      );
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: SelectableText(
+            'Merged artist #$sourceArtistId into #$targetArtistId.',
+          ),
+          action: SnackBarAction(
+            label: 'Copy',
+            onPressed: () => Clipboard.setData(
+              ClipboardData(
+                  text: 'Merged #$sourceArtistId into #$targetArtistId'),
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      _showErrorSnackBar(e.toString());
+    } finally {
+      if (mounted) setState(() => loading = false);
     }
   }
 

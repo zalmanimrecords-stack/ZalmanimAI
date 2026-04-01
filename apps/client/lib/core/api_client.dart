@@ -9,6 +9,55 @@ import 'api_media_url.dart';
 
 part 'api_client_ops.dart';
 
+/// Email conflicts with [existingArtistId]; [editingArtistId] is set when updating an artist row.
+class ArtistDuplicateEmailException implements Exception {
+  ArtistDuplicateEmailException({
+    required this.message,
+    this.existingArtistId,
+    this.existingArtistName,
+    this.editingArtistId,
+    this.suggestMerge = false,
+    this.rawBody = '',
+  });
+
+  final String message;
+  final int? existingArtistId;
+  final String? existingArtistName;
+  final int? editingArtistId;
+  final bool suggestMerge;
+  final String rawBody;
+
+  @override
+  String toString() => message;
+}
+
+Never _throwArtistWriteError(String operationLabel, http.Response response) {
+  if (response.statusCode == 409) {
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        final detail = decoded['detail'];
+        if (detail is Map<String, dynamic>) {
+          final msg = detail['message']?.toString() ??
+              'An artist with this email already exists';
+          throw ArtistDuplicateEmailException(
+            message: msg,
+            existingArtistId: (detail['existing_artist_id'] as num?)?.toInt(),
+            existingArtistName: detail['existing_artist_name']?.toString(),
+            editingArtistId: (detail['editing_artist_id'] as num?)?.toInt(),
+            suggestMerge: detail['suggest_merge'] == true,
+            rawBody: response.body,
+          );
+        }
+      }
+    } catch (e) {
+      if (e is ArtistDuplicateEmailException) rethrow;
+    }
+  }
+  throw Exception(
+    '$operationLabel (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+  );
+}
 
 class ApiClient with ApiClientAuthOps, ApiClientAdminOps {
   ApiClient({required this.baseUrl});
@@ -170,8 +219,7 @@ class ApiClient with ApiClientAuthOps, ApiClientAdminOps {
       body: jsonEncode(body),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-          'Create artist failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
+      _throwArtistWriteError('Create artist failed', response);
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
@@ -187,8 +235,7 @@ class ApiClient with ApiClientAuthOps, ApiClientAdminOps {
       body: jsonEncode(body),
     );
     if (response.statusCode != 200) {
-      throw Exception(
-          'Update artist failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}');
+      _throwArtistWriteError('Update artist failed', response);
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
