@@ -2,7 +2,7 @@ import json
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 
 class LoginRequest(BaseModel):
@@ -82,8 +82,7 @@ class UserIdentityOut(BaseModel):
     created_at: datetime
     last_login_at: datetime | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserOut(BaseModel):
@@ -202,6 +201,11 @@ class ArtistSelfUpdate(BaseModel):
     linktree: str | None = None
     profile_image_media_id: int | None = None  # Artist media ID for Linktree profile image
     logo_media_id: int | None = None  # Artist media ID for Linktree logo
+    minisite_headline: str | None = None
+    minisite_bio: str | None = None
+    minisite_theme: str | None = None
+    minisite_gallery_media_ids: list[int] | None = None
+    minisite_is_public: bool | None = None
 
 
 class ArtistMediaOut(BaseModel):
@@ -212,8 +216,7 @@ class ArtistMediaOut(BaseModel):
     size_bytes: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ArtistMediaListResponse(BaseModel):
@@ -242,6 +245,10 @@ class LinktreeOut(BaseModel):
     profile_image_url: str | None = None  # Public URL to profile image (if set)
     logo_url: str | None = None  # Public URL to logo image (if set)
     releases: list[LinktreeRelease] = []  # Artist's releases (title, optional url)
+    headline: str | None = None
+    bio: str | None = None
+    theme: str = "ocean"
+    gallery_image_urls: list[str] = []
 
 
 class ArtistDemoSubmitRequest(BaseModel):
@@ -267,7 +274,8 @@ def _artist_extra_from_model(m: BaseModel) -> dict:
         "artist_brand", "full_name", "website", "soundcloud", "facebook",
         "twitter_1", "twitter_2", "youtube", "tiktok", "instagram", "spotify",
         "other_1", "other_2", "other_3", "comments", "apple_music", "address", "source_row",
-        "linktree", "profile_image_media_id", "logo_media_id",
+        "linktree", "profile_image_media_id", "logo_media_id", "minisite_headline",
+        "minisite_bio", "minisite_theme", "minisite_gallery_media_ids", "minisite_is_public",
     )
     out = {
         k: getattr(m, k)
@@ -293,8 +301,7 @@ class ArtistOut(BaseModel):
     last_login_at: datetime | None = None
     last_profile_updated_at: datetime | None = None  # When artist last updated their portal profile
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
     @classmethod
     def from_artist(
@@ -369,8 +376,7 @@ class ReleaseOut(BaseModel):
     last_link_scan_at: datetime | None = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
     @classmethod
     def from_release(cls, release) -> "ReleaseOut":
@@ -469,8 +475,7 @@ class ReleaseLinkCandidateOut(BaseModel):
     discovered_at: datetime
     reviewed_at: datetime | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
     @classmethod
     def from_candidate(cls, candidate) -> "ReleaseLinkCandidateOut":
@@ -543,8 +548,7 @@ class CatalogTrackOut(BaseModel):
     duration: str | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TaskOut(BaseModel):
@@ -555,8 +559,7 @@ class TaskOut(BaseModel):
     details: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ArtistDashboard(BaseModel):
@@ -615,8 +618,7 @@ class SocialConnectionOut(BaseModel):
     authorized_at: datetime | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SocialCallbackResponse(BaseModel):
@@ -650,8 +652,7 @@ class HubConnectorOut(BaseModel):
     status: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class HubConnectorCreate(BaseModel):
@@ -719,8 +720,7 @@ class SystemLogOut(BaseModel):
     details: str | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DemoSubmissionCreate(BaseModel):
@@ -820,8 +820,7 @@ class CampaignRequestOut(BaseModel):
     created_at: datetime
     updated_at: datetime | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Pending for release (artist filled form after track approved)
@@ -899,8 +898,7 @@ class PendingReleaseCommentOut(BaseModel):
     body: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PendingReleaseDetailOut(PendingReleaseOut):
@@ -1027,8 +1025,7 @@ class CampaignTargetOut(BaseModel):
     external_id: str
     channel_payload: dict = {}
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
     @classmethod
     def from_target(cls, target) -> "CampaignTargetOut":
@@ -1057,8 +1054,7 @@ class CampaignDeliveryOut(BaseModel):
     error_message: str | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CampaignOut(BaseModel):
@@ -1077,8 +1073,7 @@ class CampaignOut(BaseModel):
     targets: list[CampaignTargetOut] = []
     deliveries: list[CampaignDeliveryOut] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
     @classmethod
     def from_campaign(cls, campaign) -> "CampaignOut":
@@ -1137,8 +1132,7 @@ class MailingListOut(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MailingSubscriberCreate(BaseModel):
@@ -1173,8 +1167,7 @@ class MailingSubscriberOut(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ScheduleCampaignRequest(BaseModel):
     scheduled_at: datetime | None = None  # None = send now

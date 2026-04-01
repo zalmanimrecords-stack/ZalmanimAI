@@ -1,0 +1,140 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-labelops}
+      POSTGRES_USER: ${POSTGRES_USER:-label}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env.staging}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-label} -d ${POSTGRES_DB:-labelops}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    image: zalmanimai-api-staging:${IMAGE_TAG:-latest}
+    build:
+      context: ./apps/server
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    restart: unless-stopped
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.staging-lmapi.entrypoints: "websecure"
+      traefik.http.routers.staging-lmapi.rule: "Host(`staging-lmapi.zalmanim.com`)"
+      traefik.http.routers.staging-lmapi.tls.certresolver: "letsencrypt"
+      traefik.http.services.staging-lmapi.loadbalancer.server.port: "8000"
+    env_file:
+      - ./deploy/.env.staging
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-label}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-labelops}
+      REDIS_URL: redis://redis:6379/0
+      UPLOAD_DIR: /app/storage/uploads
+      DEMO_SUBMISSION_TOKEN: ${DEMO_SUBMISSION_TOKEN:-}
+      GIT_LAST_UPDATE: ${GIT_LAST_UPDATE:-}
+      BUILD_NUMBER: ${BUILD_NUMBER:-}
+    volumes:
+      - server_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"from urllib.request import urlopen; import sys; sys.exit(0 if urlopen('http://127.0.0.1:8000/health').status == 200 else 1)\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    image: zalmanimai-worker-staging:${IMAGE_TAG:-latest}
+    build:
+      context: ./apps/server
+    command: ["python", "worker.py"]
+    restart: unless-stopped
+    env_file:
+      - ./deploy/.env.staging
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-label}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-labelops}
+      REDIS_URL: redis://redis:6379/0
+      UPLOAD_DIR: /app/storage/uploads
+      WORKER_HEARTBEAT_PATH: /tmp/worker-heartbeat.txt
+      WORKER_HEARTBEAT_MAX_AGE_SEC: 600
+    volumes:
+      - server_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import os,time,pathlib,sys; p=pathlib.Path(os.getenv('WORKER_HEARTBEAT_PATH','/tmp/worker-heartbeat.txt')); max_age=int(os.getenv('WORKER_HEARTBEAT_MAX_AGE_SEC','600')); sys.exit(0 if p.exists() and time.time()-p.stat().st_mtime <= max_age else 1)\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
+  web:
+    image: zalmanimai-web-staging:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: ./deploy/web/Dockerfile
+      args:
+        API_BASE_URL: ${API_BASE_URL:-https://staging-lmapi.zalmanim.com/}
+        ARTIST_API_BASE_URL: ${ARTIST_API_BASE_URL:-https://staging-lmapi.zalmanim.com/}
+        ARTIST_LABEL_NAME: ${ARTIST_LABEL_NAME:-Zalmanim Artists}
+        ARTIST_PRIMARY_COLOR: ${ARTIST_PRIMARY_COLOR:-B66A2C}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+    expose:
+      - "80"
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.staging-lm-web.entrypoints: "websecure"
+      traefik.http.routers.staging-lm-web.rule: "Host(`staging-lm.zalmanim.com`)"
+      traefik.http.routers.staging-lm-web.tls.certresolver: "letsencrypt"
+      traefik.http.routers.staging-lm-web.service: "staging-lm-web-svc"
+      traefik.http.routers.staging-artists-web.entrypoints: "websecure"
+      traefik.http.routers.staging-artists-web.rule: "Host(`staging-artists.zalmanim.com`)"
+      traefik.http.routers.staging-artists-web.tls.certresolver: "letsencrypt"
+      traefik.http.routers.staging-artists-web.service: "staging-artists-web-svc"
+      traefik.http.services.staging-lm-web-svc.loadbalancer.server.port: "80"
+      traefik.http.services.staging-artists-web-svc.loadbalancer.server.port: "80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:
+  redis_data:
+  server_storage:

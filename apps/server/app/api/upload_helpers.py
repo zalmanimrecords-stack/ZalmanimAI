@@ -16,6 +16,19 @@ def _sanitize_filename_component(value: str | None, *, fallback: str) -> str:
     return text or fallback
 
 
+def _pending_release_label_image_base_name(pending_release) -> str:
+    """Human-readable stem for label images: Artist Name - Release Title (sanitized)."""
+    artist = _sanitize_filename_component(
+        getattr(pending_release, "artist_name", None),
+        fallback="Artist",
+    )
+    title = _sanitize_filename_component(
+        getattr(pending_release, "release_title", None),
+        fallback="Release",
+    )
+    return f"{artist} - {title}"
+
+
 def _unique_filename(directory: str, base_name: str, extension: str) -> str:
     candidate = f"{base_name}{extension}"
     index = 2

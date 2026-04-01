@@ -133,6 +133,7 @@ from app.api.pending_release_helpers import (
 )
 from app.api.upload_helpers import (
     _bytes_to_jpg_3000_square,
+    _pending_release_label_image_base_name,
     _read_upload_bytes,
     _sanitize_filename_component,
     _unique_filename,
@@ -792,7 +793,6 @@ def _log_auth_attempt(
 
 
 
-@router.on_event("startup")
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
 
@@ -1333,6 +1333,30 @@ def _linktree_image_url(request: Request, artist_id: int, kind: str) -> str:
     return f"{base}/api/public/artist/{artist_id}/{kind}"
 
 
+def _artist_public_media_url(request: Request, artist_id: int, media_id: int) -> str:
+    base = str(request.base_url).rstrip("/")
+    return f"{base}/api/public/artist/{artist_id}/media/{media_id}"
+
+
+def _artist_minisite_theme(value: str | None) -> str:
+    theme = (value or "").strip().lower()
+    if theme in {"ocean", "sunset", "mono"}:
+        return theme
+    return "ocean"
+
+
+def _artist_public_media_ids(extra: dict) -> set[int]:
+    ids: set[int] = set()
+    for key in ("profile_image_media_id", "logo_media_id"):
+        value = extra.get(key)
+        if isinstance(value, int) and value > 0:
+            ids.add(value)
+    gallery = extra.get("minisite_gallery_media_ids")
+    if isinstance(gallery, list):
+        ids.update(item for item in gallery if isinstance(item, int) and item > 0)
+    return ids
+
+
 def _release_base_url(request: Request) -> str:
     return f"{str(request.base_url).rstrip('/')}/api"
 
@@ -1602,7 +1626,12 @@ def public_linktree(
             extra = json.loads(artist.extra_json) or {}
         except (json.JSONDecodeError, TypeError):
             pass
+    if extra.get("minisite_is_public") is False:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist minisite not found")
     name = (artist.name or "").strip() or (extra.get("full_name") or extra.get("artist_brand") or "").strip() or "Artist"
+    headline = (extra.get("minisite_headline") or extra.get("artist_brand") or "").strip() or None
+    bio = (extra.get("minisite_bio") or artist.notes or "").strip() or None
+    theme = _artist_minisite_theme(extra.get("minisite_theme"))
     links = []
     for key, label in _LINKTREE_LABELS.items():
         val = (extra.get(key) or "").strip()
@@ -1628,6 +1657,22 @@ def public_linktree(
                 profile_image_url = _linktree_image_url(request, artist_id, "profile-image")
             if media.id == lid:
                 logo_url = _linktree_image_url(request, artist_id, "logo")
+    gallery_image_urls: list[str] = []
+    gallery_ids = extra.get("minisite_gallery_media_ids")
+    if isinstance(gallery_ids, list):
+        public_ids = [item for item in gallery_ids if isinstance(item, int) and item > 0]
+        if public_ids:
+            gallery_media = (
+                db.query(ArtistMedia)
+                .filter(ArtistMedia.artist_id == artist.id, ArtistMedia.id.in_(public_ids))
+                .all()
+            )
+            media_by_id = {media.id: media for media in gallery_media if os.path.isfile(media.stored_path)}
+            gallery_image_urls = [
+                _artist_public_media_url(request, artist.id, media_id)
+                for media_id in public_ids
+                if media_id in media_by_id
+            ]
     releases_q = (
         db.query(Release)
         .options(joinedload(Release.artists), joinedload(Release.artist))
@@ -1649,6 +1694,10 @@ def public_linktree(
         profile_image_url=profile_image_url,
         logo_url=logo_url,
         releases=releases,
+        headline=headline,
+        bio=bio,
+        theme=theme,
+        gallery_image_urls=gallery_image_urls,
     )
 
 
@@ -1695,6 +1744,32 @@ def public_artist_logo(
     if not isinstance(lid, int) or not lid:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No logo")
     media = db.query(ArtistMedia).filter(ArtistMedia.id == lid, ArtistMedia.artist_id == artist.id).first()
+    if not media or not os.path.isfile(media.stored_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    return FileResponse(media.stored_path, filename=media.filename, media_type=media.content_type)
+
+
+@router.get("/public/artist/{artist_id}/media/{media_id}", response_class=FileResponse)
+def public_artist_media(
+    artist_id: int,
+    media_id: int,
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    """Serve an artist minisite image if it is part of the public minisite configuration."""
+    artist = db.query(Artist).filter(Artist.id == artist_id, Artist.is_active == True).first()
+    if not artist:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    extra = {}
+    if getattr(artist, "extra_json", None):
+        try:
+            extra = json.loads(artist.extra_json) or {}
+        except (json.JSONDecodeError, TypeError):
+            pass
+    if extra.get("minisite_is_public") is False:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist minisite not found")
+    if media_id not in _artist_public_media_ids(extra):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    media = db.query(ArtistMedia).filter(ArtistMedia.id == media_id, ArtistMedia.artist_id == artist.id).first()
     if not media or not os.path.isfile(media.stored_path):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
     return FileResponse(media.stored_path, filename=media.filename, media_type=media.content_type)
@@ -2930,6 +3005,21 @@ def artist_patch_me(
         ).first()
         if not media:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Logo: file not found or not yours")
+    if payload.minisite_gallery_media_ids is not None:
+        gallery_ids = [item for item in payload.minisite_gallery_media_ids if isinstance(item, int) and item > 0]
+        if gallery_ids:
+            owned_ids = {
+                media_id
+                for (media_id,) in db.query(ArtistMedia.id)
+                .filter(ArtistMedia.artist_id == user.artist_id, ArtistMedia.id.in_(gallery_ids))
+                .all()
+            }
+            missing_ids = sorted(set(gallery_ids) - owned_ids)
+            if missing_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Gallery images not found or not yours: {', '.join(str(item) for item in missing_ids)}",
+                )
     extra = _artist_extra_from_model(payload)
     if extra:
         try:

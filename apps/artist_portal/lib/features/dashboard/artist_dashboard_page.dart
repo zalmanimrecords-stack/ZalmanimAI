@@ -41,6 +41,12 @@ const List<MapEntry<String, String>> _socialKeys = [
   MapEntry('other_3', 'Other link 3'),
 ];
 
+const List<MapEntry<String, String>> _minisiteThemes = [
+  MapEntry('ocean', 'Ocean'),
+  MapEntry('sunset', 'Sunset'),
+  MapEntry('mono', 'Mono'),
+];
+
 class _ArtistDashboardPageState extends State<ArtistDashboardPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
@@ -52,6 +58,8 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage>
   final profileNotesController = TextEditingController();
   final profileWebsiteController = TextEditingController();
   final profileFullNameController = TextEditingController();
+  final minisiteHeadlineController = TextEditingController();
+  final minisiteBioController = TextEditingController();
   final messageToLabelController = TextEditingController();
   final Map<String, TextEditingController> socialControllers = {};
 
@@ -72,6 +80,9 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage>
   List<dynamic> inboxThreads = [];
   int? _profileImageMediaId;
   int? _logoMediaId;
+  String _minisiteTheme = 'ocean';
+  bool _minisiteIsPublic = true;
+  List<int> _minisiteGalleryMediaIds = const [];
 
   @override
   void initState() {
@@ -92,6 +103,8 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage>
     profileNotesController.dispose();
     profileWebsiteController.dispose();
     profileFullNameController.dispose();
+    minisiteHeadlineController.dispose();
+    minisiteBioController.dispose();
     messageToLabelController.dispose();
     for (final c in socialControllers.values) {
       c.dispose();
@@ -121,6 +134,51 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage>
   String _linktreeUrlFor(dynamic artistId) =>
       '${_portalBaseUrl()}/#/l/$artistId';
 
+  List<Map<String, dynamic>> _imageMediaItems() {
+    return mediaList
+        .whereType<Map<String, dynamic>>()
+        .where((item) {
+          final contentType = (item['content_type'] ?? '').toString().toLowerCase();
+          final filename = (item['filename'] ?? '').toString().toLowerCase();
+          return contentType.startsWith('image/') ||
+              filename.endsWith('.png') ||
+              filename.endsWith('.jpg') ||
+              filename.endsWith('.jpeg') ||
+              filename.endsWith('.webp') ||
+              filename.endsWith('.gif');
+        })
+        .toList(growable: false);
+  }
+
+  String _themeLabel(String value) {
+    return _minisiteThemes
+            .firstWhere(
+              (entry) => entry.key == value,
+              orElse: () => const MapEntry('ocean', 'Ocean'),
+            )
+            .value;
+  }
+
+  void _setMinisitePublic(bool value) {
+    setState(() => _minisiteIsPublic = value);
+  }
+
+  void _setMinisiteTheme(String value) {
+    setState(() => _minisiteTheme = value);
+  }
+
+  void _toggleMinisiteGalleryImage(int mediaId, bool selected) {
+    setState(() {
+      final next = _minisiteGalleryMediaIds.toList(growable: true);
+      if (selected) {
+        if (!next.contains(mediaId)) next.add(mediaId);
+      } else {
+        next.remove(mediaId);
+      }
+      _minisiteGalleryMediaIds = next;
+    });
+  }
+
   Future<void> _load() async {
     setState(() {
       loading = true;
@@ -136,6 +194,10 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage>
         if (extra is Map<String, dynamic>) {
           profileWebsiteController.text = extra['website']?.toString() ?? '';
           profileFullNameController.text = extra['full_name']?.toString() ?? '';
+          minisiteHeadlineController.text =
+              extra['minisite_headline']?.toString() ?? '';
+          minisiteBioController.text =
+              extra['minisite_bio']?.toString() ?? '';
           for (final e in _socialKeys) {
             socialControllers[e.key]?.text = extra[e.key]?.toString() ?? '';
           }
@@ -143,6 +205,20 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage>
           final lid = extra['logo_media_id'];
           _profileImageMediaId = pid is int ? pid : null;
           _logoMediaId = lid is int ? lid : null;
+          final theme = extra['minisite_theme']?.toString().trim().toLowerCase();
+          _minisiteTheme = _minisiteThemes.any((e) => e.key == theme)
+              ? theme!
+              : 'ocean';
+          _minisiteIsPublic = extra['minisite_is_public'] != false;
+          final rawGallery = extra['minisite_gallery_media_ids'];
+          if (rawGallery is List) {
+            _minisiteGalleryMediaIds = rawGallery
+                .whereType<int>()
+                .where((item) => item > 0)
+                .toList(growable: false);
+          } else {
+            _minisiteGalleryMediaIds = const [];
+          }
         }
       }
       final demosResult = await widget.apiClient.fetchArtistDemos(widget.token);
@@ -187,6 +263,11 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage>
       final extra = <String, dynamic>{
         if (profileWebsiteController.text.trim().isNotEmpty) 'website': profileWebsiteController.text.trim(),
         if (profileFullNameController.text.trim().isNotEmpty) 'full_name': profileFullNameController.text.trim(),
+        'minisite_theme': _minisiteTheme,
+        'minisite_is_public': _minisiteIsPublic,
+        'minisite_gallery_media_ids': _minisiteGalleryMediaIds,
+        'minisite_headline': minisiteHeadlineController.text.trim(),
+        'minisite_bio': minisiteBioController.text.trim(),
       };
       for (final e in _socialKeys) {
         final v = socialControllers[e.key]?.text.trim() ?? '';
@@ -1791,7 +1872,7 @@ extension _ArtistDashboardPageUi on _ArtistDashboardPageState {
       ],
       if (artistMap != null && artistMap['id'] != null) ...[
         const SizedBox(height: 24),
-        _sectionTitle(context, 'Linktree images', primary),
+        _sectionTitle(context, 'Minisite images', primary),
         _card(
           context,
           primary,
@@ -1799,7 +1880,7 @@ extension _ArtistDashboardPageUi on _ArtistDashboardPageState {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Pick a profile image and logo from your uploads (shown on your Linktree page).',
+                'Pick a profile image and logo from your uploads (shown on your public minisite).',
                 style: Theme.of(context)
                     .textTheme
                     .bodySmall
@@ -1868,14 +1949,14 @@ extension _ArtistDashboardPageUi on _ArtistDashboardPageState {
             TextField(
               controller: profileNotesController,
               decoration: const InputDecoration(
-                labelText: 'Notes',
+                labelText: 'Internal notes',
                 border: OutlineInputBorder(),
               ),
               maxLines: 2,
             ),
             const SizedBox(height: 16),
             const Text(
-              'Social & links (for your Linktree page)',
+              'Social & links (for your minisite)',
               style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
             ),
             const SizedBox(height: 8),
@@ -1903,7 +1984,7 @@ extension _ArtistDashboardPageUi on _ArtistDashboardPageState {
       ),
       if (artistMap != null && artistMap['id'] != null) ...[
         const SizedBox(height: 24),
-        _sectionTitle(context, 'Linktree', primary),
+        _sectionTitle(context, 'My minisite', primary),
         _card(
           context,
           primary,
@@ -1911,59 +1992,198 @@ extension _ArtistDashboardPageUi on _ArtistDashboardPageState {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'My Linktree page',
+                'Build a small public page for your artist project.',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Public share page'),
+                subtitle: const Text(
+                  'Turn this on to let fans, curators, and social followers open your minisite.',
+                ),
+                value: _minisiteIsPublic,
+                onChanged: _setMinisitePublic,
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                initialValue: _minisiteTheme,
+                decoration: const InputDecoration(
+                  labelText: 'Theme',
+                  border: OutlineInputBorder(),
+                ),
+                items: _minisiteThemes
+                    .map(
+                      (entry) => DropdownMenuItem<String>(
+                        value: entry.key,
+                        child: Text(entry.value),
+                      ),
+                    )
+                    .toList(growable: false),
+                onChanged: (value) {
+                  if (value == null || value.isEmpty) return;
+                  _setMinisiteTheme(value);
+                },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: minisiteHeadlineController,
+                decoration: const InputDecoration(
+                  labelText: 'Headline',
+                  hintText: 'Melodic techno producer from Tel Aviv',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 2,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: minisiteBioController,
+                decoration: const InputDecoration(
+                  labelText: 'Bio',
+                  hintText: 'Tell people who you are, what you release, and what they should listen to.',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 5,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Brand images',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Choose your main profile image and optional logo from your uploads.',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 12),
+              _LinktreeImageRow(
+                label: 'Profile image',
+                currentMediaId: _profileImageMediaId,
+                mediaList: _imageMediaItems(),
+                onSet: _setProfileImageForLinktree,
+              ),
+              const SizedBox(height: 8),
+              _LinktreeImageRow(
+                label: 'Logo',
+                currentMediaId: _logoMediaId,
+                mediaList: _imageMediaItems(),
+                onSet: _setLogoForLinktree,
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Gallery images',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: uploadingMedia ? null : _uploadMedia,
+                    icon: const Icon(Icons.upload_file_outlined),
+                    label: Text(uploadingMedia ? 'Uploading...' : 'Upload image'),
+                  ),
+                ],
+              ),
+              Text(
+                'Pick a few images to give your minisite more personality.',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 8),
+              if (_imageMediaItems().isEmpty)
+                Text(
+                  'No image uploads yet. Upload artwork, press shots, or brand visuals to build the page.',
+                  style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+                )
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _imageMediaItems().map((item) {
+                    final mediaId = item['id'] as int?;
+                    if (mediaId == null) return const SizedBox.shrink();
+                    final selected = _minisiteGalleryMediaIds.contains(mediaId);
+                    return FilterChip(
+                      selected: selected,
+                      label: Text((item['filename'] ?? 'image').toString()),
+                      onSelected: (value) => _toggleMinisiteGalleryImage(mediaId, value),
+                    );
+                  }).toList(growable: false),
+                ),
               const SizedBox(height: 8),
               Builder(
                 builder: (context) {
                   final link = _linktreeUrlFor(artistMap['id']);
-                  return InkWell(
-                    onTap: () => openUrlOrCopy(context, link),
-                    child: _isCompactLayout(context)
-                        ? Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              SelectableText(
-                                link,
-                                style: TextStyle(
-                                  color: primary,
-                                  decoration: TextDecoration.underline,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Icon(
-                                Icons.open_in_new,
-                                size: 18,
-                                color: primary,
-                              ),
-                            ],
-                          )
-                        : Row(
-                            children: [
-                              Expanded(
-                                child: SelectableText(
-                                  link,
-                                  style: TextStyle(
-                                    color: primary,
-                                    decoration: TextDecoration.underline,
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Share link',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      const SizedBox(height: 8),
+                      InkWell(
+                        onTap: _minisiteIsPublic
+                            ? () => openUrlOrCopy(context, link)
+                            : null,
+                        child: _isCompactLayout(context)
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  SelectableText(
+                                    link,
+                                    style: TextStyle(
+                                      color: _minisiteIsPublic ? primary : Colors.grey[500],
+                                      decoration: _minisiteIsPublic
+                                          ? TextDecoration.underline
+                                          : TextDecoration.none,
+                                    ),
                                   ),
-                                ),
+                                  const SizedBox(height: 6),
+                                  Icon(
+                                    Icons.open_in_new,
+                                    size: 18,
+                                    color: _minisiteIsPublic ? primary : Colors.grey[500],
+                                  ),
+                                ],
+                              )
+                            : Row(
+                                children: [
+                                  Expanded(
+                                    child: SelectableText(
+                                      link,
+                                      style: TextStyle(
+                                        color: _minisiteIsPublic ? primary : Colors.grey[500],
+                                        decoration: _minisiteIsPublic
+                                            ? TextDecoration.underline
+                                            : TextDecoration.none,
+                                      ),
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.open_in_new,
+                                    size: 18,
+                                    color: _minisiteIsPublic ? primary : Colors.grey[500],
+                                  ),
+                                ],
                               ),
-                              Icon(
-                                Icons.open_in_new,
-                                size: 18,
-                                color: primary,
-                              ),
-                            ],
-                          ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _minisiteIsPublic
+                            ? 'Theme: ${_themeLabel(_minisiteTheme)}. Save your profile, then share this page anywhere.'
+                            : 'Your minisite is hidden right now. Turn on Public share page and save to publish it.',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                    ],
                   );
                 },
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Share this link for a styled page with all your links. Images are set under the Media tab.',
-                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
               ),
             ],
           ),

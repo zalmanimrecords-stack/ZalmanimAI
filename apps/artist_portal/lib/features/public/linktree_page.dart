@@ -59,14 +59,52 @@ class _LinktreePageState extends State<LinktreePage> {
     return s.isEmpty ? '?' : s.substring(0, 1).toUpperCase();
   }
 
+  _MinisitePalette _paletteFor(String theme) {
+    switch (theme) {
+      case 'sunset':
+        return const _MinisitePalette(
+          background: LinearGradient(
+            colors: [Color(0xFFFFF1E7), Color(0xFFFFD4BD), Color(0xFFF28D6B)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          card: Color(0xCCFFF8F2),
+          primary: Color(0xFFB14D29),
+          text: Color(0xFF4E271B),
+          muted: Color(0xFF7B5649),
+        );
+      case 'mono':
+        return const _MinisitePalette(
+          background: LinearGradient(
+            colors: [Color(0xFFF4F4F4), Color(0xFFE3E3E3), Color(0xFFD2D2D2)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          card: Color(0xCCFFFFFF),
+          primary: Color(0xFF202020),
+          text: Color(0xFF141414),
+          muted: Color(0xFF626262),
+        );
+      default:
+        return const _MinisitePalette(
+          background: LinearGradient(
+            colors: [Color(0xFFE9F4FF), Color(0xFFCCEBF1), Color(0xFF97D9D1)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          card: Color(0xCCF9FFFF),
+          primary: Color(0xFF0D6F73),
+          text: Color(0xFF123C47),
+          muted: Color(0xFF476771),
+        );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     if (loading) {
       return Scaffold(
-        body: LoadingView(primary: primary),
+        body: LoadingView(primary: Theme.of(context).colorScheme.primary),
       );
     }
 
@@ -77,124 +115,140 @@ class _LinktreePageState extends State<LinktreePage> {
     }
 
     final d = data!;
+    final palette = _paletteFor(d.theme);
     final name = d.name;
     final profileImageUrl = d.profileImageUrl;
     final logoUrl = d.logoUrl;
 
     return Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-            child: Column(
-              children: [
-                const SizedBox(height: 24),
-                if (profileImageUrl != null)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(48),
-                    child: Image.network(
-                      profileImageUrl,
-                      width: 96,
-                      height: 96,
-                      fit: BoxFit.cover,
-                      cacheWidth: 192,
-                      cacheHeight: 192,
-                      errorBuilder: (_, __, ___) => _avatarCircle(primary, name),
-                    ),
-                  )
-                else
-                  _avatarCircle(primary, name),
-                const SizedBox(height: 16),
-                if (logoUrl != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Image.network(
-                      logoUrl,
-                      height: 40,
-                      fit: BoxFit.contain,
-                      cacheHeight: 80,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                    ),
+      body: Container(
+        decoration: BoxDecoration(gradient: palette.background),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 880),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _heroCard(context, d, palette, name, profileImageUrl, logoUrl),
+                      if (d.links.isNotEmpty) ...[
+                        const SizedBox(height: 18),
+                        _sectionCard(
+                          context,
+                          palette,
+                          title: 'Listen, follow, connect',
+                          child: Wrap(
+                            spacing: 12,
+                            runSpacing: 12,
+                            children: d.links.map((link) {
+                              return SizedBox(
+                                width: 250,
+                                child: FilledButton(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: palette.primary,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 18),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                  ),
+                                  onPressed: () => openUrlOrCopy(context, link.url),
+                                  child: Text(link.label, textAlign: TextAlign.center),
+                                ),
+                              );
+                            }).toList(growable: false),
+                          ),
+                        ),
+                      ],
+                      if (d.galleryImageUrls.isNotEmpty) ...[
+                        const SizedBox(height: 18),
+                        _sectionCard(
+                          context,
+                          palette,
+                          title: 'Gallery',
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final columns = constraints.maxWidth >= 720
+                                  ? 3
+                                  : constraints.maxWidth >= 460
+                                      ? 2
+                                      : 1;
+                              return GridView.builder(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                itemCount: d.galleryImageUrls.length,
+                                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: columns,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 12,
+                                  childAspectRatio: 1.05,
+                                ),
+                                itemBuilder: (context, index) {
+                                  final imageUrl = d.galleryImageUrls[index];
+                                  return ClipRRect(
+                                    borderRadius: BorderRadius.circular(18),
+                                    child: Image.network(
+                                      imageUrl,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => Container(
+                                        color: palette.primary.withValues(alpha: 0.08),
+                                        child: Icon(Icons.broken_image_outlined, color: palette.primary),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                      if (d.releases.isNotEmpty) ...[
+                        const SizedBox(height: 18),
+                        _sectionCard(
+                          context,
+                          palette,
+                          title: 'Releases',
+                          child: Column(
+                            children: d.releases.asMap().entries.map((entry) {
+                              final release = entry.value;
+                              return Padding(
+                                padding: EdgeInsets.only(
+                                  bottom: entry.key == d.releases.length - 1 ? 0 : 10,
+                                ),
+                                child: ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  tileColor: Colors.white.withValues(alpha: 0.46),
+                                  title: Text(
+                                    release.title,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: palette.text,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    release.url == null ? 'Link coming soon' : 'Open release page',
+                                    style: TextStyle(color: palette.muted),
+                                  ),
+                                  trailing: Icon(Icons.open_in_new, color: palette.primary),
+                                  onTap: release.url == null
+                                      ? null
+                                      : () => openUrlOrCopy(context, release.url!),
+                                ),
+                              );
+                            }).toList(growable: false),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                Text(
-                  name,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? null : Colors.grey[800],
-                      ),
-                  textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 32),
-                if (d.links.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      'No links yet.',
-                      style: TextStyle(color: Colors.grey[600]),
-                    ),
-                  )
-                else
-                  ...d.links.asMap().entries.map((entry) {
-                    final link = entry.value;
-                    return Padding(
-                      key: ValueKey<String>(link.url),
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            backgroundColor: primary,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          onPressed: link.url.isEmpty
-                              ? null
-                              : () => openUrlOrCopy(context, link.url),
-                          child: Text(link.label),
-                        ),
-                      ),
-                    );
-                  }),
-                if (d.releases.isNotEmpty) ...[
-                  const SizedBox(height: 24),
-                  Text(
-                    'Releases',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: isDark ? null : Colors.grey[800],
-                        ),
-                  ),
-                  const SizedBox(height: 12),
-                  ...d.releases.asMap().entries.map((entry) {
-                    final r = entry.value;
-                    final index = entry.key;
-                    return Padding(
-                      key: ValueKey<String>('${r.title}-$index'),
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          onPressed: r.url != null && r.url!.isNotEmpty
-                              ? () => openUrlOrCopy(context, r.url!)
-                              : null,
-                          child: Text(r.title),
-                        ),
-                      ),
-                    );
-                  }),
-                ],
-                const SizedBox(height: 32),
-              ],
+              ),
             ),
           ),
         ),
@@ -202,9 +256,126 @@ class _LinktreePageState extends State<LinktreePage> {
     );
   }
 
+  Widget _heroCard(
+    BuildContext context,
+    LinktreeOut data,
+    _MinisitePalette palette,
+    String name,
+    String? profileImageUrl,
+    String? logoUrl,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: palette.card,
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: palette.primary.withValues(alpha: 0.12),
+            blurRadius: 30,
+            offset: const Offset(0, 16),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          if (profileImageUrl != null)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(56),
+              child: Image.network(
+                profileImageUrl,
+                width: 112,
+                height: 112,
+                fit: BoxFit.cover,
+                cacheWidth: 224,
+                cacheHeight: 224,
+                errorBuilder: (_, __, ___) => _avatarCircle(palette.primary, name),
+              ),
+            )
+          else
+            _avatarCircle(palette.primary, name),
+          const SizedBox(height: 18),
+          if (logoUrl != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Image.network(
+                logoUrl,
+                height: 44,
+                fit: BoxFit.contain,
+                cacheHeight: 88,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            ),
+          Text(
+            name,
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: palette.text,
+                ),
+            textAlign: TextAlign.center,
+          ),
+          if (data.headline != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              data.headline!,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: palette.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+          if (data.bio != null) ...[
+            const SizedBox(height: 14),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 620),
+              child: Text(
+                data.bio!,
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      height: 1.55,
+                      color: palette.muted,
+                    ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionCard(
+    BuildContext context,
+    _MinisitePalette palette, {
+    required String title,
+    required Widget child,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: palette.card,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: palette.text,
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+          const SizedBox(height: 14),
+          child,
+        ],
+      ),
+    );
+  }
+
   Widget _avatarCircle(Color primary, String name) {
     return CircleAvatar(
-      radius: 48,
+      radius: 56,
       backgroundColor: primary.withValues(alpha: 0.2),
       child: Text(
         _avatarInitial(name),
@@ -216,4 +387,20 @@ class _LinktreePageState extends State<LinktreePage> {
       ),
     );
   }
+}
+
+class _MinisitePalette {
+  const _MinisitePalette({
+    required this.background,
+    required this.card,
+    required this.primary,
+    required this.text,
+    required this.muted,
+  });
+
+  final LinearGradient background;
+  final Color card;
+  final Color primary;
+  final Color text;
+  final Color muted;
 }

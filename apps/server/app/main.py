@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,7 +8,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.audience_routes import router as audience_router
-from app.api.routes import router
+from app.api.routes import init_db, router
 from app.core.config import settings
 from app.services.system_log import append_system_log
 
@@ -33,20 +34,23 @@ def _validate_runtime_configuration() -> None:
         raise RuntimeError(str(exc)) from exc
 
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    _validate_runtime_configuration()
+    init_db()
+    yield
+
+
 app = FastAPI(
     title=settings.app_name,
     docs_url=_docs_path("/docs"),
     redoc_url=_docs_path("/redoc"),
     openapi_url=_docs_path("/openapi.json"),
+    lifespan=lifespan,
 )
 
 if trusted_hosts := settings.trusted_host_list():
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)
-
-
-@app.on_event("startup")
-def validate_runtime_configuration() -> None:
-    _validate_runtime_configuration()
 
 
 @app.middleware("http")

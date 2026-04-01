@@ -1,0 +1,24 @@
+model = "gpt-5.4"
+model_reasoning_effort = "medium"
+[projects.'C:\Users\SimonRosenfeld']
+trust_level = "trusted"
+
+[projects.'\\?\C:\Users\SimonRosenfeld\ZalCam\ZalCam']
+trust_level = "trusted"
+
+[windows]
+sandbox = "elevated"
+[mcp_servers."hostinger-mcp"]
+command = "C:\\Users\\SimonRosenfeld\\AppData\\Roaming\\npm\\hostinger-api-mcp.cmd"
+args = []
+
+[mcp_servers."hostinger-mcp".env]
+API_TOKEN = "09YVdJhhzLV4GMIg6DLqQq9n9QqZHcw24VUMWKju1dec6da0"
+
+[mcp_servers."cloudflare-docs"]
+command = "C:\\Users\\SimonRosenfeld\\AppData\\Roaming\\npm\\mcp-remote.cmd"
+args = ["https://docs.mcp.cloudflare.com/mcp"]
+
+[features]
+multi_agent = true
+
