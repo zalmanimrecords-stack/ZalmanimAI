@@ -108,7 +108,7 @@ You can also use the script (run from repo root on the VPS):
 ./scripts/deploy-prod.sh
 ```
 
-**From your local machine (Windows):** Run this from the repo root. It SSHs to `hostinger-vps`, pulls, and rebuilds. Requires SSH to work (see note above on .ssh/config permissions). Default repo path on the VPS is `/root/ZalmanimAI`; override with `$env:PROD_REPO_PATH` if needed.
+**From your local machine (Windows):** Run this from the repo root. It SSHs to `hostinger-vps`, pulls, and rebuilds. Requires SSH to work (see note above on .ssh/config permissions). Default repo path on the Hostinger VPS is `/root/labelops-lm`; override with `$env:PROD_REPO_PATH` if your clone lives elsewhere.
 
 ```powershell
 .\scripts\deploy-prod-remote.ps1
@@ -154,12 +154,12 @@ If the server doesn’t show your latest changes, work through this:
 3. **Compare commits**  
    - **Local (what you’re on):** `git log -1 --oneline`  
    - **What the server should have after pull:** same as `origin/master`, so run `git log origin/master -1 --oneline` locally.  
-   - **On the VPS:** SSH in and run `cd /root/ZalmanimAI && git log -1 --oneline`. It should match `origin/master`.
+   - **On the VPS:** SSH in and run `cd /root/labelops-lm && git log -1 --oneline`. It should match `origin/master`.
 
 4. **Force rebuild**  
    If the commit on the server is correct but the app still looks old, rebuild without cache:
    ```bash
-   # On the VPS, in /root/ZalmanimAI
+   # On the VPS, in /root/labelops-lm
    docker compose --env-file deploy/.env.production -f docker-compose.prod.yml build --no-cache web api worker
    docker compose --env-file deploy/.env.production -f docker-compose.prod.yml up -d
    ```

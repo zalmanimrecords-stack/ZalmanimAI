@@ -5,7 +5,7 @@
 # Optional: $env:PROD_REPO_PATH = "/root/ZalmanimAI"  # path on the VPS (default below)
 
 $ErrorActionPreference = "Stop"
-$repoPathOnVps = if ($env:PROD_REPO_PATH) { $env:PROD_REPO_PATH } else { "/root/ZalmanimAI" }
+$repoPathOnVps = if ($env:PROD_REPO_PATH) { $env:PROD_REPO_PATH } else { "/root/labelops-lm" }
 $sshKey = if ($env:LMUPDATE_SSH_KEY) { $env:LMUPDATE_SSH_KEY } else { Join-Path (Join-Path $env:USERPROFILE ".ssh") "hostinger_vps" }
 $scriptPath = if ($PSCommandPath) {
     $PSCommandPath

@@ -1,0 +1,2 @@
+# Shell scripts run on Linux/VPS; CRLF breaks bash when piped over ssh.
+*.sh text eol=lf
