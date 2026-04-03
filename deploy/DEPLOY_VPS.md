@@ -77,6 +77,8 @@ When you deploy with `scripts/deploy-prod.sh` or `scripts/deploy-prod-remote.ps1
 
 **API URL in the web build (`API_BASE_URL` / `ARTIST_API_BASE_URL`):** Production defaults use the **same host** as each app (`https://lm.zalmanim.com/` for admin, `https://artists.zalmanim.com/` for the portal) so the browser calls `https://…/api/…` and nginx proxies to the API. That avoids cross-origin calls to `lmapi.zalmanim.com`, which can break if CORS or routing is misconfigured. If your `deploy/.env.production` still sets `API_BASE_URL=https://lmapi.zalmanim.com/`, update it to match the example file and **rebuild the `web` image**.
 
+**Health checks:** The Flutter client calls `GET /health` on the **same origin** as the API base (e.g. `https://lm.zalmanim.com/health`). Nginx must proxy that path to the API container (see `location = /health` in `deploy/nginx/default.conf`). Without it, `/health` would return the SPA shell and connection checks would fail.
+
 ## 4. Deploy latest updates to production
 
 **If PROD doesn’t show your latest changes**, the VPS likely has old code or Docker used cached images. Do this on the VPS from the project root:

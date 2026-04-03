@@ -281,7 +281,9 @@ class _LoginPageState extends State<LoginPage> {
           msg.contains('SocketException');
       setState(
         () => error = isConnection
-            ? 'Cannot reach API at ${widget.apiClient.baseUrl}. Backend running? Stop the app and run again (full restart). Or run: docker compose up -d'
+            ? 'Cannot reach API at ${widget.apiClient.baseUrl}. '
+                'Production: use API_BASE_URL=https://lm.zalmanim.com/ when building the web image, redeploy web (nginx must proxy /health to the API). '
+                'Local: start the API; full restart the app. Server: docker compose up -d.'
             : msg,
       );
     } finally {
