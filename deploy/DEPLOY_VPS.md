@@ -75,6 +75,8 @@ What this does:
 
 When you deploy with `scripts/deploy-prod.sh` or `scripts/deploy-prod-remote.ps1`, the built images are tagged with **IMAGE_TAG** = date and time of the deploy (e.g. `2025-03-14-1530`). If `IMAGE_TAG` is not set, `latest` is used.
 
+**API URL in the web build (`API_BASE_URL` / `ARTIST_API_BASE_URL`):** Production defaults use the **same host** as each app (`https://lm.zalmanim.com/` for admin, `https://artists.zalmanim.com/` for the portal) so the browser calls `https://…/api/…` and nginx proxies to the API. That avoids cross-origin calls to `lmapi.zalmanim.com`, which can break if CORS or routing is misconfigured. If your `deploy/.env.production` still sets `API_BASE_URL=https://lmapi.zalmanim.com/`, update it to match the example file and **rebuild the `web` image**.
+
 ## 4. Deploy latest updates to production
 
 **If PROD doesn’t show your latest changes**, the VPS likely has old code or Docker used cached images. Do this on the VPS from the project root:

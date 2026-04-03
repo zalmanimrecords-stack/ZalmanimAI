@@ -7,7 +7,8 @@ RUN flutter config --enable-web && flutter pub get
 
 COPY apps/client/ ./
 
-ARG API_BASE_URL=https://lmapi.zalmanim.com/
+# Default: same origin as admin site (nginx proxies /api to the API container).
+ARG API_BASE_URL=https://lm.zalmanim.com/
 RUN flutter build web --release --dart-define="API_BASE_URL=${API_BASE_URL}"
 
 FROM ghcr.io/cirruslabs/flutter:stable AS artist_build
@@ -19,7 +20,7 @@ RUN flutter config --enable-web && flutter pub get
 
 COPY apps/artist_portal/ ./
 
-ARG ARTIST_API_BASE_URL=https://lmapi.zalmanim.com/
+ARG ARTIST_API_BASE_URL=https://artists.zalmanim.com/
 ARG ARTIST_LABEL_NAME=Zalmanim\ Artists
 ARG ARTIST_PRIMARY_COLOR=B66A2C
 RUN flutter build web --release \
