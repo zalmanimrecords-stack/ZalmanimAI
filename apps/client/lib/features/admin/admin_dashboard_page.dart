@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/api_client.dart';
@@ -2304,6 +2306,30 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     );
   }
 
+  /// JSON may decode `id` as int or num; list rows may use dynamic maps.
+  static int? _coerceDemoSubmissionId(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v.trim());
+    return null;
+  }
+
+  static String _demoFieldsJsonPreview(Map<String, dynamic> submission) {
+    final raw = submission['fields'];
+    if (raw is! Map) {
+      return '{}';
+    }
+    try {
+      final normalized = Map<String, dynamic>.from(
+        raw.map((k, v) => MapEntry(k.toString(), v)),
+      );
+      return const JsonEncoder.withIndent('  ').convert(normalized);
+    } catch (_) {
+      return raw.toString();
+    }
+  }
+
   /// Formats a demo submission date (ISO string or null) for display. Returns null if missing/invalid.
   static String? _formatDemoDate(dynamic value) {
     if (value == null) return null;
@@ -2608,15 +2634,23 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   }
 
   Future<void> _showDemoDetailsDialog(Map<String, dynamic> submission) async {
-    final id = submission['id'] as int?;
+    final id = _coerceDemoSubmissionId(submission['id']);
     if (id == null) return;
     final notesController = TextEditingController(
         text: (submission['admin_notes'] ?? '').toString());
+    final linkRows = submission['links'];
+    final linkList = linkRows is List<dynamic>
+        ? linkRows.map((e) => e.toString()).toList()
+        : <String>[];
     final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) {
+        final maxH = MediaQuery.sizeOf(ctx).height * 0.88;
+        return AlertDialog(
         title: Text('Demo #$id'),
-        content: SizedBox(
+        content: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 800, maxHeight: maxH),
+          child: SizedBox(
           width: 760,
           child: SingleChildScrollView(
             child: Column(
@@ -2679,9 +2713,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 const Text('Links',
                     style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 6),
-                ...(((submission['links'] as List<dynamic>? ??
-                        const <dynamic>[]))
-                    .map((link) => SelectableText(link.toString()))),
+                ...linkList.map((link) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: SelectableText(link),
+                    )),
                 if (_getSoundCloudUrls(submission).isNotEmpty) ...[
                   const SizedBox(height: 12),
                   const Text('SoundCloud',
@@ -2697,7 +2732,21 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                               style: const TextStyle(
                                   fontSize: 12, color: Colors.grey)),
                           const SizedBox(height: 4),
-                          _SoundCloudEmbedWidget(soundCloudUrl: url),
+                          if (kIsWeb)
+                            TextButton.icon(
+                              onPressed: () async {
+                                final uri = Uri.tryParse(url);
+                                if (uri != null &&
+                                    await canLaunchUrl(uri)) {
+                                  await launchUrl(uri,
+                                      mode: LaunchMode.externalApplication);
+                                }
+                              },
+                              icon: const Icon(Icons.open_in_new, size: 16),
+                              label: const Text('Open in browser'),
+                            )
+                          else
+                            _SoundCloudEmbedWidget(soundCloudUrl: url),
                         ],
                       ),
                     ),
@@ -2707,11 +2756,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 const Text('Extra fields',
                     style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 6),
-                SelectableText(const JsonEncoder.withIndent('  ').convert(
-                  submission['fields'] is Map<String, dynamic>
-                      ? submission['fields']
-                      : const <String, dynamic>{},
-                )),
+                SelectableText(_demoFieldsJsonPreview(submission)),
                 const SizedBox(height: 12),
                 TextField(
                   controller: notesController,
@@ -2725,6 +2770,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
             ),
           ),
         ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -2735,7 +2781,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
             child: const Text('Save notes'),
           ),
         ],
-      ),
+      );
+      },
     );
     if (result != true) {
       notesController.dispose();
