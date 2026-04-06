@@ -394,6 +394,98 @@ def _touch_artist_login(db: Session, artist: Artist) -> None:
     db.refresh(artist)
 
 
+def _login_stats_threshold(days: int = 30) -> datetime:
+    return datetime.now(timezone.utc) - timedelta(days=days)
+
+
+def _users_logged_in_since(db: Session, threshold: datetime) -> int:
+    return (
+        db.query(User)
+        .filter(User.last_login_at.isnot(None), User.last_login_at >= threshold)
+        .count()
+    )
+
+
+def _artist_activity_keys_since(db: Session, threshold: datetime) -> set[str]:
+    artist_keys: set[str] = set()
+
+    portal_artists = db.query(Artist).filter(
+        Artist.last_login_at.isnot(None),
+        Artist.last_login_at >= threshold,
+    )
+    for artist in portal_artists:
+        artist_keys.add(f"artist:{artist.id}")
+
+    artist_users = db.query(User).filter(
+        User.role == "artist",
+        User.last_login_at.isnot(None),
+        User.last_login_at >= threshold,
+    )
+    for artist_user in artist_users:
+        if artist_user.artist_id is not None:
+            artist_keys.add(f"artist:{artist_user.artist_id}")
+        else:
+            artist_keys.add(f"user-email:{artist_user.email.lower()}")
+
+    return artist_keys
+
+
+def _recent_user_logins(db: Session, limit: int = 10) -> list[LoginActivityOut]:
+    out: list[LoginActivityOut] = []
+    rows = (
+        db.query(User)
+        .filter(User.last_login_at.isnot(None))
+        .order_by(User.last_login_at.desc())
+        .limit(limit)
+        .all()
+    )
+    for recent_user in rows:
+        if recent_user.last_login_at is None:
+            continue
+        out.append(
+            LoginActivityOut(
+                source="user",
+                name=(recent_user.full_name or recent_user.email).strip(),
+                email=recent_user.email,
+                role=recent_user.role,
+                is_active=recent_user.is_active,
+                last_login_at=recent_user.last_login_at,
+            )
+        )
+    return out
+
+
+def _recent_artist_portal_logins(db: Session, limit: int = 10) -> list[LoginActivityOut]:
+    out: list[LoginActivityOut] = []
+    rows = (
+        db.query(Artist)
+        .filter(Artist.last_login_at.isnot(None))
+        .order_by(Artist.last_login_at.desc())
+        .limit(limit)
+        .all()
+    )
+    for recent_artist in rows:
+        if recent_artist.last_login_at is None:
+            continue
+        out.append(
+            LoginActivityOut(
+                source="artist_portal",
+                name=(recent_artist.name or recent_artist.email).strip(),
+                email=recent_artist.email,
+                role="artist",
+                is_active=recent_artist.is_active,
+                last_login_at=recent_artist.last_login_at,
+            )
+        )
+    return out
+
+
+def _combined_recent_logins(db: Session, limit: int = 10) -> list[LoginActivityOut]:
+    recent_logins = _recent_user_logins(db, limit=limit) + _recent_artist_portal_logins(db, limit=limit)
+    recent_logins.sort(key=lambda item: item.last_login_at, reverse=True)
+    return recent_logins[:limit]
+
+
 def _ensure_artist_reset_user(db: Session, artist: Artist) -> User | None:
     if not artist.is_active or not artist.password_hash:
         return None
@@ -1999,80 +2091,15 @@ def get_login_stats(
     user: UserContext = Depends(get_current_lm_user),
 ) -> LoginStatsOut:
     require_admin(user)
-    threshold = datetime.now(timezone.utc) - timedelta(days=30)
-
-    users_logged_in_last_30_days = (
-        db.query(User)
-        .filter(User.last_login_at.isnot(None), User.last_login_at >= threshold)
-        .count()
-    )
-
-    artist_keys: set[str] = set()
-    portal_artists = db.query(Artist).filter(
-        Artist.last_login_at.isnot(None),
-        Artist.last_login_at >= threshold,
-    )
-    for artist in portal_artists:
-        artist_keys.add(f"artist:{artist.id}")
-
-    artist_users = db.query(User).filter(
-        User.role == "artist",
-        User.last_login_at.isnot(None),
-        User.last_login_at >= threshold,
-    )
-    for artist_user in artist_users:
-        if artist_user.artist_id is not None:
-            artist_keys.add(f"artist:{artist_user.artist_id}")
-        else:
-            artist_keys.add(f"user-email:{artist_user.email.lower()}")
-
-    recent_logins: list[LoginActivityOut] = []
-    for recent_user in (
-        db.query(User)
-        .filter(User.last_login_at.isnot(None))
-        .order_by(User.last_login_at.desc())
-        .limit(10)
-        .all()
-    ):
-        if recent_user.last_login_at is None:
-            continue
-        recent_logins.append(
-            LoginActivityOut(
-                source="user",
-                name=(recent_user.full_name or recent_user.email).strip(),
-                email=recent_user.email,
-                role=recent_user.role,
-                is_active=recent_user.is_active,
-                last_login_at=recent_user.last_login_at,
-            )
-        )
-
-    for recent_artist in (
-        db.query(Artist)
-        .filter(Artist.last_login_at.isnot(None))
-        .order_by(Artist.last_login_at.desc())
-        .limit(10)
-        .all()
-    ):
-        if recent_artist.last_login_at is None:
-            continue
-        recent_logins.append(
-            LoginActivityOut(
-                source="artist_portal",
-                name=(recent_artist.name or recent_artist.email).strip(),
-                email=recent_artist.email,
-                role="artist",
-                is_active=recent_artist.is_active,
-                last_login_at=recent_artist.last_login_at,
-            )
-        )
-
-    recent_logins.sort(key=lambda item: item.last_login_at, reverse=True)
+    threshold = _login_stats_threshold(days=30)
+    users_logged_in_last_30_days = _users_logged_in_since(db, threshold)
+    artist_keys = _artist_activity_keys_since(db, threshold)
+    recent_logins = _combined_recent_logins(db, limit=10)
 
     return LoginStatsOut(
         users_logged_in_last_30_days=users_logged_in_last_30_days,
         artists_logged_in_last_30_days=len(artist_keys),
-        recent_logins=recent_logins[:10],
+        recent_logins=recent_logins,
     )
 
 
