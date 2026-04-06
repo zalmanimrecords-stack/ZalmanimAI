@@ -1,4 +1,6 @@
-from app.models.models import Artist, ArtistRegistrationToken, SystemLog
+import json
+
+from app.models.models import Artist, ArtistActivityLog, ArtistRegistrationToken, SystemLog
 
 
 def test_admin_can_send_groover_invite_and_create_artist(client, db_session, admin_headers, monkeypatch):
@@ -110,3 +112,85 @@ def test_admin_email_history_reports_previous_send(client, db_session, admin_hea
     assert data["has_sent_before"] is True
     assert data["send_count"] == 1
     assert data["last_subject"] == "Welcome to the portal"
+
+
+def test_admin_send_groover_invite_reuses_artist_and_updates_missing_fields(
+    client, db_session, admin_headers, monkeypatch
+):
+    artist = Artist(
+        name="Existing Brand",
+        email="reuse@example.com",
+        notes="Existing note",
+        is_active=True,
+        extra_json=json.dumps({"artist_brand": "Existing Brand"}),
+    )
+    db_session.add(artist)
+    db_session.commit()
+    db_session.refresh(artist)
+
+    monkeypatch.setattr("app.api.routes.send_email_service", lambda **kwargs: (True, "Sent"))
+
+    response = client.post(
+        "/api/admin/artists/send-groover-invite",
+        headers=admin_headers,
+        json={
+            "email": "reuse@example.com",
+            "artist_name": "New Brand Should Not Override",
+            "full_name": "Maya Cohen",
+            "notes": "Groover source note",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["created_artist"] is False
+
+    db_session.refresh(artist)
+    extra = json.loads(artist.extra_json or "{}")
+    assert extra.get("artist_brand") == "Existing Brand"
+    assert extra.get("full_name") == "Maya Cohen"
+    assert extra.get("source_row") == "groover"
+    assert "Existing note" in (artist.notes or "")
+    assert "Groover source note" in (artist.notes or "")
+
+
+def test_admin_send_groover_invite_email_limit_error_returns_429(
+    client, db_session, admin_headers, monkeypatch
+):
+    artist = Artist(
+        name="Limit Artist",
+        email="limit@example.com",
+        notes="",
+        is_active=True,
+        extra_json="{}",
+    )
+    db_session.add(artist)
+    db_session.commit()
+    db_session.refresh(artist)
+
+    monkeypatch.setattr("app.api.routes.send_email_service", lambda **kwargs: (False, "Limit reached for this hour"))
+
+    response = client.post(
+        "/api/admin/artists/send-groover-invite",
+        headers=admin_headers,
+        json={
+            "email": "limit@example.com",
+            "artist_name": "Limit Artist",
+            "full_name": "Limit User",
+            "notes": "Note",
+        },
+    )
+    assert response.status_code == 429
+    assert "Limit reached" in response.json()["detail"]
+
+    token_count = (
+        db_session.query(ArtistRegistrationToken)
+        .filter(ArtistRegistrationToken.artist_id == artist.id)
+        .count()
+    )
+    activity_count = (
+        db_session.query(ArtistActivityLog)
+        .filter(ArtistActivityLog.artist_id == artist.id, ArtistActivityLog.activity_type == "groover_invite_email")
+        .count()
+    )
+    assert token_count == 0
+    assert activity_count == 0
