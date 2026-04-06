@@ -2734,74 +2734,82 @@ def admin_send_artist_portal_invite(
     )
 
 
-@router.post("/admin/artists/send-groover-invite", response_model=GrooverInviteResponse)
-def admin_send_groover_invite(
-    payload: GrooverInviteRequest,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-) -> GrooverInviteResponse:
-    """Create or reuse an artist and send a Groover follow-up email with registration form link."""
-    require_admin(user)
-    email = (payload.email or "").strip().lower()
-    if not email:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email is required")
-
-    artist = db.query(Artist).filter(func.lower(Artist.email) == email).first()
-    created_artist = False
-    base_name = (
+def _groover_base_name(payload: GrooverInviteRequest, email: str) -> str:
+    return (
         (payload.artist_name or "").strip()
         or (payload.full_name or "").strip()
         or email.split("@")[0]
     )
-    if not artist:
-        extra = {
-            "artist_brand": (payload.artist_name or "").strip() or base_name,
-            "full_name": (payload.full_name or "").strip(),
-            "source_row": "groover",
-        }
-        artist = Artist(
-            name=base_name[:120],
-            email=email,
-            notes=(payload.notes or "").strip(),
-            extra_json=json.dumps({k: v for k, v in extra.items() if v}),
-        )
-        db.add(artist)
-        db.flush()
-        created_artist = True
-    else:
-        extra = _artist_extra_from_model(artist)
-        changed = False
-        artist_brand = (payload.artist_name or "").strip()
-        full_name = (payload.full_name or "").strip()
-        if artist_brand and not str(extra.get("artist_brand") or "").strip():
-            extra["artist_brand"] = artist_brand
-            changed = True
-        if full_name and not str(extra.get("full_name") or "").strip():
-            extra["full_name"] = full_name
-            changed = True
-        if "source_row" not in extra:
-            extra["source_row"] = "groover"
-            changed = True
-        if changed:
-            artist.extra_json = json.dumps(extra)
-        if (payload.notes or "").strip():
-            notes_prefix = (artist.notes or "").strip()
-            groover_note = (payload.notes or "").strip()
-            if groover_note not in notes_prefix:
-                artist.notes = f"{notes_prefix}\n\n{groover_note}".strip()
 
+
+def _groover_create_artist_from_payload(db: Session, payload: GrooverInviteRequest, email: str) -> Artist:
+    base_name = _groover_base_name(payload, email)
+    extra = {
+        "artist_brand": (payload.artist_name or "").strip() or base_name,
+        "full_name": (payload.full_name or "").strip(),
+        "source_row": "groover",
+    }
+    artist = Artist(
+        name=base_name[:120],
+        email=email,
+        notes=(payload.notes or "").strip(),
+        extra_json=json.dumps({k: v for k, v in extra.items() if v}),
+    )
+    db.add(artist)
+    db.flush()
+    return artist
+
+
+def _groover_update_existing_artist_from_payload(artist: Artist, payload: GrooverInviteRequest) -> None:
+    extra = _artist_extra_from_model(artist)
+    changed = False
+    artist_brand = (payload.artist_name or "").strip()
+    full_name = (payload.full_name or "").strip()
+    if artist_brand and not str(extra.get("artist_brand") or "").strip():
+        extra["artist_brand"] = artist_brand
+        changed = True
+    if full_name and not str(extra.get("full_name") or "").strip():
+        extra["full_name"] = full_name
+        changed = True
+    if "source_row" not in extra:
+        extra["source_row"] = "groover"
+        changed = True
+    if changed:
+        artist.extra_json = json.dumps(extra)
+
+    groover_note = (payload.notes or "").strip()
+    if groover_note:
+        notes_prefix = (artist.notes or "").strip()
+        if groover_note not in notes_prefix:
+            artist.notes = f"{notes_prefix}\n\n{groover_note}".strip()
+
+
+def _prepare_groover_artist(db: Session, payload: GrooverInviteRequest, email: str) -> tuple[Artist, bool]:
+    artist = db.query(Artist).filter(func.lower(Artist.email) == email).first()
+    if not artist:
+        return _groover_create_artist_from_payload(db, payload, email), True
+    _groover_update_existing_artist_from_payload(artist, payload)
+    return artist, False
+
+
+def _create_groover_registration_token(db: Session, artist_id: int, email: str) -> str:
     raw_token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
     expires_at = datetime.now(timezone.utc) + timedelta(days=14)
     token_row = ArtistRegistrationToken(
-        artist_id=artist.id,
+        artist_id=artist_id,
         token_hash=token_hash,
         email=email,
         source="groover",
         expires_at=expires_at,
     )
     db.add(token_row)
+    return raw_token
 
+
+def _groover_invite_email_payload(
+    payload: GrooverInviteRequest, artist: Artist, email: str, raw_token: str
+) -> tuple[str, str, str, str]:
     extra = _artist_extra_from_model(artist)
     display_name = (
         (payload.full_name or "").strip()
@@ -2818,6 +2826,26 @@ def admin_send_groover_invite(
         body_text=body_text,
         registration_url=registration_url,
         portal_url=portal_url,
+    )
+    return subject, body_text, body_html, registration_url
+
+
+@router.post("/admin/artists/send-groover-invite", response_model=GrooverInviteResponse)
+def admin_send_groover_invite(
+    payload: GrooverInviteRequest,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> GrooverInviteResponse:
+    """Create or reuse an artist and send a Groover follow-up email with registration form link."""
+    require_admin(user)
+    email = (payload.email or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email is required")
+
+    artist, created_artist = _prepare_groover_artist(db, payload, email)
+    raw_token = _create_groover_registration_token(db, artist.id, email)
+    subject, body_text, body_html, registration_url = _groover_invite_email_payload(
+        payload, artist, email, raw_token
     )
 
     success, message = send_email_service(
