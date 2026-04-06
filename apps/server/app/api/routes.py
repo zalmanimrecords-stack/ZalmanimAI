@@ -1358,6 +1358,45 @@ def _artist_public_media_ids(extra: dict) -> set[int]:
     return ids
 
 
+def _artist_extra_json_dict(artist: Artist) -> dict[str, Any]:
+    raw = getattr(artist, "extra_json", None)
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw) or {}
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _normalize_external_url(value: str) -> str:
+    trimmed = (value or "").strip()
+    if not trimmed:
+        return ""
+    if trimmed.startswith("http://") or trimmed.startswith("https://"):
+        return trimmed
+    if "://" in trimmed:
+        return trimmed
+    return f"https://{trimmed}"
+
+
+def _linktree_name_headline_bio_theme(artist: Artist, extra: dict[str, Any]) -> tuple[str, str | None, str | None, str]:
+    name = (artist.name or "").strip() or (extra.get("full_name") or extra.get("artist_brand") or "").strip() or "Artist"
+    headline = (extra.get("minisite_headline") or extra.get("artist_brand") or "").strip() or None
+    bio = (extra.get("minisite_bio") or artist.notes or "").strip() or None
+    theme = _artist_minisite_theme(extra.get("minisite_theme"))
+    return name, headline, bio, theme
+
+
+def _linktree_links_from_extra(extra: dict[str, Any]) -> list[LinktreeLink]:
+    links: list[LinktreeLink] = []
+    for key, label in _LINKTREE_LABELS.items():
+        normalized_url = _normalize_external_url(str(extra.get(key) or ""))
+        if normalized_url:
+            links.append(LinktreeLink(label=label, url=normalized_url))
+    return links
+
+
 def _release_base_url(request: Request) -> str:
     return f"{str(request.base_url).rstrip('/')}/api"
 
@@ -1665,25 +1704,11 @@ def public_linktree(
     artist = db.query(Artist).filter(Artist.id == artist_id, Artist.is_active == True).first()
     if not artist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
-    extra = {}
-    if getattr(artist, "extra_json", None):
-        try:
-            extra = json.loads(artist.extra_json) or {}
-        except (json.JSONDecodeError, TypeError):
-            pass
+    extra = _artist_extra_json_dict(artist)
     if extra.get("minisite_is_public") is False:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist minisite not found")
-    name = (artist.name or "").strip() or (extra.get("full_name") or extra.get("artist_brand") or "").strip() or "Artist"
-    headline = (extra.get("minisite_headline") or extra.get("artist_brand") or "").strip() or None
-    bio = (extra.get("minisite_bio") or artist.notes or "").strip() or None
-    theme = _artist_minisite_theme(extra.get("minisite_theme"))
-    links = []
-    for key, label in _LINKTREE_LABELS.items():
-        val = (extra.get(key) or "").strip()
-        if val and (val.startswith("http://") or val.startswith("https://")):
-            links.append(LinktreeLink(label=label, url=val))
-        elif val:
-            links.append(LinktreeLink(label=label, url=val if "://" in val else f"https://{val}"))
+    name, headline, bio, theme = _linktree_name_headline_bio_theme(artist, extra)
+    links = _linktree_links_from_extra(extra)
     profile_image_url = None
     logo_url = None
     pid = extra.get("profile_image_media_id")
