@@ -57,7 +57,7 @@ class _DetailsTableCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: scheme.primary.withValues(alpha: 0.08),
+              color: scheme.primary.withOpacity(0.08),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(17)),
             ),
             child: Text(
@@ -77,7 +77,7 @@ class _DetailsTableCard extends StatelessWidget {
               for (int i = 0; i < rows.length; i++)
                 TableRow(
                   decoration: BoxDecoration(
-                    color: i.isEven ? Colors.transparent : scheme.surfaceContainerHighest.withValues(alpha: 0.28),
+                    color: i.isEven ? Colors.transparent : scheme.surfaceContainerHighest.withOpacity(0.28),
                   ),
                   children: [
                     _DetailLabelCell(label: rows[i].label),
@@ -209,7 +209,7 @@ class _ImageGalleryCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: scheme.secondary.withValues(alpha: 0.08),
+              color: scheme.secondary.withOpacity(0.08),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(17)),
             ),
             child: Row(
@@ -287,7 +287,7 @@ class _CommentFeedCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: scheme.tertiary.withValues(alpha: 0.10),
+              color: scheme.tertiary.withOpacity(0.10),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(17)),
             ),
             child: Row(
@@ -348,7 +348,7 @@ class _CommentTile extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.22),
+        color: scheme.surfaceContainerHighest.withOpacity(0.22),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
@@ -445,7 +445,7 @@ class _ImagePreviewTileState extends State<_ImagePreviewTile> {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.25),
+        color: scheme.surfaceContainerHighest.withOpacity(0.25),
       ),
       padding: const EdgeInsets.all(12),
       child: Column(

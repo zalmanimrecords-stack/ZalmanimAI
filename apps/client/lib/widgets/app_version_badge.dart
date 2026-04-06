@@ -48,11 +48,11 @@ class _AppVersionBadgeState extends State<AppVersionBadge> {
         padding: widget.padding,
         decoration: BoxDecoration(
           color: widget.backgroundColor ??
-              theme.colorScheme.primaryContainer.withValues(alpha: 0.55),
+              theme.colorScheme.primaryContainer.withOpacity(0.55),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
             color: widget.borderColor ??
-                theme.colorScheme.primary.withValues(alpha: 0.14),
+                theme.colorScheme.primary.withOpacity(0.14),
           ),
         ),
         child: Text(

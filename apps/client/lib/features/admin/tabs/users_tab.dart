@@ -392,7 +392,7 @@ class _UserCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                color: _roleColor(context, role).withValues(alpha: 0.2),
+                color: _roleColor(context, role).withOpacity(0.2),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(

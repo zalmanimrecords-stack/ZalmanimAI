@@ -5,10 +5,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/api_client.dart';
-import 'file_download.dart';
 import '../../core/session.dart';
 import '../../core/session_storage.dart';
 import '../../core/zalmanim_icons.dart';
@@ -2611,7 +2609,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   const Text('Demo MP3',
                       style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 6),
-                  _DemoDownloadMp3Link(
+                  DemoSubmissionMp3DownloadButton(
                     demoId: id,
                     apiClient: widget.apiClient,
                     token: widget.token,
@@ -2654,7 +2652,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                               label: const Text('Open in browser'),
                             )
                           else
-                            _SoundCloudEmbedWidget(soundCloudUrl: url),
+                            DemoSoundCloudEmbed(soundCloudUrl: url),
                         ],
                       ),
                     ),
@@ -2916,7 +2914,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                                           color: Theme.of(context)
                                               .colorScheme
                                               .surfaceContainerHighest
-                                              .withValues(alpha: 0.5)),
+                                              .withOpacity(0.5)),
                                   children: [
                                     Padding(
                                       padding: const EdgeInsets.symmetric(
@@ -4025,7 +4023,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                         style: TextStyle(fontWeight: FontWeight.w600)),
                     const SizedBox(height: 6),
                     DropdownButtonFormField<int>(
-                      initialValue: targetId,
+                      value: targetId,
                       decoration: const InputDecoration(
                           border: OutlineInputBorder(), isDense: true),
                       hint: const Text('Select target'),
@@ -4938,7 +4936,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               return Card(
                 margin: const EdgeInsets.only(bottom: 8),
                 color:
-                    hasNoArtist ? Colors.orange.withValues(alpha: 0.12) : null,
+                    hasNoArtist ? Colors.orange.withOpacity(0.12) : null,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                   side: hasNoArtist
@@ -6068,7 +6066,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
-                      initialValue: role,
+                      value: role,
                       decoration: const InputDecoration(labelText: 'Role'),
                       items: _userRoles
                           .map(
@@ -6080,7 +6078,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     if (role == 'artist') ...[
                       const SizedBox(height: 8),
                       DropdownButtonFormField<int?>(
-                        initialValue: artistId,
+                        value: artistId,
                         decoration: const InputDecoration(
                             labelText: 'Artist (optional)'),
                         items: [
@@ -6237,7 +6235,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
-                      initialValue: role,
+                      value: role,
                       decoration: const InputDecoration(labelText: 'Role'),
                       items: _userRoles
                           .map(
@@ -6249,7 +6247,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     if (role == 'artist') ...[
                       const SizedBox(height: 8),
                       DropdownButtonFormField<int?>(
-                        initialValue: artistId,
+                        value: artistId,
                         decoration: const InputDecoration(
                             labelText: 'Artist (optional)'),
                         items: [
@@ -6420,7 +6418,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 ] else ...[
                   const SizedBox(height: 8),
                   DropdownButtonFormField<int>(
-                    initialValue: selectedListId,
+                    value: selectedListId,
                     decoration:
                         const InputDecoration(labelText: 'Import into list'),
                     items: audiences.map((audience) {
@@ -6651,7 +6649,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       decoration: const InputDecoration(labelText: 'Email')),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
-                    initialValue: statusValue,
+                    value: statusValue,
                     decoration: const InputDecoration(labelText: 'Status'),
                     items: const [
                       DropdownMenuItem(

@@ -150,13 +150,16 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('No Email Artist'));
+    await tester.tap(find.byType(ExpansionTile));
     await tester.pumpAndSettle();
 
+    expect(find.text('Message artist'), findsOneWidget);
     final messageButton = tester.widget<OutlinedButton>(
-      find.widgetWithText(OutlinedButton, 'Message artist'),
+      find.ancestor(
+        of: find.text('Message artist'),
+        matching: find.byWidgetPredicate((w) => w is OutlinedButton),
+      ),
     );
-
     expect(messageButton.onPressed, isNull);
   });
 

@@ -739,12 +739,12 @@ class _PendingReleasesTabState extends State<PendingReleasesTab> {
                                         displayTitle != releaseTitle)
                                       _InfoPill(
                                         label: releaseTitle,
-                                        background: scheme.primary.withValues(alpha: 0.10),
+                                        background: scheme.primary.withOpacity(0.10),
                                         foreground: scheme.primary,
                                       ),
                                     _InfoPill(
                                       label: status.toUpperCase(),
-                                      background: scheme.secondary.withValues(alpha: 0.12),
+                                      background: scheme.secondary.withOpacity(0.12),
                                       foreground: scheme.secondary,
                                     ),
                                     if (fromDemo)

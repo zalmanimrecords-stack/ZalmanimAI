@@ -150,7 +150,7 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
           scrolledUnderElevation: 1,
         ),
         dividerColor: const Color(0x22156B5C),
-        cardTheme: CardThemeData(
+        cardTheme: CardTheme(
           color: const Color(0xFDFDFEFE),
           elevation: 2,
           shadowColor: const Color(0x18156B5C),
@@ -162,7 +162,7 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: Colors.white.withValues(alpha: 0.84),
+          fillColor: Colors.white.withOpacity(0.84),
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           border: OutlineInputBorder(
