@@ -72,3 +72,36 @@ def test_release_minisite_html_escapes_untrusted_content():
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html_out
     assert "&lt;img src=x onerror=alert(1)&gt;" in html_out
     assert "https://unsafe.example.com" in html_out
+
+
+def test_release_minisite_platform_links_adds_best_candidate_per_platform():
+    release = SimpleNamespace(
+        platform_links_json='{"spotify":"https://open.spotify.com/existing"}',
+        link_candidates=[
+            SimpleNamespace(status="pending", platform="youtube", url="https://youtube.com/low", confidence=0.25),
+            SimpleNamespace(status="pending", platform="youtube", url="https://youtube.com/high", confidence=0.9),
+            SimpleNamespace(status="pending", platform="spotify", url="https://open.spotify.com/new", confidence=0.99),
+        ],
+    )
+
+    links = routes._release_minisite_platform_links(release)
+
+    assert links["spotify"] == "https://open.spotify.com/existing"
+    assert links["youtube"] == "https://youtube.com/high"
+
+
+def test_release_minisite_platform_links_skips_rejected_or_incomplete_candidates():
+    release = SimpleNamespace(
+        platform_links_json="{}",
+        link_candidates=[
+            SimpleNamespace(status="rejected", platform="apple_music", url="https://music.apple.com/rejected", confidence=1.0),
+            SimpleNamespace(status="auto_rejected", platform="spotify", url="https://open.spotify.com/rejected", confidence=1.0),
+            SimpleNamespace(status="pending", platform="", url="https://example.com/no-platform", confidence=0.8),
+            SimpleNamespace(status="pending", platform="youtube", url="", confidence=0.8),
+            SimpleNamespace(status="pending", platform="soundcloud", url="https://soundcloud.com/live", confidence=0.4),
+        ],
+    )
+
+    links = routes._release_minisite_platform_links(release)
+
+    assert links == {"soundcloud": "https://soundcloud.com/live"}
