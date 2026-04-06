@@ -115,3 +115,48 @@ def test_public_artist_media_only_serves_selected_minisite_images(client, db_ses
     assert client.get(
         f"/api/public/artist/{artist.id}/media/{private_media.id}"
     ).status_code == 404
+
+
+def test_public_linktree_normalizes_social_links_and_name_fallback(client, db_session):
+    artist = Artist(
+        name="   ",
+        email="fallback@example.com",
+        notes="",
+        is_active=True,
+        extra_json=json.dumps(
+            {
+                "artist_brand": "Fallback Brand",
+                "instagram": "instagram.com/fallback",
+                "website": "https://example.com/site",
+                "minisite_is_public": True,
+            }
+        ),
+    )
+    db_session.add(artist)
+    db_session.commit()
+    db_session.refresh(artist)
+
+    response = client.get(f"/api/public/linktree/{artist.id}")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["name"] == "Fallback Brand"
+    links_by_label = {item["label"]: item["url"] for item in data["links"]}
+    assert links_by_label["Instagram"] == "https://instagram.com/fallback"
+    assert links_by_label["Website"] == "https://example.com/site"
+
+
+def test_public_linktree_returns_404_when_minisite_marked_private(client, db_session):
+    artist = Artist(
+        name="Private Artist",
+        email="private@example.com",
+        notes="",
+        is_active=True,
+        extra_json=json.dumps({"minisite_is_public": False}),
+    )
+    db_session.add(artist)
+    db_session.commit()
+    db_session.refresh(artist)
+
+    response = client.get(f"/api/public/linktree/{artist.id}")
+    assert response.status_code == 404
