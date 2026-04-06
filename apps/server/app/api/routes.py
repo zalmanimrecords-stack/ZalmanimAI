@@ -1469,41 +1469,69 @@ def _release_minisite_platform_links(release: Release) -> dict[str, str]:
     return links
 
 
-def _release_minisite_html(request: Request, release: Release, config: dict) -> str:
-    theme_name = str(config.get("theme") or "nebula").strip() or "nebula"
-    theme = _release_minisite_theme(theme_name)
+def _release_minisite_artist_name(release: Release) -> str:
     artist_names = [a.name for a in getattr(release, "artists", []) or [] if (a.name or "").strip()]
     if not artist_names and getattr(release, "artist", None) is not None and (release.artist.name or "").strip():
         artist_names = [release.artist.name.strip()]
-    artist_name = ", ".join(artist_names) or "Unknown Artist"
+    return ", ".join(artist_names) or "Unknown Artist"
+
+
+def _release_minisite_artist_extra(release: Release) -> dict[str, Any]:
+    artist = getattr(release, "artist", None)
+    if artist is None or not getattr(artist, "extra_json", None):
+        return {}
+    try:
+        data = json.loads(artist.extra_json) or {}
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _release_minisite_socials(artist_extra: dict[str, Any]) -> list[tuple[str, str]]:
+    socials: list[tuple[str, str]] = []
+    for key in ("website", "instagram", "spotify", "soundcloud", "youtube", "apple_music", "linktree"):
+        value = str(artist_extra.get(key) or "").strip()
+        if value:
+            url = value if "://" in value else f"https://{value}"
+            socials.append((key.replace("_", " ").title(), url))
+    return socials
+
+
+def _release_minisite_platform_links_markup(platform_links: dict[str, str]) -> str:
+    return "".join(
+        f'<a class="pill" href="{html.escape(url)}" target="_blank" rel="noopener">{html.escape(label.replace("_", " ").title())}</a>'
+        for label, url in sorted(platform_links.items())
+    )
+
+
+def _release_minisite_gallery_markup(release: Release, gallery_urls: list[str]) -> str:
+    return "".join(
+        f'<img src="{html.escape(url)}" alt="{html.escape(release.title)} artwork" />'
+        for url in gallery_urls
+    )
+
+
+def _release_minisite_social_markup(socials: list[tuple[str, str]]) -> str:
+    return "".join(
+        f'<a class="social" href="{html.escape(url)}" target="_blank" rel="noopener">{html.escape(label)}</a>'
+        for label, url in socials
+    )
+
+
+def _release_minisite_html(request: Request, release: Release, config: dict) -> str:
+    theme_name = str(config.get("theme") or "nebula").strip() or "nebula"
+    theme = _release_minisite_theme(theme_name)
+    artist_name = _release_minisite_artist_name(release)
     description = str(config.get("description") or "").strip()
     download_url = str(config.get("download_url") or "").strip()
     gallery_urls = _release_minisite_gallery_urls(request, release, config)
     platform_links = _release_minisite_platform_links(release)
-    artist_extra = {}
-    if getattr(release, "artist", None) is not None and getattr(release.artist, "extra_json", None):
-        try:
-            artist_extra = json.loads(release.artist.extra_json) or {}
-        except (json.JSONDecodeError, TypeError):
-            artist_extra = {}
+    artist_extra = _release_minisite_artist_extra(release)
     artist_blurb = str(artist_extra.get("full_name") or artist_extra.get("artist_brand") or "").strip()
-    socials = []
-    for key in ("website", "instagram", "spotify", "soundcloud", "youtube", "apple_music", "linktree"):
-        value = str(artist_extra.get(key) or "").strip()
-        if value:
-            socials.append((key.replace("_", " ").title(), value if "://" in value else f"https://{value}"))
-    links_markup = "".join(
-        f'<a class="pill" href="{html.escape(url)}" target="_blank" rel="noopener">{html.escape(label.replace("_", " ").title())}</a>'
-        for label, url in sorted(platform_links.items())
-    )
-    gallery_markup = "".join(
-        f'<img src="{html.escape(url)}" alt="{html.escape(release.title)} artwork" />'
-        for url in gallery_urls
-    )
-    social_markup = "".join(
-        f'<a class="social" href="{html.escape(url)}" target="_blank" rel="noopener">{html.escape(label)}</a>'
-        for label, url in socials
-    )
+    socials = _release_minisite_socials(artist_extra)
+    links_markup = _release_minisite_platform_links_markup(platform_links)
+    gallery_markup = _release_minisite_gallery_markup(release, gallery_urls)
+    social_markup = _release_minisite_social_markup(socials)
     release_date = release.created_at.strftime("%Y-%m-%d") if getattr(release, "created_at", None) else ""
     download_markup = (
         f'<a class="cta" href="{html.escape(download_url)}" target="_blank" rel="noopener">Download Release</a>'
