@@ -2195,19 +2195,7 @@ def get_demo_submission(
     return _serialize_demo_submission(item)
 
 
-@router.patch("/admin/demo-submissions/{submission_id}", response_model=DemoSubmissionOut)
-def update_demo_submission(
-    submission_id: int,
-    payload: DemoSubmissionUpdate,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-) -> DemoSubmissionOut:
-    require_admin(user)
-    item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
-    if not item:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
-
-    old_status = item.status
+def _apply_demo_submission_update_payload(item: DemoSubmission, payload: DemoSubmissionUpdate) -> None:
     if payload.artist_name is not None:
         item.artist_name = payload.artist_name.strip()
     if payload.email is not None:
@@ -2240,38 +2228,71 @@ def update_demo_submission(
     if payload.artist_id is not None:
         item.artist_id = payload.artist_id
 
-    # When status changes to approved (e.g. admin "Mark approved"), mirror POST /approve: artist row + pending release.
+
+def _resolve_rejection_email_content(item: DemoSubmission, payload: DemoSubmissionUpdate) -> tuple[str, str]:
+    default_rejection_subject, default_rejection_body = _get_demo_rejection_subject_and_body(item)
+    rejection_subject = default_rejection_subject
+    rejection_body = default_rejection_body
+    if payload.rejection_subject is not None:
+        rejection_subject = payload.rejection_subject.strip() or default_rejection_subject
+        rejection_subject = _apply_demo_rejection_placeholders(rejection_subject, item)
+    if payload.rejection_body is not None:
+        rejection_body = payload.rejection_body.strip() or default_rejection_body
+        rejection_body = _apply_demo_rejection_placeholders(rejection_body, item)
+    return rejection_subject, rejection_body
+
+
+def _maybe_send_rejection_email(item: DemoSubmission, payload: DemoSubmissionUpdate) -> None:
+    if not (item.status == "rejected" and item.rejection_email_sent_at is None):
+        return
+    rejection_subject, rejection_body = _resolve_rejection_email_content(item, payload)
+    should_send_rejection_email = payload.send_rejection_email
+    if should_send_rejection_email is None:
+        should_send_rejection_email = True
+    if should_send_rejection_email and is_email_configured():
+        success, message = send_email_service(
+            to_email=item.email,
+            subject=rejection_subject,
+            body_text=rejection_body,
+        )
+        if success:
+            item.rejection_email_sent_at = datetime.now(timezone.utc)
+            return
+        if "limit" in message.lower():
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+    # If email is not configured, still allow marking as rejected; no email sent.
+
+
+def _apply_demo_submission_status_transitions(
+    db: Session,
+    item: DemoSubmission,
+    payload: DemoSubmissionUpdate,
+    *,
+    old_status: str,
+) -> None:
     if item.status == "approved" and old_status != "approved":
         _link_or_create_artist_for_demo_submission(db, item)
         _create_pending_release_for_demo(db, item)
+    if item.status == "rejected" and old_status != "rejected":
+        _maybe_send_rejection_email(item, payload)
 
-    # When status changes to rejected, send rejection email once (if not already sent).
-    if item.status == "rejected" and old_status != "rejected" and item.rejection_email_sent_at is None:
-        default_rejection_subject, default_rejection_body = _get_demo_rejection_subject_and_body(item)
-        rejection_subject = default_rejection_subject
-        rejection_body = default_rejection_body
-        if payload.rejection_subject is not None:
-            rejection_subject = payload.rejection_subject.strip() or default_rejection_subject
-            rejection_subject = _apply_demo_rejection_placeholders(rejection_subject, item)
-        if payload.rejection_body is not None:
-            rejection_body = payload.rejection_body.strip() or default_rejection_body
-            rejection_body = _apply_demo_rejection_placeholders(rejection_body, item)
-        should_send_rejection_email = payload.send_rejection_email
-        if should_send_rejection_email is None:
-            should_send_rejection_email = True
-        if should_send_rejection_email and is_email_configured():
-            success, message = send_email_service(
-                to_email=item.email,
-                subject=rejection_subject,
-                body_text=rejection_body,
-            )
-            if success:
-                item.rejection_email_sent_at = datetime.now(timezone.utc)
-            else:
-                if "limit" in message.lower():
-                    raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message)
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
-        # If email not configured, still allow marking as rejected; no email sent.
+
+@router.patch("/admin/demo-submissions/{submission_id}", response_model=DemoSubmissionOut)
+def update_demo_submission(
+    submission_id: int,
+    payload: DemoSubmissionUpdate,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> DemoSubmissionOut:
+    require_admin(user)
+    item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
+
+    old_status = item.status
+    _apply_demo_submission_update_payload(item, payload)
+    _apply_demo_submission_status_transitions(db, item, payload, old_status=old_status)
 
     if item.consent_to_emails:
         _upsert_demo_mailing_subscriber(db, item)
