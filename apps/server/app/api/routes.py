@@ -1450,20 +1450,36 @@ def _release_minisite_theme(theme_key: str) -> dict[str, str]:
     return themes.get(theme_key, themes["nebula"])
 
 
-def _release_minisite_platform_links(release: Release) -> dict[str, str]:
-    links = parse_platform_links(getattr(release, "platform_links_json", None))
-    best_candidates: dict[str, tuple[float, str]] = {}
-    for candidate in getattr(release, "link_candidates", []) or []:
-        if getattr(candidate, "status", "") in {"rejected", "auto_rejected"}:
+def _release_candidate_status_allows_link(status_value: Any) -> bool:
+    status = str(status_value or "").strip()
+    return status not in {"rejected", "auto_rejected"}
+
+
+def _release_candidate_platform_url(candidate: Any) -> tuple[str, str]:
+    platform = str(getattr(candidate, "platform", "") or "").strip()
+    url = str(getattr(candidate, "url", "") or "").strip()
+    return platform, url
+
+
+def _select_best_platform_candidate_links(candidates: list[Any], existing_links: dict[str, str]) -> dict[str, tuple[float, str]]:
+    best_by_platform: dict[str, tuple[float, str]] = {}
+    for candidate in candidates:
+        if not _release_candidate_status_allows_link(getattr(candidate, "status", "")):
             continue
-        platform = str(getattr(candidate, "platform", "") or "").strip()
-        url = str(getattr(candidate, "url", "") or "").strip()
-        if not platform or not url or links.get(platform):
+        platform, url = _release_candidate_platform_url(candidate)
+        if not platform or not url or existing_links.get(platform):
             continue
         confidence = float(getattr(candidate, "confidence", 0.0) or 0.0)
-        current = best_candidates.get(platform)
+        current = best_by_platform.get(platform)
         if current is None or confidence > current[0]:
-            best_candidates[platform] = (confidence, url)
+            best_by_platform[platform] = (confidence, url)
+    return best_by_platform
+
+
+def _release_minisite_platform_links(release: Release) -> dict[str, str]:
+    links = parse_platform_links(getattr(release, "platform_links_json", None))
+    candidates = getattr(release, "link_candidates", []) or []
+    best_candidates = _select_best_platform_candidate_links(candidates, links)
     for platform, (_, url) in best_candidates.items():
         links[platform] = url
     return links
