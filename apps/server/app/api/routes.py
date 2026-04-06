@@ -5436,6 +5436,69 @@ def _artist_brand(artist: Artist) -> str:
     return (artist.name or "").strip()
 
 
+def _catalog_release_title_map(db: Session) -> dict[str, str | None]:
+    tracks = db.query(CatalogTrack.release_title, CatalogTrack.original_artists).distinct().all()
+    by_title: dict[str, str | None] = {}
+    for title, orig in tracks:
+        if not title:
+            continue
+        normalized_title = title.strip()
+        if normalized_title not in by_title:
+            by_title[normalized_title] = (orig.strip() if orig else None) or None
+    return by_title
+
+
+def _catalog_original_artist_parts(original_artists: str) -> list[str]:
+    for sep in (",", "&", ";"):
+        if sep in original_artists:
+            return [p.strip() for p in original_artists.split(sep) if p.strip()]
+    return [original_artists.strip()]
+
+
+def _matched_artist_ids_for_catalog_names(
+    original_artists: str | None, artist_keys: list[tuple[int, set[str]]]
+) -> list[int]:
+    if not original_artists:
+        return []
+    parts = _catalog_original_artist_parts(original_artists)
+    normalized_parts = {_normalize_name(p) for p in parts if _normalize_name(p)}
+    return [aid for aid, keys in artist_keys if keys & normalized_parts]
+
+
+def _existing_release_with_artists_by_title(db: Session, release_title: str) -> Release | None:
+    return (
+        db.query(Release)
+        .options(joinedload(Release.artists))
+        .filter(Release.title == release_title)
+        .first()
+    )
+
+
+def _create_catalog_release(db: Session, release_title: str, artist_id: int | None) -> Release:
+    release = Release(
+        artist_id=artist_id,
+        title=release_title,
+        status="from_catalog",
+        file_path=None,
+    )
+    db.add(release)
+    db.flush()
+    return release
+
+
+def _attach_release_artists(db: Session, release: Release, artist_ids: list[int]) -> None:
+    for aid in artist_ids:
+        artist = db.get(Artist, aid)
+        if artist:
+            release.artists.append(artist)
+
+
+def _assign_artists_to_existing_placeholder(db: Session, release: Release, artist_ids: list[int]) -> None:
+    release.artist_id = artist_ids[0]
+    release.artists = [db.get(Artist, aid) for aid in artist_ids]
+    release.artists = [a for a in release.artists if a]
+
+
 @router.post("/admin/releases/sync-from-catalog", response_model=dict)
 def sync_releases_from_catalog(
     db: Session = Depends(get_db),
@@ -5448,17 +5511,7 @@ def sync_releases_from_catalog(
     require_admin(user)
     artists = db.query(Artist).all()
     artist_keys: list[tuple[int, set[str]]] = [(a.id, _artist_match_keys(a)) for a in artists]
-
-    # Distinct (release_title, original_artists) from catalog; take first row per release_title
-    tracks = db.query(CatalogTrack.release_title, CatalogTrack.original_artists).distinct().all()
-    # Dedupe by release_title
-    by_title: dict[str, str | None] = {}
-    for title, orig in tracks:
-        if not title:
-            continue
-        title = title.strip()
-        if title not in by_title:
-            by_title[title] = (orig.strip() if orig else None) or None
+    by_title = _catalog_release_title_map(db)
 
     created = 0
     skipped = 0
@@ -5466,46 +5519,20 @@ def sync_releases_from_catalog(
     created_release_ids: list[int] = []
 
     for release_title, original_artists in by_title.items():
-        # Parse artist names from catalog (comma or & separated)
-        if not original_artists:
-            unmatched += 1
-            continue
-        parts = []
-        for sep in (",", "&", ";"):
-            if sep in original_artists:
-                parts = [p.strip() for p in original_artists.split(sep) if p.strip()]
-                break
-        if not parts:
-            parts = [original_artists.strip()]
-        normalized_parts = {_normalize_name(p) for p in parts if _normalize_name(p)}
-
-        matched_artist_ids: list[int] = [aid for aid, keys in artist_keys if keys & normalized_parts]
+        matched_artist_ids = _matched_artist_ids_for_catalog_names(original_artists, artist_keys)
 
         if not matched_artist_ids:
-            # Create release without artist so admin can assign later
             existing = db.query(Release).filter(Release.title == release_title).first()
             if existing:
                 skipped += 1
             else:
-                release = Release(
-                    artist_id=None,
-                    title=release_title,
-                    status="from_catalog",
-                    file_path=None,
-                )
-                db.add(release)
-                db.flush()
+                release = _create_catalog_release(db, release_title, artist_id=None)
                 created_release_ids.append(release.id)
                 created += 1
             unmatched += 1
             continue
 
-        existing = (
-            db.query(Release)
-            .options(joinedload(Release.artists))
-            .filter(Release.title == release_title)
-            .first()
-        )
+        existing = _existing_release_with_artists_by_title(db, release_title)
         if existing:
             has_artists = existing.artist_id or existing.artists
             if has_artists and (
@@ -5514,28 +5541,15 @@ def sync_releases_from_catalog(
             ):
                 skipped += 1
                 continue
-            # Existing release with no artists (unmatched placeholder): assign matched artists
             if not has_artists:
-                existing.artist_id = matched_artist_ids[0]
-                existing.artists = [db.get(Artist, aid) for aid in matched_artist_ids]
-                existing.artists = [a for a in existing.artists if a]
+                _assign_artists_to_existing_placeholder(db, existing, matched_artist_ids)
                 created_release_ids.append(existing.id)
                 created += 1
                 continue
 
-        release = Release(
-            artist_id=matched_artist_ids[0],
-            title=release_title,
-            status="from_catalog",
-            file_path=None,
-        )
-        db.add(release)
-        db.flush()
+        release = _create_catalog_release(db, release_title, artist_id=matched_artist_ids[0])
         created_release_ids.append(release.id)
-        for aid in matched_artist_ids:
-            a = db.get(Artist, aid)
-            if a:
-                release.artists.append(a)
+        _attach_release_artists(db, release, matched_artist_ids)
         created += 1
 
     for release_id in created_release_ids:
