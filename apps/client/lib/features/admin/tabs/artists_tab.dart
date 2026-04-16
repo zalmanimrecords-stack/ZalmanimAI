@@ -241,7 +241,7 @@ class _ArtistsTabState extends State<ArtistsTab> {
                                           : Theme.of(context)
                                               .colorScheme
                                               .surfaceContainerHighest
-                                              .withValues(alpha: 0.5);
+                                              .withOpacity(0.5);
                                       return Container(
                                         height: _rowHeight,
                                         color: bgColor,

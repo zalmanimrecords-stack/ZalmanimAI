@@ -1,7 +1,7 @@
 name: artist_portal
 description: Label-branded artist portal. Separate from the admin app.
 publish_to: "none"
-version: 0.1.0+65
+version: 0.1.0+66
 
 environment:
   sdk: ">=3.3.0 <4.0.0"

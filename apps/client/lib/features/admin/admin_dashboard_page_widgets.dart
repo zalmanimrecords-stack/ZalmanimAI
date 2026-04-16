@@ -262,7 +262,7 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    initialValue: role,
+                    value: role,
                     decoration: const InputDecoration(
                         labelText: 'Role', border: OutlineInputBorder()),
                     items: const [
@@ -276,7 +276,7 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<int?>(
-                    initialValue: artistId,
+                    value: artistId,
                     decoration: const InputDecoration(
                         labelText: 'Linked artist',
                         border: OutlineInputBorder()),
@@ -436,107 +436,6 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
           ),
         );
       },
-    );
-  }
-}
-
-/// Link to download the demo MP3 file (fetches with auth, then triggers browser download).
-class _DemoDownloadMp3Link extends StatefulWidget {
-  const _DemoDownloadMp3Link({
-    required this.demoId,
-    required this.apiClient,
-    required this.token,
-  });
-
-  final int demoId;
-  final ApiClient apiClient;
-  final String token;
-
-  @override
-  State<_DemoDownloadMp3Link> createState() => _DemoDownloadMp3LinkState();
-}
-
-class _DemoDownloadMp3LinkState extends State<_DemoDownloadMp3Link> {
-  bool _downloading = false;
-
-  Future<void> _download() async {
-    if (_downloading) return;
-    setState(() => _downloading = true);
-    try {
-      final bytes = await widget.apiClient.downloadDemoSubmissionFile(
-        token: widget.token,
-        id: widget.demoId,
-      );
-      if (!mounted) return;
-      triggerBrowserDownload(
-        bytes,
-        'demo_${widget.demoId}.mp3',
-        mimeType: 'audio/mpeg',
-      );
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Download started.')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: SelectableText(e.toString())),
-      );
-    } finally {
-      if (mounted) setState(() => _downloading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: FilledButton.icon(
-        onPressed: _downloading ? null : _download,
-        icon: _downloading
-            ? SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Theme.of(context).colorScheme.onPrimary,
-                ),
-              )
-            : const Icon(Icons.download, size: 20),
-        label: Text(_downloading ? 'Downloading...' : 'Download MP3'),
-      ),
-    );
-  }
-}
-
-class _SoundCloudEmbedWidget extends StatefulWidget {
-  const _SoundCloudEmbedWidget({required this.soundCloudUrl});
-
-  final String soundCloudUrl;
-
-  @override
-  State<_SoundCloudEmbedWidget> createState() => _SoundCloudEmbedWidgetState();
-}
-
-class _SoundCloudEmbedWidgetState extends State<_SoundCloudEmbedWidget> {
-  late final WebViewController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    final encoded = Uri.encodeComponent(widget.soundCloudUrl);
-    final embedUrl =
-        'https://w.soundcloud.com/player/?url=$encoded&color=%23ff5500&auto_play=false&hide_related=false&show_comments=true&show_user=true&show_reposts=false&show_teaser=true';
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..loadRequest(Uri.parse(embedUrl));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 166,
-      width: double.infinity,
-      child: WebViewWidget(controller: _controller),
     );
   }
 }

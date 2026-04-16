@@ -5,10 +5,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/api_client.dart';
-import 'file_download.dart';
 import '../../core/session.dart';
 import '../../core/session_storage.dart';
 import '../../core/zalmanim_icons.dart';
@@ -20,6 +18,8 @@ import 'admin_dashboard_delegate.dart';
 import 'tabs/artists_tab.dart';
 import 'tabs/audience_tab.dart';
 import 'tabs/campaigns_section_tab.dart';
+import 'demo_submission_helpers.dart';
+import 'demo_submission_widgets.dart';
 import 'tabs/demos_tab.dart';
 import 'tabs/inbox_tab.dart';
 import 'tabs/releases_section_tab.dart';
@@ -2292,58 +2292,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     return title;
   }
 
-  Widget _demoInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-          const SizedBox(height: 2),
-          SelectableText(value.isEmpty ? '-' : value),
-        ],
-      ),
-    );
-  }
-
-  /// JSON may decode `id` as int or num; list rows may use dynamic maps.
-  static int? _coerceDemoSubmissionId(dynamic v) {
-    if (v == null) return null;
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    if (v is String) return int.tryParse(v.trim());
-    return null;
-  }
-
-  static String _demoFieldsJsonPreview(Map<String, dynamic> submission) {
-    final raw = submission['fields'];
-    if (raw is! Map) {
-      return '{}';
-    }
-    try {
-      final normalized = Map<String, dynamic>.from(
-        raw.map((k, v) => MapEntry(k.toString(), v)),
-      );
-      return const JsonEncoder.withIndent('  ').convert(normalized);
-    } catch (_) {
-      return raw.toString();
-    }
-  }
-
-  /// Formats a demo submission date (ISO string or null) for display. Returns null if missing/invalid.
-  static String? _formatDemoDate(dynamic value) {
-    if (value == null) return null;
-    final s = value.toString().trim();
-    if (s.isEmpty) return null;
-    try {
-      final dt = DateTime.parse(s);
-      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
-          '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-    } catch (_) {
-      return s;
-    }
-  }
-
   static String? _formatLastGitUpdate(dynamic value) {
     if (value == null) return null;
     final raw = value.toString().trim();
@@ -2356,48 +2304,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     } catch (_) {
       return raw;
     }
-  }
-
-  /// Collects SoundCloud URLs from demo submission links, fields, and message text.
-  static List<String> _getSoundCloudUrls(Map<String, dynamic> submission) {
-    final urls = <String>{};
-    bool isSoundCloudUrl(String s) {
-      final lower = s.toLowerCase().trim();
-      return (lower.contains('soundcloud.com') ||
-              lower.contains('on.soundcloud.com') ||
-              lower.contains('soundcloud.app.goo.gl')) &&
-          (lower.startsWith('http://') || lower.startsWith('https://'));
-    }
-
-    void addIfSoundCloud(String s) {
-      final t = s.trim();
-      if (t.isEmpty) return;
-      if (isSoundCloudUrl(t)) urls.add(t);
-    }
-
-    for (final link in (submission['links'] as List<dynamic>? ?? const [])) {
-      addIfSoundCloud(link.toString());
-    }
-    final fields = submission['fields'];
-    if (fields is Map<String, dynamic>) {
-      for (final entry in fields.entries) {
-        final val = entry.value;
-        if (val is! String) continue;
-        addIfSoundCloud(val);
-      }
-    }
-    // Extract URLs from message (e.g. pasted SoundCloud link)
-    final message = (submission['message'] ?? '').toString();
-    if (message.isNotEmpty) {
-      final uriPattern = RegExp(
-        r'https?://[^\s<>"{}|\\^`\[\]]+',
-        caseSensitive: false,
-      );
-      for (final match in uriPattern.allMatches(message)) {
-        addIfSoundCloud(match.group(0)!);
-      }
-    }
-    return urls.toList();
   }
 
   Future<void> _updateDemoStatus(
@@ -2634,7 +2540,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   }
 
   Future<void> _showDemoDetailsDialog(Map<String, dynamic> submission) async {
-    final id = _coerceDemoSubmissionId(submission['id']);
+    final id = coerceDemoSubmissionId(submission['id']);
     if (id == null) return;
     final notesController = TextEditingController(
         text: (submission['admin_notes'] ?? '').toString());
@@ -2657,53 +2563,53 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                _demoInfoRow(
+                DemoSubmissionInfoRow(
                     'Artist', (submission['artist_name'] ?? '').toString()),
-                _demoInfoRow('Email', (submission['email'] ?? '').toString()),
-                _demoInfoRow(
+                DemoSubmissionInfoRow('Email', (submission['email'] ?? '').toString()),
+                DemoSubmissionInfoRow(
                     'Contact', (submission['contact_name'] ?? '').toString()),
-                _demoInfoRow('Phone', (submission['phone'] ?? '').toString()),
-                _demoInfoRow('Genre', (submission['genre'] ?? '').toString()),
-                _demoInfoRow('City', (submission['city'] ?? '').toString()),
-                _demoInfoRow('Status', (submission['status'] ?? '').toString()),
-                _demoInfoRow(
+                DemoSubmissionInfoRow('Phone', (submission['phone'] ?? '').toString()),
+                DemoSubmissionInfoRow('Genre', (submission['genre'] ?? '').toString()),
+                DemoSubmissionInfoRow('City', (submission['city'] ?? '').toString()),
+                DemoSubmissionInfoRow('Status', (submission['status'] ?? '').toString()),
+                DemoSubmissionInfoRow(
                   'Artist in system',
                   submission['artist_id'] != null
                       ? 'Existing artist (ID: ${submission['artist_id']})'
                       : 'New artist (not in system)',
                 ),
-                _demoInfoRow(
+                DemoSubmissionInfoRow(
                     'Message', (submission['message'] ?? '').toString()),
-                _demoInfoRow(
+                DemoSubmissionInfoRow(
                   'Email consent',
                   submission['consent_to_emails'] == true
-                      ? 'Yes${_formatDemoDate(submission['consent_at']) != null ? ' (${_formatDemoDate(submission['consent_at'])})' : ''}'
+                      ? 'Yes${formatDemoSubmissionDate(submission['consent_at']) != null ? ' (${formatDemoSubmissionDate(submission['consent_at'])})' : ''}'
                       : 'No',
                 ),
-                _demoInfoRow('Source', (submission['source'] ?? '').toString()),
+                DemoSubmissionInfoRow('Source', (submission['source'] ?? '').toString()),
                 if ((submission['source_site_url'] ?? '').toString().isNotEmpty)
-                  _demoInfoRow('Source URL',
+                  DemoSubmissionInfoRow('Source URL',
                       (submission['source_site_url'] ?? '').toString()),
-                if (_formatDemoDate(submission['created_at']) != null)
-                  _demoInfoRow('Submitted at',
-                      _formatDemoDate(submission['created_at'])!),
-                if (_formatDemoDate(submission['updated_at']) != null)
-                  _demoInfoRow('Last updated',
-                      _formatDemoDate(submission['updated_at'])!),
-                if (_formatDemoDate(submission['approval_email_sent_at']) !=
+                if (formatDemoSubmissionDate(submission['created_at']) != null)
+                  DemoSubmissionInfoRow('Submitted at',
+                      formatDemoSubmissionDate(submission['created_at'])!),
+                if (formatDemoSubmissionDate(submission['updated_at']) != null)
+                  DemoSubmissionInfoRow('Last updated',
+                      formatDemoSubmissionDate(submission['updated_at'])!),
+                if (formatDemoSubmissionDate(submission['approval_email_sent_at']) !=
                     null)
-                  _demoInfoRow('Approval email sent',
-                      _formatDemoDate(submission['approval_email_sent_at'])!),
-                if (_formatDemoDate(submission['rejection_email_sent_at']) !=
+                  DemoSubmissionInfoRow('Approval email sent',
+                      formatDemoSubmissionDate(submission['approval_email_sent_at'])!),
+                if (formatDemoSubmissionDate(submission['rejection_email_sent_at']) !=
                     null)
-                  _demoInfoRow('Rejection email sent',
-                      _formatDemoDate(submission['rejection_email_sent_at'])!),
+                  DemoSubmissionInfoRow('Rejection email sent',
+                      formatDemoSubmissionDate(submission['rejection_email_sent_at'])!),
                 if (submission['has_demo_file'] == true) ...[
                   const SizedBox(height: 12),
                   const Text('Demo MP3',
                       style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 6),
-                  _DemoDownloadMp3Link(
+                  DemoSubmissionMp3DownloadButton(
                     demoId: id,
                     apiClient: widget.apiClient,
                     token: widget.token,
@@ -2717,12 +2623,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       padding: const EdgeInsets.only(bottom: 6),
                       child: SelectableText(link),
                     )),
-                if (_getSoundCloudUrls(submission).isNotEmpty) ...[
+                if (soundCloudUrlsFromDemoSubmission(submission).isNotEmpty) ...[
                   const SizedBox(height: 12),
                   const Text('SoundCloud',
                       style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 6),
-                  ..._getSoundCloudUrls(submission).map(
+                  ...soundCloudUrlsFromDemoSubmission(submission).map(
                     (url) => Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: Column(
@@ -2746,7 +2652,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                               label: const Text('Open in browser'),
                             )
                           else
-                            _SoundCloudEmbedWidget(soundCloudUrl: url),
+                            DemoSoundCloudEmbed(soundCloudUrl: url),
                         ],
                       ),
                     ),
@@ -2756,7 +2662,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 const Text('Extra fields',
                     style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 6),
-                SelectableText(_demoFieldsJsonPreview(submission)),
+                SelectableText(demoFieldsJsonPreview(submission)),
                 const SizedBox(height: 12),
                 TextField(
                   controller: notesController,
@@ -3008,7 +2914,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                                           color: Theme.of(context)
                                               .colorScheme
                                               .surfaceContainerHighest
-                                              .withValues(alpha: 0.5)),
+                                              .withOpacity(0.5)),
                                   children: [
                                     Padding(
                                       padding: const EdgeInsets.symmetric(
@@ -4117,7 +4023,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                         style: TextStyle(fontWeight: FontWeight.w600)),
                     const SizedBox(height: 6),
                     DropdownButtonFormField<int>(
-                      initialValue: targetId,
+                      value: targetId,
                       decoration: const InputDecoration(
                           border: OutlineInputBorder(), isDense: true),
                       hint: const Text('Select target'),
@@ -5030,7 +4936,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               return Card(
                 margin: const EdgeInsets.only(bottom: 8),
                 color:
-                    hasNoArtist ? Colors.orange.withValues(alpha: 0.12) : null,
+                    hasNoArtist ? Colors.orange.withOpacity(0.12) : null,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                   side: hasNoArtist
@@ -6160,7 +6066,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
-                      initialValue: role,
+                      value: role,
                       decoration: const InputDecoration(labelText: 'Role'),
                       items: _userRoles
                           .map(
@@ -6172,7 +6078,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     if (role == 'artist') ...[
                       const SizedBox(height: 8),
                       DropdownButtonFormField<int?>(
-                        initialValue: artistId,
+                        value: artistId,
                         decoration: const InputDecoration(
                             labelText: 'Artist (optional)'),
                         items: [
@@ -6329,7 +6235,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
-                      initialValue: role,
+                      value: role,
                       decoration: const InputDecoration(labelText: 'Role'),
                       items: _userRoles
                           .map(
@@ -6341,7 +6247,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     if (role == 'artist') ...[
                       const SizedBox(height: 8),
                       DropdownButtonFormField<int?>(
-                        initialValue: artistId,
+                        value: artistId,
                         decoration: const InputDecoration(
                             labelText: 'Artist (optional)'),
                         items: [
@@ -6512,7 +6418,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 ] else ...[
                   const SizedBox(height: 8),
                   DropdownButtonFormField<int>(
-                    initialValue: selectedListId,
+                    value: selectedListId,
                     decoration:
                         const InputDecoration(labelText: 'Import into list'),
                     items: audiences.map((audience) {
@@ -6743,7 +6649,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       decoration: const InputDecoration(labelText: 'Email')),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
-                    initialValue: statusValue,
+                    value: statusValue,
                     decoration: const InputDecoration(labelText: 'Status'),
                     items: const [
                       DropdownMenuItem(

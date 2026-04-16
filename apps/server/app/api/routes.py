@@ -394,6 +394,98 @@ def _touch_artist_login(db: Session, artist: Artist) -> None:
     db.refresh(artist)
 
 
+def _login_stats_threshold(days: int = 30) -> datetime:
+    return datetime.now(timezone.utc) - timedelta(days=days)
+
+
+def _users_logged_in_since(db: Session, threshold: datetime) -> int:
+    return (
+        db.query(User)
+        .filter(User.last_login_at.isnot(None), User.last_login_at >= threshold)
+        .count()
+    )
+
+
+def _artist_activity_keys_since(db: Session, threshold: datetime) -> set[str]:
+    artist_keys: set[str] = set()
+
+    portal_artists = db.query(Artist).filter(
+        Artist.last_login_at.isnot(None),
+        Artist.last_login_at >= threshold,
+    )
+    for artist in portal_artists:
+        artist_keys.add(f"artist:{artist.id}")
+
+    artist_users = db.query(User).filter(
+        User.role == "artist",
+        User.last_login_at.isnot(None),
+        User.last_login_at >= threshold,
+    )
+    for artist_user in artist_users:
+        if artist_user.artist_id is not None:
+            artist_keys.add(f"artist:{artist_user.artist_id}")
+        else:
+            artist_keys.add(f"user-email:{artist_user.email.lower()}")
+
+    return artist_keys
+
+
+def _recent_user_logins(db: Session, limit: int = 10) -> list[LoginActivityOut]:
+    out: list[LoginActivityOut] = []
+    rows = (
+        db.query(User)
+        .filter(User.last_login_at.isnot(None))
+        .order_by(User.last_login_at.desc())
+        .limit(limit)
+        .all()
+    )
+    for recent_user in rows:
+        if recent_user.last_login_at is None:
+            continue
+        out.append(
+            LoginActivityOut(
+                source="user",
+                name=(recent_user.full_name or recent_user.email).strip(),
+                email=recent_user.email,
+                role=recent_user.role,
+                is_active=recent_user.is_active,
+                last_login_at=recent_user.last_login_at,
+            )
+        )
+    return out
+
+
+def _recent_artist_portal_logins(db: Session, limit: int = 10) -> list[LoginActivityOut]:
+    out: list[LoginActivityOut] = []
+    rows = (
+        db.query(Artist)
+        .filter(Artist.last_login_at.isnot(None))
+        .order_by(Artist.last_login_at.desc())
+        .limit(limit)
+        .all()
+    )
+    for recent_artist in rows:
+        if recent_artist.last_login_at is None:
+            continue
+        out.append(
+            LoginActivityOut(
+                source="artist_portal",
+                name=(recent_artist.name or recent_artist.email).strip(),
+                email=recent_artist.email,
+                role="artist",
+                is_active=recent_artist.is_active,
+                last_login_at=recent_artist.last_login_at,
+            )
+        )
+    return out
+
+
+def _combined_recent_logins(db: Session, limit: int = 10) -> list[LoginActivityOut]:
+    recent_logins = _recent_user_logins(db, limit=limit) + _recent_artist_portal_logins(db, limit=limit)
+    recent_logins.sort(key=lambda item: item.last_login_at, reverse=True)
+    return recent_logins[:limit]
+
+
 def _ensure_artist_reset_user(db: Session, artist: Artist) -> User | None:
     if not artist.is_active or not artist.password_hash:
         return None
@@ -1358,6 +1450,45 @@ def _artist_public_media_ids(extra: dict) -> set[int]:
     return ids
 
 
+def _artist_extra_json_dict(artist: Artist) -> dict[str, Any]:
+    raw = getattr(artist, "extra_json", None)
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw) or {}
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _normalize_external_url(value: str) -> str:
+    trimmed = (value or "").strip()
+    if not trimmed:
+        return ""
+    if trimmed.startswith("http://") or trimmed.startswith("https://"):
+        return trimmed
+    if "://" in trimmed:
+        return trimmed
+    return f"https://{trimmed}"
+
+
+def _linktree_name_headline_bio_theme(artist: Artist, extra: dict[str, Any]) -> tuple[str, str | None, str | None, str]:
+    name = (artist.name or "").strip() or (extra.get("full_name") or extra.get("artist_brand") or "").strip() or "Artist"
+    headline = (extra.get("minisite_headline") or extra.get("artist_brand") or "").strip() or None
+    bio = (extra.get("minisite_bio") or artist.notes or "").strip() or None
+    theme = _artist_minisite_theme(extra.get("minisite_theme"))
+    return name, headline, bio, theme
+
+
+def _linktree_links_from_extra(extra: dict[str, Any]) -> list[LinktreeLink]:
+    links: list[LinktreeLink] = []
+    for key, label in _LINKTREE_LABELS.items():
+        normalized_url = _normalize_external_url(str(extra.get(key) or ""))
+        if normalized_url:
+            links.append(LinktreeLink(label=label, url=normalized_url))
+    return links
+
+
 def _release_base_url(request: Request) -> str:
     return f"{str(request.base_url).rstrip('/')}/api"
 
@@ -1450,60 +1581,104 @@ def _release_minisite_theme(theme_key: str) -> dict[str, str]:
     return themes.get(theme_key, themes["nebula"])
 
 
-def _release_minisite_platform_links(release: Release) -> dict[str, str]:
-    links = parse_platform_links(getattr(release, "platform_links_json", None))
-    best_candidates: dict[str, tuple[float, str]] = {}
-    for candidate in getattr(release, "link_candidates", []) or []:
-        if getattr(candidate, "status", "") in {"rejected", "auto_rejected"}:
+def _release_candidate_status_allows_link(status_value: Any) -> bool:
+    status = str(status_value or "").strip()
+    return status not in {"rejected", "auto_rejected"}
+
+
+def _release_candidate_platform_url(candidate: Any) -> tuple[str, str]:
+    platform = str(getattr(candidate, "platform", "") or "").strip()
+    url = str(getattr(candidate, "url", "") or "").strip()
+    return platform, url
+
+
+def _select_best_platform_candidate_links(candidates: list[Any], existing_links: dict[str, str]) -> dict[str, tuple[float, str]]:
+    best_by_platform: dict[str, tuple[float, str]] = {}
+    for candidate in candidates:
+        if not _release_candidate_status_allows_link(getattr(candidate, "status", "")):
             continue
-        platform = str(getattr(candidate, "platform", "") or "").strip()
-        url = str(getattr(candidate, "url", "") or "").strip()
-        if not platform or not url or links.get(platform):
+        platform, url = _release_candidate_platform_url(candidate)
+        if not platform or not url or existing_links.get(platform):
             continue
         confidence = float(getattr(candidate, "confidence", 0.0) or 0.0)
-        current = best_candidates.get(platform)
+        current = best_by_platform.get(platform)
         if current is None or confidence > current[0]:
-            best_candidates[platform] = (confidence, url)
+            best_by_platform[platform] = (confidence, url)
+    return best_by_platform
+
+
+def _release_minisite_platform_links(release: Release) -> dict[str, str]:
+    links = parse_platform_links(getattr(release, "platform_links_json", None))
+    candidates = getattr(release, "link_candidates", []) or []
+    best_candidates = _select_best_platform_candidate_links(candidates, links)
     for platform, (_, url) in best_candidates.items():
         links[platform] = url
     return links
 
 
-def _release_minisite_html(request: Request, release: Release, config: dict) -> str:
-    theme_name = str(config.get("theme") or "nebula").strip() or "nebula"
-    theme = _release_minisite_theme(theme_name)
+def _release_minisite_artist_name(release: Release) -> str:
     artist_names = [a.name for a in getattr(release, "artists", []) or [] if (a.name or "").strip()]
     if not artist_names and getattr(release, "artist", None) is not None and (release.artist.name or "").strip():
         artist_names = [release.artist.name.strip()]
-    artist_name = ", ".join(artist_names) or "Unknown Artist"
+    return ", ".join(artist_names) or "Unknown Artist"
+
+
+def _release_minisite_artist_extra(release: Release) -> dict[str, Any]:
+    artist = getattr(release, "artist", None)
+    if artist is None or not getattr(artist, "extra_json", None):
+        return {}
+    try:
+        data = json.loads(artist.extra_json) or {}
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _release_minisite_socials(artist_extra: dict[str, Any]) -> list[tuple[str, str]]:
+    socials: list[tuple[str, str]] = []
+    for key in ("website", "instagram", "spotify", "soundcloud", "youtube", "apple_music", "linktree"):
+        value = str(artist_extra.get(key) or "").strip()
+        if value:
+            url = value if "://" in value else f"https://{value}"
+            socials.append((key.replace("_", " ").title(), url))
+    return socials
+
+
+def _release_minisite_platform_links_markup(platform_links: dict[str, str]) -> str:
+    return "".join(
+        f'<a class="pill" href="{html.escape(url)}" target="_blank" rel="noopener">{html.escape(label.replace("_", " ").title())}</a>'
+        for label, url in sorted(platform_links.items())
+    )
+
+
+def _release_minisite_gallery_markup(release: Release, gallery_urls: list[str]) -> str:
+    return "".join(
+        f'<img src="{html.escape(url)}" alt="{html.escape(release.title)} artwork" />'
+        for url in gallery_urls
+    )
+
+
+def _release_minisite_social_markup(socials: list[tuple[str, str]]) -> str:
+    return "".join(
+        f'<a class="social" href="{html.escape(url)}" target="_blank" rel="noopener">{html.escape(label)}</a>'
+        for label, url in socials
+    )
+
+
+def _release_minisite_html(request: Request, release: Release, config: dict) -> str:
+    theme_name = str(config.get("theme") or "nebula").strip() or "nebula"
+    theme = _release_minisite_theme(theme_name)
+    artist_name = _release_minisite_artist_name(release)
     description = str(config.get("description") or "").strip()
     download_url = str(config.get("download_url") or "").strip()
     gallery_urls = _release_minisite_gallery_urls(request, release, config)
     platform_links = _release_minisite_platform_links(release)
-    artist_extra = {}
-    if getattr(release, "artist", None) is not None and getattr(release.artist, "extra_json", None):
-        try:
-            artist_extra = json.loads(release.artist.extra_json) or {}
-        except (json.JSONDecodeError, TypeError):
-            artist_extra = {}
+    artist_extra = _release_minisite_artist_extra(release)
     artist_blurb = str(artist_extra.get("full_name") or artist_extra.get("artist_brand") or "").strip()
-    socials = []
-    for key in ("website", "instagram", "spotify", "soundcloud", "youtube", "apple_music", "linktree"):
-        value = str(artist_extra.get(key) or "").strip()
-        if value:
-            socials.append((key.replace("_", " ").title(), value if "://" in value else f"https://{value}"))
-    links_markup = "".join(
-        f'<a class="pill" href="{html.escape(url)}" target="_blank" rel="noopener">{html.escape(label.replace("_", " ").title())}</a>'
-        for label, url in sorted(platform_links.items())
-    )
-    gallery_markup = "".join(
-        f'<img src="{html.escape(url)}" alt="{html.escape(release.title)} artwork" />'
-        for url in gallery_urls
-    )
-    social_markup = "".join(
-        f'<a class="social" href="{html.escape(url)}" target="_blank" rel="noopener">{html.escape(label)}</a>'
-        for label, url in socials
-    )
+    socials = _release_minisite_socials(artist_extra)
+    links_markup = _release_minisite_platform_links_markup(platform_links)
+    gallery_markup = _release_minisite_gallery_markup(release, gallery_urls)
+    social_markup = _release_minisite_social_markup(socials)
     release_date = release.created_at.strftime("%Y-%m-%d") if getattr(release, "created_at", None) else ""
     download_markup = (
         f'<a class="cta" href="{html.escape(download_url)}" target="_blank" rel="noopener">Download Release</a>'
@@ -1621,25 +1796,11 @@ def public_linktree(
     artist = db.query(Artist).filter(Artist.id == artist_id, Artist.is_active == True).first()
     if not artist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
-    extra = {}
-    if getattr(artist, "extra_json", None):
-        try:
-            extra = json.loads(artist.extra_json) or {}
-        except (json.JSONDecodeError, TypeError):
-            pass
+    extra = _artist_extra_json_dict(artist)
     if extra.get("minisite_is_public") is False:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist minisite not found")
-    name = (artist.name or "").strip() or (extra.get("full_name") or extra.get("artist_brand") or "").strip() or "Artist"
-    headline = (extra.get("minisite_headline") or extra.get("artist_brand") or "").strip() or None
-    bio = (extra.get("minisite_bio") or artist.notes or "").strip() or None
-    theme = _artist_minisite_theme(extra.get("minisite_theme"))
-    links = []
-    for key, label in _LINKTREE_LABELS.items():
-        val = (extra.get(key) or "").strip()
-        if val and (val.startswith("http://") or val.startswith("https://")):
-            links.append(LinktreeLink(label=label, url=val))
-        elif val:
-            links.append(LinktreeLink(label=label, url=val if "://" in val else f"https://{val}"))
+    name, headline, bio, theme = _linktree_name_headline_bio_theme(artist, extra)
+    links = _linktree_links_from_extra(extra)
     profile_image_url = None
     logo_url = None
     pid = extra.get("profile_image_media_id")
@@ -1930,80 +2091,15 @@ def get_login_stats(
     user: UserContext = Depends(get_current_lm_user),
 ) -> LoginStatsOut:
     require_admin(user)
-    threshold = datetime.now(timezone.utc) - timedelta(days=30)
-
-    users_logged_in_last_30_days = (
-        db.query(User)
-        .filter(User.last_login_at.isnot(None), User.last_login_at >= threshold)
-        .count()
-    )
-
-    artist_keys: set[str] = set()
-    portal_artists = db.query(Artist).filter(
-        Artist.last_login_at.isnot(None),
-        Artist.last_login_at >= threshold,
-    )
-    for artist in portal_artists:
-        artist_keys.add(f"artist:{artist.id}")
-
-    artist_users = db.query(User).filter(
-        User.role == "artist",
-        User.last_login_at.isnot(None),
-        User.last_login_at >= threshold,
-    )
-    for artist_user in artist_users:
-        if artist_user.artist_id is not None:
-            artist_keys.add(f"artist:{artist_user.artist_id}")
-        else:
-            artist_keys.add(f"user-email:{artist_user.email.lower()}")
-
-    recent_logins: list[LoginActivityOut] = []
-    for recent_user in (
-        db.query(User)
-        .filter(User.last_login_at.isnot(None))
-        .order_by(User.last_login_at.desc())
-        .limit(10)
-        .all()
-    ):
-        if recent_user.last_login_at is None:
-            continue
-        recent_logins.append(
-            LoginActivityOut(
-                source="user",
-                name=(recent_user.full_name or recent_user.email).strip(),
-                email=recent_user.email,
-                role=recent_user.role,
-                is_active=recent_user.is_active,
-                last_login_at=recent_user.last_login_at,
-            )
-        )
-
-    for recent_artist in (
-        db.query(Artist)
-        .filter(Artist.last_login_at.isnot(None))
-        .order_by(Artist.last_login_at.desc())
-        .limit(10)
-        .all()
-    ):
-        if recent_artist.last_login_at is None:
-            continue
-        recent_logins.append(
-            LoginActivityOut(
-                source="artist_portal",
-                name=(recent_artist.name or recent_artist.email).strip(),
-                email=recent_artist.email,
-                role="artist",
-                is_active=recent_artist.is_active,
-                last_login_at=recent_artist.last_login_at,
-            )
-        )
-
-    recent_logins.sort(key=lambda item: item.last_login_at, reverse=True)
+    threshold = _login_stats_threshold(days=30)
+    users_logged_in_last_30_days = _users_logged_in_since(db, threshold)
+    artist_keys = _artist_activity_keys_since(db, threshold)
+    recent_logins = _combined_recent_logins(db, limit=10)
 
     return LoginStatsOut(
         users_logged_in_last_30_days=users_logged_in_last_30_days,
         artists_logged_in_last_30_days=len(artist_keys),
-        recent_logins=recent_logins[:10],
+        recent_logins=recent_logins,
     )
 
 
@@ -2195,19 +2291,7 @@ def get_demo_submission(
     return _serialize_demo_submission(item)
 
 
-@router.patch("/admin/demo-submissions/{submission_id}", response_model=DemoSubmissionOut)
-def update_demo_submission(
-    submission_id: int,
-    payload: DemoSubmissionUpdate,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-) -> DemoSubmissionOut:
-    require_admin(user)
-    item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
-    if not item:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
-
-    old_status = item.status
+def _apply_demo_submission_update_payload(item: DemoSubmission, payload: DemoSubmissionUpdate) -> None:
     if payload.artist_name is not None:
         item.artist_name = payload.artist_name.strip()
     if payload.email is not None:
@@ -2240,38 +2324,71 @@ def update_demo_submission(
     if payload.artist_id is not None:
         item.artist_id = payload.artist_id
 
-    # When status changes to approved (e.g. admin "Mark approved"), mirror POST /approve: artist row + pending release.
+
+def _resolve_rejection_email_content(item: DemoSubmission, payload: DemoSubmissionUpdate) -> tuple[str, str]:
+    default_rejection_subject, default_rejection_body = _get_demo_rejection_subject_and_body(item)
+    rejection_subject = default_rejection_subject
+    rejection_body = default_rejection_body
+    if payload.rejection_subject is not None:
+        rejection_subject = payload.rejection_subject.strip() or default_rejection_subject
+        rejection_subject = _apply_demo_rejection_placeholders(rejection_subject, item)
+    if payload.rejection_body is not None:
+        rejection_body = payload.rejection_body.strip() or default_rejection_body
+        rejection_body = _apply_demo_rejection_placeholders(rejection_body, item)
+    return rejection_subject, rejection_body
+
+
+def _maybe_send_rejection_email(item: DemoSubmission, payload: DemoSubmissionUpdate) -> None:
+    if not (item.status == "rejected" and item.rejection_email_sent_at is None):
+        return
+    rejection_subject, rejection_body = _resolve_rejection_email_content(item, payload)
+    should_send_rejection_email = payload.send_rejection_email
+    if should_send_rejection_email is None:
+        should_send_rejection_email = True
+    if should_send_rejection_email and is_email_configured():
+        success, message = send_email_service(
+            to_email=item.email,
+            subject=rejection_subject,
+            body_text=rejection_body,
+        )
+        if success:
+            item.rejection_email_sent_at = datetime.now(timezone.utc)
+            return
+        if "limit" in message.lower():
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+    # If email is not configured, still allow marking as rejected; no email sent.
+
+
+def _apply_demo_submission_status_transitions(
+    db: Session,
+    item: DemoSubmission,
+    payload: DemoSubmissionUpdate,
+    *,
+    old_status: str,
+) -> None:
     if item.status == "approved" and old_status != "approved":
         _link_or_create_artist_for_demo_submission(db, item)
         _create_pending_release_for_demo(db, item)
+    if item.status == "rejected" and old_status != "rejected":
+        _maybe_send_rejection_email(item, payload)
 
-    # When status changes to rejected, send rejection email once (if not already sent).
-    if item.status == "rejected" and old_status != "rejected" and item.rejection_email_sent_at is None:
-        default_rejection_subject, default_rejection_body = _get_demo_rejection_subject_and_body(item)
-        rejection_subject = default_rejection_subject
-        rejection_body = default_rejection_body
-        if payload.rejection_subject is not None:
-            rejection_subject = payload.rejection_subject.strip() or default_rejection_subject
-            rejection_subject = _apply_demo_rejection_placeholders(rejection_subject, item)
-        if payload.rejection_body is not None:
-            rejection_body = payload.rejection_body.strip() or default_rejection_body
-            rejection_body = _apply_demo_rejection_placeholders(rejection_body, item)
-        should_send_rejection_email = payload.send_rejection_email
-        if should_send_rejection_email is None:
-            should_send_rejection_email = True
-        if should_send_rejection_email and is_email_configured():
-            success, message = send_email_service(
-                to_email=item.email,
-                subject=rejection_subject,
-                body_text=rejection_body,
-            )
-            if success:
-                item.rejection_email_sent_at = datetime.now(timezone.utc)
-            else:
-                if "limit" in message.lower():
-                    raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message)
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
-        # If email not configured, still allow marking as rejected; no email sent.
+
+@router.patch("/admin/demo-submissions/{submission_id}", response_model=DemoSubmissionOut)
+def update_demo_submission(
+    submission_id: int,
+    payload: DemoSubmissionUpdate,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> DemoSubmissionOut:
+    require_admin(user)
+    item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
+
+    old_status = item.status
+    _apply_demo_submission_update_payload(item, payload)
+    _apply_demo_submission_status_transitions(db, item, payload, old_status=old_status)
 
     if item.consent_to_emails:
         _upsert_demo_mailing_subscriber(db, item)
@@ -2617,74 +2734,82 @@ def admin_send_artist_portal_invite(
     )
 
 
-@router.post("/admin/artists/send-groover-invite", response_model=GrooverInviteResponse)
-def admin_send_groover_invite(
-    payload: GrooverInviteRequest,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-) -> GrooverInviteResponse:
-    """Create or reuse an artist and send a Groover follow-up email with registration form link."""
-    require_admin(user)
-    email = (payload.email or "").strip().lower()
-    if not email:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email is required")
-
-    artist = db.query(Artist).filter(func.lower(Artist.email) == email).first()
-    created_artist = False
-    base_name = (
+def _groover_base_name(payload: GrooverInviteRequest, email: str) -> str:
+    return (
         (payload.artist_name or "").strip()
         or (payload.full_name or "").strip()
         or email.split("@")[0]
     )
-    if not artist:
-        extra = {
-            "artist_brand": (payload.artist_name or "").strip() or base_name,
-            "full_name": (payload.full_name or "").strip(),
-            "source_row": "groover",
-        }
-        artist = Artist(
-            name=base_name[:120],
-            email=email,
-            notes=(payload.notes or "").strip(),
-            extra_json=json.dumps({k: v for k, v in extra.items() if v}),
-        )
-        db.add(artist)
-        db.flush()
-        created_artist = True
-    else:
-        extra = _artist_extra_from_model(artist)
-        changed = False
-        artist_brand = (payload.artist_name or "").strip()
-        full_name = (payload.full_name or "").strip()
-        if artist_brand and not str(extra.get("artist_brand") or "").strip():
-            extra["artist_brand"] = artist_brand
-            changed = True
-        if full_name and not str(extra.get("full_name") or "").strip():
-            extra["full_name"] = full_name
-            changed = True
-        if "source_row" not in extra:
-            extra["source_row"] = "groover"
-            changed = True
-        if changed:
-            artist.extra_json = json.dumps(extra)
-        if (payload.notes or "").strip():
-            notes_prefix = (artist.notes or "").strip()
-            groover_note = (payload.notes or "").strip()
-            if groover_note not in notes_prefix:
-                artist.notes = f"{notes_prefix}\n\n{groover_note}".strip()
 
+
+def _groover_create_artist_from_payload(db: Session, payload: GrooverInviteRequest, email: str) -> Artist:
+    base_name = _groover_base_name(payload, email)
+    extra = {
+        "artist_brand": (payload.artist_name or "").strip() or base_name,
+        "full_name": (payload.full_name or "").strip(),
+        "source_row": "groover",
+    }
+    artist = Artist(
+        name=base_name[:120],
+        email=email,
+        notes=(payload.notes or "").strip(),
+        extra_json=json.dumps({k: v for k, v in extra.items() if v}),
+    )
+    db.add(artist)
+    db.flush()
+    return artist
+
+
+def _groover_update_existing_artist_from_payload(artist: Artist, payload: GrooverInviteRequest) -> None:
+    extra = _artist_extra_from_model(artist)
+    changed = False
+    artist_brand = (payload.artist_name or "").strip()
+    full_name = (payload.full_name or "").strip()
+    if artist_brand and not str(extra.get("artist_brand") or "").strip():
+        extra["artist_brand"] = artist_brand
+        changed = True
+    if full_name and not str(extra.get("full_name") or "").strip():
+        extra["full_name"] = full_name
+        changed = True
+    if "source_row" not in extra:
+        extra["source_row"] = "groover"
+        changed = True
+    if changed:
+        artist.extra_json = json.dumps(extra)
+
+    groover_note = (payload.notes or "").strip()
+    if groover_note:
+        notes_prefix = (artist.notes or "").strip()
+        if groover_note not in notes_prefix:
+            artist.notes = f"{notes_prefix}\n\n{groover_note}".strip()
+
+
+def _prepare_groover_artist(db: Session, payload: GrooverInviteRequest, email: str) -> tuple[Artist, bool]:
+    artist = db.query(Artist).filter(func.lower(Artist.email) == email).first()
+    if not artist:
+        return _groover_create_artist_from_payload(db, payload, email), True
+    _groover_update_existing_artist_from_payload(artist, payload)
+    return artist, False
+
+
+def _create_groover_registration_token(db: Session, artist_id: int, email: str) -> str:
     raw_token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
     expires_at = datetime.now(timezone.utc) + timedelta(days=14)
     token_row = ArtistRegistrationToken(
-        artist_id=artist.id,
+        artist_id=artist_id,
         token_hash=token_hash,
         email=email,
         source="groover",
         expires_at=expires_at,
     )
     db.add(token_row)
+    return raw_token
 
+
+def _groover_invite_email_payload(
+    payload: GrooverInviteRequest, artist: Artist, email: str, raw_token: str
+) -> tuple[str, str, str, str]:
     extra = _artist_extra_from_model(artist)
     display_name = (
         (payload.full_name or "").strip()
@@ -2701,6 +2826,26 @@ def admin_send_groover_invite(
         body_text=body_text,
         registration_url=registration_url,
         portal_url=portal_url,
+    )
+    return subject, body_text, body_html, registration_url
+
+
+@router.post("/admin/artists/send-groover-invite", response_model=GrooverInviteResponse)
+def admin_send_groover_invite(
+    payload: GrooverInviteRequest,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> GrooverInviteResponse:
+    """Create or reuse an artist and send a Groover follow-up email with registration form link."""
+    require_admin(user)
+    email = (payload.email or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email is required")
+
+    artist, created_artist = _prepare_groover_artist(db, payload, email)
+    raw_token = _create_groover_registration_token(db, artist.id, email)
+    subject, body_text, body_html, registration_url = _groover_invite_email_payload(
+        payload, artist, email, raw_token
     )
 
     success, message = send_email_service(
@@ -5319,6 +5464,69 @@ def _artist_brand(artist: Artist) -> str:
     return (artist.name or "").strip()
 
 
+def _catalog_release_title_map(db: Session) -> dict[str, str | None]:
+    tracks = db.query(CatalogTrack.release_title, CatalogTrack.original_artists).distinct().all()
+    by_title: dict[str, str | None] = {}
+    for title, orig in tracks:
+        if not title:
+            continue
+        normalized_title = title.strip()
+        if normalized_title not in by_title:
+            by_title[normalized_title] = (orig.strip() if orig else None) or None
+    return by_title
+
+
+def _catalog_original_artist_parts(original_artists: str) -> list[str]:
+    for sep in (",", "&", ";"):
+        if sep in original_artists:
+            return [p.strip() for p in original_artists.split(sep) if p.strip()]
+    return [original_artists.strip()]
+
+
+def _matched_artist_ids_for_catalog_names(
+    original_artists: str | None, artist_keys: list[tuple[int, set[str]]]
+) -> list[int]:
+    if not original_artists:
+        return []
+    parts = _catalog_original_artist_parts(original_artists)
+    normalized_parts = {_normalize_name(p) for p in parts if _normalize_name(p)}
+    return [aid for aid, keys in artist_keys if keys & normalized_parts]
+
+
+def _existing_release_with_artists_by_title(db: Session, release_title: str) -> Release | None:
+    return (
+        db.query(Release)
+        .options(joinedload(Release.artists))
+        .filter(Release.title == release_title)
+        .first()
+    )
+
+
+def _create_catalog_release(db: Session, release_title: str, artist_id: int | None) -> Release:
+    release = Release(
+        artist_id=artist_id,
+        title=release_title,
+        status="from_catalog",
+        file_path=None,
+    )
+    db.add(release)
+    db.flush()
+    return release
+
+
+def _attach_release_artists(db: Session, release: Release, artist_ids: list[int]) -> None:
+    for aid in artist_ids:
+        artist = db.get(Artist, aid)
+        if artist:
+            release.artists.append(artist)
+
+
+def _assign_artists_to_existing_placeholder(db: Session, release: Release, artist_ids: list[int]) -> None:
+    release.artist_id = artist_ids[0]
+    release.artists = [db.get(Artist, aid) for aid in artist_ids]
+    release.artists = [a for a in release.artists if a]
+
+
 @router.post("/admin/releases/sync-from-catalog", response_model=dict)
 def sync_releases_from_catalog(
     db: Session = Depends(get_db),
@@ -5331,17 +5539,7 @@ def sync_releases_from_catalog(
     require_admin(user)
     artists = db.query(Artist).all()
     artist_keys: list[tuple[int, set[str]]] = [(a.id, _artist_match_keys(a)) for a in artists]
-
-    # Distinct (release_title, original_artists) from catalog; take first row per release_title
-    tracks = db.query(CatalogTrack.release_title, CatalogTrack.original_artists).distinct().all()
-    # Dedupe by release_title
-    by_title: dict[str, str | None] = {}
-    for title, orig in tracks:
-        if not title:
-            continue
-        title = title.strip()
-        if title not in by_title:
-            by_title[title] = (orig.strip() if orig else None) or None
+    by_title = _catalog_release_title_map(db)
 
     created = 0
     skipped = 0
@@ -5349,46 +5547,20 @@ def sync_releases_from_catalog(
     created_release_ids: list[int] = []
 
     for release_title, original_artists in by_title.items():
-        # Parse artist names from catalog (comma or & separated)
-        if not original_artists:
-            unmatched += 1
-            continue
-        parts = []
-        for sep in (",", "&", ";"):
-            if sep in original_artists:
-                parts = [p.strip() for p in original_artists.split(sep) if p.strip()]
-                break
-        if not parts:
-            parts = [original_artists.strip()]
-        normalized_parts = {_normalize_name(p) for p in parts if _normalize_name(p)}
-
-        matched_artist_ids: list[int] = [aid for aid, keys in artist_keys if keys & normalized_parts]
+        matched_artist_ids = _matched_artist_ids_for_catalog_names(original_artists, artist_keys)
 
         if not matched_artist_ids:
-            # Create release without artist so admin can assign later
             existing = db.query(Release).filter(Release.title == release_title).first()
             if existing:
                 skipped += 1
             else:
-                release = Release(
-                    artist_id=None,
-                    title=release_title,
-                    status="from_catalog",
-                    file_path=None,
-                )
-                db.add(release)
-                db.flush()
+                release = _create_catalog_release(db, release_title, artist_id=None)
                 created_release_ids.append(release.id)
                 created += 1
             unmatched += 1
             continue
 
-        existing = (
-            db.query(Release)
-            .options(joinedload(Release.artists))
-            .filter(Release.title == release_title)
-            .first()
-        )
+        existing = _existing_release_with_artists_by_title(db, release_title)
         if existing:
             has_artists = existing.artist_id or existing.artists
             if has_artists and (
@@ -5397,28 +5569,15 @@ def sync_releases_from_catalog(
             ):
                 skipped += 1
                 continue
-            # Existing release with no artists (unmatched placeholder): assign matched artists
             if not has_artists:
-                existing.artist_id = matched_artist_ids[0]
-                existing.artists = [db.get(Artist, aid) for aid in matched_artist_ids]
-                existing.artists = [a for a in existing.artists if a]
+                _assign_artists_to_existing_placeholder(db, existing, matched_artist_ids)
                 created_release_ids.append(existing.id)
                 created += 1
                 continue
 
-        release = Release(
-            artist_id=matched_artist_ids[0],
-            title=release_title,
-            status="from_catalog",
-            file_path=None,
-        )
-        db.add(release)
-        db.flush()
+        release = _create_catalog_release(db, release_title, artist_id=matched_artist_ids[0])
         created_release_ids.append(release.id)
-        for aid in matched_artist_ids:
-            a = db.get(Artist, aid)
-            if a:
-                release.artists.append(a)
+        _attach_release_artists(db, release, matched_artist_ids)
         created += 1
 
     for release_id in created_release_ids:

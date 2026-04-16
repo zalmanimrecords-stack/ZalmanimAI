@@ -372,7 +372,7 @@ class _EmailTemplatesTabState extends State<EmailTemplatesTab> {
           color: Theme.of(context)
               .colorScheme
               .surfaceContainerHighest
-              .withValues(alpha: 0.45),
+              .withOpacity(0.45),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
