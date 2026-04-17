@@ -149,12 +149,12 @@ If these env vars are not set, the Add form shows the credential fields so you c
 
 The server sends email **via SMTP** with a **per-hour rate limit** to reduce the risk of being flagged as spam. Configure via environment:
 
-- `SMTP_HOST` - SMTP server host (required to enable sending)
-- `SMTP_PORT` - default `587` (use `465` for implicit SSL)
+- `SMTP_HOST` - SMTP server host (required to enable sending). Default Docker hostname: `mailserver`
+- `SMTP_PORT` - default `25` for the internal Docker mail relay; use `587` or `465` only if you point to an external SMTP server
 - `SMTP_USER` / `SMTP_PASSWORD` - optional, for authenticated SMTP
-- `SMTP_USE_TLS` - default `true` (STARTTLS on port 587)
+- `SMTP_USE_TLS` - default `false` for the internal Docker mail relay
 - `SMTP_USE_SSL` - set to `true` for port 465 (implicit SSL from connection start)
-- `SMTP_FROM_EMAIL` - "From" address (fallback: `SMTP_USER`)
+- `SMTP_FROM_EMAIL` - "From" address (fallback: `SMTP_USER`). Recommended: `info@zalmanim.com`
 - **Backup SMTP (optional)** — if primary SMTP or Gmail API fails, the server tries this next:
   - `SMTP_BACKUP_HOST`, `SMTP_BACKUP_PORT` (default `587`), `SMTP_BACKUP_USER`, `SMTP_BACKUP_PASSWORD`
   - `SMTP_BACKUP_USE_TLS` / `SMTP_BACKUP_USE_SSL`, `SMTP_BACKUP_FROM_EMAIL` (falls back to primary `SMTP_FROM_EMAIL` if empty)
@@ -162,6 +162,8 @@ The server sends email **via SMTP** with a **per-hour rate limit** to reduce the
 - `REDIS_URL` - used for the rate-limit counter (default `redis://redis:6379/0`)
 
 Send order: **Gmail API** (if connected with send scope) → **primary SMTP** → **backup SMTP**. Admin UI also has **Backup SMTP** fields under Settings → Mail.
+
+The default Docker stack now includes a `mailserver` service (`boky/postfix`) that relays outgoing mail for the app. By default it allows sender addresses from `zalmanim.com`, so `info@zalmanim.com` works out of the box inside the stack.
 
 Admin endpoints: `GET /api/admin/email/rate-limit` (status) and `POST /api/admin/email/send` (send one email). When the hourly limit is reached, send returns `429 Too Many Requests`.
 

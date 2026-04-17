@@ -1,4 +1,10 @@
 services:
+  mailserver:
+    image: boky/postfix:latest
+    restart: unless-stopped
+    environment:
+      ALLOWED_SENDER_DOMAINS: ${MAILSERVER_ALLOWED_SENDER_DOMAINS:-zalmanim.com}
+
   postgres:
     image: postgres:16
     restart: unless-stopped
@@ -45,12 +51,21 @@ services:
       REDIS_URL: redis://redis:6379/0
       UPLOAD_DIR: /app/storage/uploads
       DEMO_SUBMISSION_TOKEN: ${DEMO_SUBMISSION_TOKEN:-}
+      SMTP_HOST: ${SMTP_HOST:-mailserver}
+      SMTP_PORT: ${SMTP_PORT:-25}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-false}
+      SMTP_USE_SSL: ${SMTP_USE_SSL:-false}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-info@zalmanim.com}
       # Set by deploy script (e.g. deploy-prod-remote.ps1) or export GIT_LAST_UPDATE before 'docker compose up' so admin dashboard shows "Last update"
       GIT_LAST_UPDATE: ${GIT_LAST_UPDATE:-}
       BUILD_NUMBER: ${BUILD_NUMBER:-}
     volumes:
       - server_storage:/app/storage
     depends_on:
+      mailserver:
+        condition: service_started
       postgres:
         condition: service_healthy
       redis:

@@ -107,13 +107,13 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
   }
 
   void _fillMailFormFromSettings(Map<String, dynamic> s) {
-    _smtpHostController.text = s['smtp_host'] as String? ?? 'smtp.gmail.com';
-    _smtpPortController.text = (s['smtp_port'] as int?)?.toString() ?? '587';
+    _smtpHostController.text = s['smtp_host'] as String? ?? 'mailserver';
+    _smtpPortController.text = (s['smtp_port'] as int?)?.toString() ?? '25';
     _smtpFromEmailController.text = s['smtp_from_email'] as String? ?? '';
     _smtpUserController.text = '';
     _smtpPasswordController.text = '';
     _emailsPerHourController.text = (s['emails_per_hour'] as int?)?.toString() ?? '30';
-    _smtpUseTls = s['smtp_use_tls'] as bool? ?? true;
+    _smtpUseTls = s['smtp_use_tls'] as bool? ?? false;
     _smtpUseSsl = s['smtp_use_ssl'] as bool? ?? false;
     _smtpBackupHostController.text = s['smtp_backup_host'] as String? ?? '';
     _smtpBackupPortController.text =
@@ -464,7 +464,7 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
           controller: _smtpHostController,
           decoration: const InputDecoration(
             labelText: 'SMTP host',
-            hintText: 'smtp.gmail.com',
+            hintText: 'mailserver',
             border: OutlineInputBorder(),
           ),
           keyboardType: TextInputType.url,
@@ -475,7 +475,7 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
           controller: _smtpPortController,
           decoration: const InputDecoration(
             labelText: 'SMTP port',
-            hintText: '587 or 465',
+            hintText: '25',
             border: OutlineInputBorder(),
           ),
           keyboardType: TextInputType.number,
@@ -486,7 +486,7 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
           controller: _smtpFromEmailController,
           decoration: const InputDecoration(
             labelText: 'From email',
-            hintText: 'noreply@example.com',
+            hintText: 'info@zalmanim.com',
             border: OutlineInputBorder(),
           ),
           keyboardType: TextInputType.emailAddress,
@@ -531,7 +531,7 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
               value: _smtpUseTls,
               onChanged: (v) => setState(() => _smtpUseTls = v ?? true),
             ),
-            const Text('Use TLS (STARTTLS)'),
+            const Text('Use TLS (STARTTLS, usually off for local Docker relay)'),
           ],
         ),
         Row(

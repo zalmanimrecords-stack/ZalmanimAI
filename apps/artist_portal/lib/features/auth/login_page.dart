@@ -64,6 +64,7 @@ class _LoginPageState extends State<LoginPage> {
         });
         return;
       }
+      TextInput.finishAutofillContext(shouldSave: true);
       await saveSession(session, rememberMe: rememberMe);
       widget.onLoggedIn(session);
     } catch (e) {
@@ -172,139 +173,152 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         child: Padding(
                           padding: EdgeInsets.all(compact ? 18 : 24),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              TextField(
-                                controller: emailController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Email',
-                                  border: OutlineInputBorder(),
-                                  prefixIcon: Icon(ZalmanimIcons.email),
-                                ),
-                                keyboardType: TextInputType.emailAddress,
-                                textInputAction: TextInputAction.next,
-                              ),
-                              const SizedBox(height: 16),
-                              TextField(
-                                controller: passwordController,
-                                decoration: InputDecoration(
-                                  labelText: 'Password',
-                                  border: const OutlineInputBorder(),
-                                  prefixIcon: const Icon(ZalmanimIcons.lock),
-                                  suffixIcon: IconButton(
-                                    onPressed: () => setState(
-                                      () =>
-                                          obscurePassword = !obscurePassword,
-                                    ),
-                                    icon: Icon(
-                                      obscurePassword
-                                          ? ZalmanimIcons.visibility
-                                          : ZalmanimIcons.visibilityOff,
-                                    ),
+                          child: AutofillGroup(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                TextField(
+                                  controller: emailController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Email',
+                                    border: OutlineInputBorder(),
+                                    prefixIcon: Icon(ZalmanimIcons.email),
                                   ),
-                                ),
-                                obscureText: obscurePassword,
-                                textInputAction: TextInputAction.done,
-                                onSubmitted: (_) => _login(),
-                              ),
-                              const SizedBox(height: 8),
-                              CheckboxListTile(
-                                value: rememberMe,
-                                onChanged: loading
-                                    ? null
-                                    : (value) => setState(
-                                          () => rememberMe = value ?? false,
-                                        ),
-                                contentPadding: EdgeInsets.zero,
-                                controlAffinity:
-                                    ListTileControlAffinity.leading,
-                                title: const Text('Remember me'),
-                                dense: true,
-                              ),
-                              if (error != null) ...[
-                                const SizedBox(height: 16),
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Icon(
-                                      ZalmanimIcons.errorOutline,
-                                      size: 20,
-                                      color: Theme.of(context).colorScheme.error,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: SelectableText(
-                                        error!,
-                                        style: TextStyle(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .error,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(
-                                        ZalmanimIcons.copy,
-                                        size: 20,
-                                      ),
-                                      tooltip: 'Copy error',
-                                      onPressed: () => Clipboard.setData(
-                                        ClipboardData(text: error!),
-                                      ),
-                                    ),
+                                  keyboardType: TextInputType.emailAddress,
+                                  textInputAction: TextInputAction.next,
+                                  autofillHints: const [
+                                    AutofillHints.username,
+                                    AutofillHints.email,
                                   ],
                                 ),
-                              ],
-                              const SizedBox(height: 8),
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: TextButton(
-                                  onPressed: loading
+                                const SizedBox(height: 16),
+                                TextField(
+                                  controller: passwordController,
+                                  decoration: InputDecoration(
+                                    labelText: 'Password',
+                                    border: const OutlineInputBorder(),
+                                    prefixIcon: const Icon(ZalmanimIcons.lock),
+                                    suffixIcon: IconButton(
+                                      onPressed: () => setState(
+                                        () =>
+                                            obscurePassword = !obscurePassword,
+                                      ),
+                                      icon: Icon(
+                                        obscurePassword
+                                            ? ZalmanimIcons.visibility
+                                            : ZalmanimIcons.visibilityOff,
+                                      ),
+                                    ),
+                                  ),
+                                  obscureText: obscurePassword,
+                                  textInputAction: TextInputAction.done,
+                                  autofillHints: const [
+                                    AutofillHints.password,
+                                  ],
+                                  onSubmitted: (_) => _login(),
+                                ),
+                                const SizedBox(height: 8),
+                                CheckboxListTile(
+                                  value: rememberMe,
+                                  onChanged: loading
                                       ? null
-                                      : () => Navigator.of(context).push(
-                                            MaterialPageRoute(
-                                              builder: (_) =>
-                                                  ForgotPasswordPage(
-                                                apiClient: widget.apiClient,
-                                                initialEmail: emailController
-                                                        .text
-                                                        .trim()
-                                                        .isNotEmpty
-                                                    ? emailController.text.trim()
-                                                    : null,
-                                                onBack: () =>
-                                                    Navigator.of(context).pop(),
+                                      : (value) => setState(
+                                            () => rememberMe = value ?? false,
+                                          ),
+                                  contentPadding: EdgeInsets.zero,
+                                  controlAffinity:
+                                      ListTileControlAffinity.leading,
+                                  title: const Text('Remember me'),
+                                  dense: true,
+                                ),
+                                if (error != null) ...[
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(
+                                        ZalmanimIcons.errorOutline,
+                                        size: 20,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .error,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: SelectableText(
+                                          error!,
+                                          style: TextStyle(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .error,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(
+                                          ZalmanimIcons.copy,
+                                          size: 20,
+                                        ),
+                                        tooltip: 'Copy error',
+                                        onPressed: () => Clipboard.setData(
+                                          ClipboardData(text: error!),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                                const SizedBox(height: 8),
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton(
+                                    onPressed: loading
+                                        ? null
+                                        : () => Navigator.of(context).push(
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    ForgotPasswordPage(
+                                                  apiClient: widget.apiClient,
+                                                  initialEmail: emailController
+                                                          .text
+                                                          .trim()
+                                                          .isNotEmpty
+                                                      ? emailController.text
+                                                          .trim()
+                                                      : null,
+                                                  onBack: () =>
+                                                      Navigator.of(context)
+                                                          .pop(),
+                                                ),
                                               ),
                                             ),
+                                    child: const Text('Forgot password?'),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                FilledButton(
+                                  onPressed: loading ? null : _login,
+                                  style: FilledButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 14,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                  child: loading
+                                      ? const SizedBox(
+                                          height: 22,
+                                          width: 22,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
                                           ),
-                                  child: const Text('Forgot password?'),
+                                        )
+                                      : const Text('Sign in'),
                                 ),
-                              ),
-                              const SizedBox(height: 16),
-                              FilledButton(
-                                onPressed: loading ? null : _login,
-                                style: FilledButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 14,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
-                                child: loading
-                                    ? const SizedBox(
-                                        height: 22,
-                                        width: 22,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : const Text('Sign in'),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),

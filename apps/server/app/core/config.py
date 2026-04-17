@@ -67,13 +67,13 @@ class Settings(BaseSettings):
     wordpress_client_secret: str = ""
 
     # Email sending via SMTP with per-hour rate limit to avoid spam listing
-    smtp_host: str = "smtp.gmail.com"
-    smtp_port: int = 587  # 587 = STARTTLS, 465 = implicit SSL (use smtp_use_ssl=True)
+    smtp_host: str = "mailserver"
+    smtp_port: int = 25  # Local Docker mail relay listens on plain SMTP by default
     smtp_user: str = ""
     smtp_password: str = ""
-    smtp_use_tls: bool = True   # STARTTLS on port 587
+    smtp_use_tls: bool = False  # Docker mail relay uses plain SMTP internally
     smtp_use_ssl: bool = False  # True for port 465 (implicit SSL); use with smtp_port=465
-    smtp_from_email: str = ""  # Default "From" address; fallback to smtp_user if empty
+    smtp_from_email: str = "info@zalmanim.com"  # Default "From" address; fallback to smtp_user if empty
     # Optional backup SMTP (env defaults; DB mail_settings overrides when set)
     smtp_backup_host: str = ""
     smtp_backup_port: int = 587

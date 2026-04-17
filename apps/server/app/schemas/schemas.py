@@ -1176,10 +1176,10 @@ class ScheduleCampaignRequest(BaseModel):
 class SystemSettingsOut(BaseModel):
     """Read-only view of server config for admin UI. Secrets are never returned."""
     # SMTP
-    smtp_host: str = "smtp.gmail.com"
-    smtp_port: int = 587
-    smtp_from_email: str = ""
-    smtp_use_tls: bool = True
+    smtp_host: str = "mailserver"
+    smtp_port: int = 25
+    smtp_from_email: str = "info@zalmanim.com"
+    smtp_use_tls: bool = False
     smtp_use_ssl: bool = False
     smtp_user_configured: bool = False  # True if smtp_user is set (password not exposed)
     smtp_backup_host: str = ""
