@@ -1,7 +1,7 @@
 # lmupdate: Push all latest changes to GitHub, then update the PROD server.
 # Run from repo root: .\scripts\lmupdate.ps1
 # Git push uses your SSH config (e.g. ~/.ssh/config: github.com -> id_ed25519_github).
-# Deploy to VPS uses LMUPDATE_SSH_KEY (default: ~/.ssh/hostinger_vps).
+# Deploy to VPS uses Resolve-HostingerSshKey.ps1: LMUPDATE_SSH_KEY, else hostinger_vps, else hostinger_vps_codex.
 # Optional: $env:LMUPDATE_COMMIT_MSG = "Your message"
 # Optional: $env:LMUPDATE_SSH_KEY = "C:\Users\...\.ssh\your_key"  # for deploy only (VPS)
 # Optional: $env:PROD_REPO_PATH = "/path/on/vps"  (default /root/ZalmanimAI)
@@ -9,7 +9,12 @@
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-$sshKey = if ($env:LMUPDATE_SSH_KEY) { $env:LMUPDATE_SSH_KEY } else { Join-Path (Join-Path $env:USERPROFILE ".ssh") "hostinger_vps" }
+. (Join-Path $PSScriptRoot "Resolve-HostingerSshKey.ps1")
+$sshKey = Get-HostingerSshKeyPath
+if (-not $sshKey) {
+    Write-Error "No Hostinger SSH private key found. Use hostinger_vps or hostinger_vps_codex under $($env:USERPROFILE)\.ssh\, or set LMUPDATE_SSH_KEY."
+    exit 1
+}
 
 Push-Location $repoRoot
 try {
@@ -36,6 +41,7 @@ try {
         exit $LASTEXITCODE
     }
     Write-Host "[lmupdate] GitHub push done." -ForegroundColor Green
+    Write-Host "[lmupdate] VPS SSH key: $sshKey" -ForegroundColor Gray
 
     if ($env:LMUPDATE_SKIP_DEPLOY -eq "1") {
         Write-Host "[lmupdate] Skipping server update (LMUPDATE_SKIP_DEPLOY=1)." -ForegroundColor Yellow

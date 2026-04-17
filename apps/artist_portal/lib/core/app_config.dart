@@ -4,9 +4,10 @@ class AppConfig {
   AppConfig._();
 
   /// API base URL (same backend as admin). e.g. https://api.yourlabel.com/ or http://localhost:8000/
+  /// Production default matches nginx same-origin routing (see deploy/nginx/default.conf).
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://lmapi.zalmanim.com/',
+    defaultValue: 'https://artists.zalmanim.com/',
   );
 
   /// Label / portal name shown in the UI (e.g. "Zalmanim Records", "My Label").

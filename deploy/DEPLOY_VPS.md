@@ -24,6 +24,63 @@ ssh -i ~/.ssh/hostinger_vps root@187.124.22.93
 
 **Windows:** If you see "Bad owner or permissions on .ssh/config", only your user should own the file. Remove any other users (e.g. CodexSandboxUsers) from the file’s permissions and set owner to your account.
 
+### Install your public key on the VPS (first login / key rotation)
+
+The deploy scripts (`scripts/deploy-prod-remote.ps1`, `scripts/deploy-staging-remote.ps1`, `scripts/lmupdate.ps1`) resolve the VPS key via `scripts/Resolve-HostingerSshKey.ps1`: **`LMUPDATE_SSH_KEY`** if set and the file exists, else **`hostinger_vps`**, else **`hostinger_vps_codex`** under `%USERPROFILE%\.ssh\`. The VPS must have the matching **public** key in **`/root/.ssh/authorized_keys`**.
+
+1. **Create a key pair locally** (skip if `hostinger_vps` already exists):
+
+   ```bash
+   ssh-keygen -t ed25519 -f ~/.ssh/hostinger_vps -C "zalmanim-deploy"
+   ```
+
+   On Windows PowerShell you can use the same paths under `$env:USERPROFILE\.ssh\`.
+
+2. **Copy your public key** (one line starting with `ssh-ed25519`):
+
+   ```powershell
+   Get-Content $env:USERPROFILE\.ssh\hostinger_vps.pub
+   ```
+
+3. **Put it on the server** (pick one):
+
+   - **Hostinger hPanel:** VPS → SSH access → add your **public** key, or use the browser/KVM terminal as root.
+   - **One-time password login:** If the host still allows `root` password login, run from your PC:
+
+     ```bash
+     type %USERPROFILE%\.ssh\hostinger_vps.pub | ssh root@187.124.22.93 "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+     ```
+
+     (On Windows Git Bash or WSL; or paste the line manually in `/root/.ssh/authorized_keys` in the panel terminal.)
+
+4. **Verify key login** (no password prompt):
+
+   ```bash
+   ssh -i ~/.ssh/hostinger_vps root@187.124.22.93 "echo ok"
+   ```
+
+5. **Custom key path** for deploy scripts only:
+
+   ```powershell
+   $env:LMUPDATE_SSH_KEY = "C:\Users\You\.ssh\your_other_key"
+   .\scripts\deploy-prod-remote.ps1
+   ```
+
+**Hostinger flat deploy dir (no git clone):** If production lives under `/docker/labelops-lm` with `docker-compose.yml` and `.env` only, use:
+
+```powershell
+$env:LMUPDATE_SSH_KEY = "$env:USERPROFILE\.ssh\hostinger_vps_codex"
+$env:PROD_REPO_PATH = "/docker/labelops-lm"
+$env:LMUPDATE_SKIP_GIT = "1"
+$env:LMUPDATE_COMPOSE_FILE = "docker-compose.yml"
+$env:LMUPDATE_ENV_FILE = ".env"
+$env:LMUPDATE_REMOTE_SERVICES_BUILD = "web api artist-web"
+$env:LMUPDATE_REMOTE_SERVICES_RESTART = "api artist-web web"
+.\scripts\deploy-prod-remote.ps1
+```
+
+Adjust `LMUPDATE_REMOTE_*` if your compose service names differ (`docker compose config --services` on the VPS).
+
 **Hostinger MCP:** In Cursor the server is `user-hostinger-mcp`. You can use it to list VPS, domains, DNS, etc. (e.g. ask to list domains or VPS).
 
 ---
