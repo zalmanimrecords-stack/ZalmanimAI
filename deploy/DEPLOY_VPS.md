@@ -24,6 +24,14 @@ ssh -i ~/.ssh/hostinger_vps root@187.124.22.93
 
 **Windows:** If you see "Bad owner or permissions on .ssh/config", only your user should own the file. Remove any other users (e.g. CodexSandboxUsers) from the file’s permissions and set owner to your account.
 
+**Quick check (same key + `-F NUL` as deploy scripts):** From repo root:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check-ssh-vps.ps1
+```
+
+This avoids a broken `config` file and confirms `root@187.124.22.93` accepts your key.
+
 ### Install your public key on the VPS (first login / key rotation)
 
 The deploy scripts (`scripts/deploy-prod-remote.ps1`, `scripts/deploy-staging-remote.ps1`, `scripts/lmupdate.ps1`) resolve the VPS key via `scripts/Resolve-HostingerSshKey.ps1`: **`LMUPDATE_SSH_KEY`** if set and the file exists, else **`hostinger_vps`**, else **`hostinger_vps_codex`** under `%USERPROFILE%\.ssh\`. The VPS must have the matching **public** key in **`/root/.ssh/authorized_keys`**.
