@@ -2,62 +2,71 @@
 
 Pass date: 2026-05-02 (local).
 
-## Global skill install
+## Commits created (this pass)
 
-The **continuous-code-improver** Cursor skill was copied to the personal (all-projects) location:
+| Commit | Summary |
+|--------|---------|
+| `cdcb9c6` | `chore(server): pytest basetemp and ignore ephemeral dirs` |
 
-`%USERPROFILE%\.cursor\skills\continuous-code-improver\SKILL.md`
+## What changed
 
-Per Cursor conventions, personal skills live under `~/.cursor/skills/`, not under `~/.cursor/skills-cursor/` (reserved for built-ins).
+- **`apps/server/pytest.ini`** — `addopts = --basetemp=.pytest_basetemp` so session temps stay under a single ignored tree.
+- **Root `.gitignore`** — ignore `apps/server/.pytest_basetemp/`, `.pytest_tmp/`, `pytest-cache-files-*/`.
 
-A copy still exists under `Zalmanolator\.cursor\skills\continuous-code-improver\`; consider removing it later to avoid drift (`worth-refactoring-soon`).
+## Why
 
-## This repository (ZalmanimAI)
+- Prior pass flagged git/`git status` warnings from unreadable pytest leftovers on Windows. Basetemp + ignores reduce new stray dirs and document what to exclude.
 
-### Baseline validation
+## Validation
 
-- `cd apps/server && python -m pytest tests/ -q` → **77 passed** (warnings only).
+- `cd apps/server && python -m pytest tests/ -q` → **77 passed** (existing warnings only).
+- `cd apps/client && dart analyze --fatal-infos` → **No issues found**.
 
-### Commits created (this pass)
+## Suggested improvements
 
-See git history for the commit that adds:
+1. Periodically delete legacy unreadable `pytest-cache-files-*` folders under `apps/server` if warnings return (`worth-refactoring-soon`; manual, outside git).
+2. Consider pinning `python-jose` / JWT helper migration off `datetime.utcnow` deprecation (`worth-refactoring-soon`).
+3. Duplicate **continuous-code-improver** under `Zalmanolator\.cursor\skills\` — keep only `~/.cursor/skills/` copy (`acceptable-as-is` until edited).
 
-- `scripts/check-ssh-vps.ps1` — SSH probe using `Resolve-HostingerSshKey.ps1` and `-F NUL`; propagates `ssh` exit code.
-- `deploy/DEPLOY_VPS.md` — documents the quick PowerShell check for broken Windows `.ssh/config` ACLs.
+## Topics for treatment
 
-### Files intentionally not staged
+- Broader Flutter/widget/integration coverage (`unclear-needs-more-evidence`).
+- Server route modularization only with tests (`unclear-needs-more-evidence`).
 
-Many edits under `docs/core-business-logic/*.md` were already modified before this pass and were left **unstaged** so this loop does not mix unrelated documentation changes.
+## New feature ideas
 
-### Suggested improvements
+- None from this pass.
 
-1. Resolve pytest cache permission warnings on Windows (`apps/server/.pytest_tmp`, `pytest-cache-files-*`) via `.gitignore` hygiene or cache dir outside restricted folders (`needs-refactor-now` if it blocks CI locally).
-2. Align duplicate **continuous-code-improver** skill: single source in `~/.cursor/skills/` (`worth-refactoring-soon`).
-3. Optional: reference the global skill from `README.md` under a short “Agent skills” note (`acceptable-as-is` until someone relies on Zalmanolator-only copy).
+## Tests added or updated
 
-### Topics for treatment
+- None (config-only).
 
-- Flutter/client `dart analyze` / widget tests as a second baseline when touching `apps/client`.
-- Split large API modules only with characterization tests (`unclear-needs-more-evidence` until profiled).
-
-### New feature ideas
-
-- None from this pass (ops/docs only).
-
-### UI coverage findings
-
-- Not re-scanned this pass (no UI edits).
-
-### Performance findings
+## Dead code removed
 
 - None.
 
-### Risks requiring human review
+## Docs updated or flagged
 
-- None for the staged deploy/SSH changes.
+- This report (`actively-maintained` for improver trail).
 
-### Recommended next loop
+## UI coverage findings
 
-1. User: commit or stash existing `docs/core-business-logic/*` work, then rerun the skill on a clean branch.
-2. Run `dart analyze` on `apps/client` and fix any quick wins.
-3. Remove obsolete `Zalmanolator\.cursor\skills\continuous-code-improver` after confirming the global skill loads in Cursor.
+- Not scanned this pass.
+
+## Performance findings
+
+- None.
+
+## Risks requiring human review
+
+- None for pytest/gitignore-only change.
+
+## Areas intentionally left unchanged
+
+- Auth, billing, schema, production config.
+
+## Recommended next loop
+
+1. Run `dart test` (or CI parity) if not already part of default workflow.
+2. Sweep `apps/server` for oversized modules with coverage before extracting helpers.
+3. Remove duplicate improver skill folder in Zalmanolator once convenient.
