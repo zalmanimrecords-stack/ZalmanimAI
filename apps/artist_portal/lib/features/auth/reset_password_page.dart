@@ -79,8 +79,8 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
-              Theme.of(context).colorScheme.primary.withValues(alpha: 0.04),
+              Theme.of(context).colorScheme.primary.withOpacity( 0.12),
+              Theme.of(context).colorScheme.primary.withOpacity( 0.04),
             ],
           ),
         ),
