@@ -23,6 +23,11 @@ tmp_release_mgmt/
 reports/db_sync/*.json
 wp-codex-bridge.env
 
+# Pytest ephemeral dirs (basetemp + legacy cache leftovers on Windows)
+apps/server/.pytest_basetemp/
+apps/server/.pytest_tmp/
+apps/server/pytest-cache-files-*/
+
 apps/client/.dart_tool/
 apps/client/build/
 apps/client/.flutter-plugins
