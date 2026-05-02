@@ -1,8 +1,8 @@
 # Open Questions And Assumptions
 
-**Last updated:** 2026-04-17
+**Last updated:** 2026-04-18
 
-**Scope analyzed:** Full repo with emphasis on server business behavior and admin settings UI
+**Scope analyzed:** Full repo with business focus on server code and visible admin/artist UI surfaces
 
 **Confidence level:** Medium
 
@@ -10,47 +10,53 @@
 
 ## Open Questions
 
-- `Unclear from code`: what exact branch logic differentiates all demo approval/update paths in `routes.py`, because related behavior is spread across long handlers and helpers.
-- `Unclear from code`: whether managers are intentionally shown UI affordances for routes that later require `admin`.
-- `Needs validation`: whether campaign aggregate failure on one failed target is the intended business outcome or a technical simplification.
-- `Needs validation`: whether email-send failure should block approval flows when the only artist next-step link is delivered by email.
+- `Unclear from code`: whether the artist-portal UI rule requiring headroom confirmation for mastered releases is intentionally UI-only or should also be enforced server-side.
+- `Needs validation`: whether aggregate `Campaign.status="failed"` is the desired business outcome when some targets succeeded.
+- `Needs validation`: whether email delivery failure during approval/onboarding flows should block completion when the email contains the only artist-access link.
+- `Unclear from code`: whether `PendingRelease.status="processed"` means released, internally archived, or merely reviewed by staff.
+- `Needs validation`: whether managers are intentionally shown any controls that later fail due to `require_admin`.
+- `Unclear from code`: whether `AutomationTask` is still a supported product feature or just a leftover model/UI concept.
 
 ## Assumptions Made
 
-- `Assumption`: the server app is the source of truth for business behavior; Flutter clients are presentation/orchestration only.
-- `Assumption`: `PendingRelease.status='processed'` means label completion rather than public publication.
-- `Assumption`: `CampaignRequest` is release-progress intake, not the same concept as outbound `Campaign`.
+- `Assumption`: the server is the authoritative source of business behavior; Flutter apps mainly expose and orchestrate that behavior.
+- `Assumption`: `CampaignRequest` is an intake/approval precursor, not the same concept as an outbound `Campaign`.
+- `Assumption`: release minisite data on `Release` and artist minisite/public-share settings in `Artist.extra_json` are intentionally separate scopes.
 
 ## Naming And Model Mismatches
 
-- `CampaignRequest` and `Campaign` are distinct but semantically adjacent; the names are easy to confuse.
-- `LabelInboxThread` is not structurally linked to `PendingRelease`, even though pending-release helpers create inbox messages.
-- The repo and UI still contain `LabelOps` naming while the product surface also uses `Zalmanim`.
+- `CampaignRequest` and `Campaign` are adjacent concepts with very different lifecycles.
+- `LabelInboxThread` is artist-wide, while `PendingReleaseComment` is release-specific; the names do not make the split obvious.
+- Legacy `LabelOps` naming remains present in code, routes, and some UI copy while product-facing text uses `Zalmanim`.
 
 ## Settings / Features Without UI Exposure
 
 | Setting or feature | Classification | Evidence | Notes |
 |---|---|---|---|
-| `smtp_*`, `smtp_backup_*`, `emails_per_hour`, email template fields in `MailSettings` | UI-exposed | `mail_settings.py`, `routes.py`, `apps/client/lib/features/admin/tabs/settings_tab.dart`, `email_templates_tab.dart` | Admin can view/update through Settings tabs. |
-| `email_footer` | UI-exposed | `mail_settings.py`, `email_templates_tab.dart` | Saved in template tab and appended globally. |
-| `api_docs_enabled`, `cors_allowed_origins`, `trusted_hosts` | Internal-only | `core/config.py`, `main.py` | Runtime/security configuration, no admin UI expected. |
-| OAuth client IDs/secrets and connector env vars (`google_client_id`, `mailchimp_api_key`, `wordpress_client_secret`, etc.) | No UI, persisted via env | `core/config.py`, README, connector/callback routes | Business-relevant because they control integration availability, but only env/config path is visible. |
-| `demo_submission_token` | No UI, persisted via env | `core/config.py`, public demo route family | Shared-secret protection for demo intake is not surfaced in admin UI. |
-| `AutomationTask` | Write-only / dead `Needs validation` | `models.py`, README, worker.py | Persisted model exists, but analyzed worker does not process it. |
+| `smtp_*`, `smtp_backup_*`, `emails_per_hour` | UI-exposed | `mail_settings.py`, `routes.py`, `apps/client/lib/features/admin/mail_settings_content.dart` | Editable in Settings -> Mail settings. |
+| Email template fields and `email_footer` | UI-exposed | `mail_settings.py`, `apps/client/lib/features/admin/tabs/email_templates_tab.dart` | Editable in Settings -> Email templates. |
+| Artist minisite settings in `Artist.extra_json` such as `minisite_theme`, `minisite_is_public`, gallery ids | UI-exposed | artist dashboard page, artist profile update route | Exposed in artist portal profile/minisite sections. |
+| Release minisite settings in `Release.minisite_json` and `Release.minisite_is_public` | UI-exposed | admin release-links UI and release routes | Exposed in admin release management. |
+| `api_docs_enabled`, `cors_allowed_origins`, `trusted_hosts`, OAuth/connector env secrets | Internal-only | `core/config.py`, `main.py` | Operational/runtime config, not intended for admin UI. |
+| `demo_submission_token` | No UI, persisted | `core/config.py`, public demo routes | Shared-secret guard for demo intake exists only in env/config. |
+| `oauth_success_redirect`, `password_reset_base_url`, `public_demo_allowed_origins` | No UI, persisted | `core/config.py` | Integration/runtime behavior controlled outside the product UI. |
+| `AutomationTask` processing | Write-only / dead `Needs validation` | `models.py`, artist dashboard UI, `worker.py` | Persisted task model exists, but analyzed worker does not execute task rows. |
 
 ## Validation Priorities
 
-- Confirm intended role matrix for managers.
-- Confirm whether `AutomationTask` is still a supported feature or a leftover model.
-- Confirm whether pending-release reminders and inbox seeding should work for email-only artists without `artist_id`.
+- Confirm whether `AutomationTask` should still be documented as active product behavior.
+- Confirm the intended meaning of `processed` for pending releases.
+- Confirm whether partial campaign success needs a separate state or dashboard presentation.
+- Confirm manager-vs-admin UI expectations.
 
 ## Code References
 
 - `apps/server/app/core/config.py` - env/runtime settings surface
 - `apps/server/app/main.py` - settings-driven runtime behavior
-- `apps/server/app/models/models.py` - `MailSettings` and `AutomationTask`
+- `apps/server/app/models/models.py` - `MailSettings`, `AutomationTask`, release/minisite fields
 - `apps/server/app/services/mail_settings.py` - persisted settings reads/writes
-- `apps/server/app/api/routes.py` - settings endpoints and business workflows
-- `apps/server/worker.py` - currently automated feature surface
-- `apps/client/lib/features/admin/tabs/settings_tab.dart` - admin settings UI exposure
-- `apps/client/lib/features/admin/tabs/email_templates_tab.dart` - template UI exposure
+- `apps/server/app/api/routes.py` - settings endpoints and release/pending-release behavior
+- `apps/server/worker.py` - actual automated processing surface
+- `apps/client/lib/features/admin/mail_settings_content.dart` - mail settings UI exposure
+- `apps/client/lib/features/admin/tabs/email_templates_tab.dart` - template/footer UI exposure
+- `apps/artist_portal/lib/features/dashboard/artist_dashboard_page.dart` - artist minisite/profile exposure

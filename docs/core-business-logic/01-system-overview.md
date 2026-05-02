@@ -1,86 +1,91 @@
 # System Overview
 
-**Last updated:** 2026-04-17
+**Last updated:** 2026-04-18
 
-**Scope analyzed:** Full repo with emphasis on `apps/server/app`, `apps/server/worker.py`, and relevant admin UI surfaces in `apps/client/lib`
+**Scope analyzed:** Full repo with emphasis on `apps/server/app`, `apps/server/worker.py`, `apps/client/lib`, and `apps/artist_portal/lib`
 
 **Confidence level:** High
 
 ---
 
-## What the system does
+## What The System Does
 
-This system operates a label-management workflow for Zalmanim. The implemented behavior covers:
+The implemented system is a label-operations platform for Zalmanim. From code, it supports:
 
-- artist/admin authentication and role separation
+- admin and artist authentication with separate access boundaries
 - public and artist-authenticated demo intake
-- admin review, approval, and rejection of demos
-- conversion of approved demos or campaign approvals into `PendingRelease` work items
-- artist completion of release details, threaded follow-up, and admin processing
-- release storage, release minisite publication, and link discovery across streaming platforms
-- outbound communication by SMTP/email, inbox reply emails, and unified campaign delivery to social, Mailchimp, and WordPress
+- admin review of demos and conversion of approved work into artist-release follow-up
+- artist completion of release metadata through tokenized public forms and logged-in portal flows
+- release enrichment through platform-link discovery, cover-art download, and minisite publishing
+- outbound communication through SMTP-backed email, admin inbox replies, and unified campaigns for social, Mailchimp, and WordPress
+- operational controls such as logs, backups, mail settings, and simple database inspection
 
-## Main actors
+## Main Actors
 
-- `admin`: full LM access, including users, artists, releases, campaigns, settings, backup, and logs.
-- `manager`: read/write for artists, releases, and campaigns, but no write access to users or settings.
-- `artist`: separate portal role backed by `artists` records and limited to self-service flows.
-- Public submitter: unauthenticated caller for demo and registration-related public routes.
-- Background worker: polls for scheduled campaigns and release-link scan runs.
+- `admin`: full label-management access, including users, settings, backups, logs, artists, releases, campaigns, demos, inbox, and restore.
+- `manager`: partial LM access; can read and write artists, releases, and campaigns, but cannot perform admin-only actions guarded by `require_admin`.
+- `artist`: portal user backed primarily by `Artist` records and limited to self-service flows.
+- Public submitter: unauthenticated caller for demo submission, demo confirmation, pending-release completion, registration, and release minisite pages.
+- Background worker: asynchronous executor for scheduled campaigns and release-link scan runs.
 
-## Main business domains
+## Main Business Domains
 
 - Artist identity and access
 - Demo intake and review
-- Pending release completion
-- Release catalog and enrichment
-- Outbound campaigns and communications
-- Admin operations and observability
+- Pending release completion and follow-up
+- Release catalog, enrichment, and minisites
+- Campaign orchestration and delivery
+- Operational communications and admin tooling
 
-## Where core business logic lives
+## Where Core Business Logic Lives
 
 - `apps/server/app/api/routes.py`
+- `apps/server/app/api/campaign_routes.py`
 - `apps/server/app/api/campaign_request_routes.py`
 - `apps/server/app/api/inbox_routes.py`
+- `apps/server/app/api/pending_release_helpers.py`
 - `apps/server/app/services/campaign_service.py`
 - `apps/server/app/services/campaign_send.py`
 - `apps/server/app/services/release_link_discovery.py`
 - `apps/server/app/services/mail_settings.py`
 - `apps/server/app/models/models.py`
 
-## Layer split
+## Layer Split
 
-### Core business logic
+### Core Business Logic
 
-- Status transitions such as demo approval, campaign scheduling, pending release processing, release-link candidate approval, and role-based access rules.
+- role restrictions, status transitions, approval flows, candidate confidence thresholds, inbox reply semantics, reminder behavior, and release/minisite visibility rules
 
-### Application orchestration
+### Application Orchestration
 
-- Route handlers often load entities, apply rules inline, persist changes, and trigger side effects in one function. This is especially true in `routes.py`.
+- route handlers that load rows, validate ownership, call helper services, persist changes, and trigger email or background side effects
 
-### Infrastructure and technical utilities
+### Infrastructure And Technical Utilities
 
-- SMTP delivery, OAuth token handling, HTTP clients, DB session wiring, encryption helpers, and worker heartbeat writes.
+- DB sessions, JWT decoding, SMTP transport, Redis-backed rate limiting, OAuth helpers, connector HTTP calls, token encryption, and worker heartbeat writes
 
-### UI and presentation
+### UI And Presentation
 
-- Flutter admin tabs expose settings, demo review, inbox, pending releases, and templates, but they do not appear to contain primary business decisions beyond shaping payloads for server routes.
+- Flutter admin and artist-portal pages that expose forms, tabs, previews, filters, and payload construction, but generally defer policy enforcement to the API
 
-## Architectural observations
+## Architectural Observations
 
-- Core business behavior is server-centric.
-- The largest hotspot is `apps/server/app/api/routes.py`, which mixes domain decisions, persistence, and side effects.
-- The background worker executes only two automated domains in the current code: scheduled campaigns and release-link scanning.
+- The server is the source of truth for business behavior.
+- `routes.py` is still the dominant hotspot and mixes business rules with persistence and transport logic.
+- The worker automates only two domains in the analyzed code: campaign sending and release-link scanning.
+- Both admin and artist UIs expose meaningful workflow controls, but the business invariants remain server-enforced.
 
 ## Code References
 
-- `apps/server/app/main.py` - application bootstrap, middleware, router mounting, runtime validation
-- `apps/server/app/api/routes.py` - primary business flows and route-level rules
+- `apps/server/app/main.py` - application bootstrap, runtime validation, middleware, router mounting
+- `apps/server/app/api/routes.py` - primary business flows and most state transitions
 - `apps/server/app/api/campaign_routes.py` - campaign CRUD and scheduling surface
-- `apps/server/app/api/campaign_request_routes.py` - artist request approval to pending-release token flow
-- `apps/server/app/api/inbox_routes.py` - inbox threads, admin replies, and email side effects
-- `apps/server/app/models/models.py` - business entities and statuses
+- `apps/server/app/api/campaign_request_routes.py` - campaign-request approval to pending-release token flow
+- `apps/server/app/api/inbox_routes.py` - inbox thread behavior and reply side effects
+- `apps/server/app/api/pending_release_helpers.py` - pending-release serialization, token validation, notification rules
+- `apps/server/app/models/models.py` - entities, relationships, persisted state fields
 - `apps/server/app/services/campaign_send.py` - scheduled campaign execution rules
-- `apps/server/app/services/release_link_discovery.py` - release enrichment and review thresholds
-- `apps/server/worker.py` - polling automation boundaries
-- `apps/client/lib/features/admin/tabs/settings_tab.dart` - visible admin settings surface
+- `apps/server/app/services/release_link_discovery.py` - release enrichment rules and review thresholds
+- `apps/server/worker.py` - background automation boundaries
+- `apps/client/lib/features/admin/tabs/settings_tab.dart` - admin operational UI surface
+- `apps/artist_portal/lib/features/dashboard/artist_dashboard_page.dart` - artist self-service workflow surface

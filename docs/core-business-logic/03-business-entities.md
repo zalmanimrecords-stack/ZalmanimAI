@@ -1,8 +1,8 @@
 # Business Entities
 
-**Last updated:** 2026-04-17
+**Last updated:** 2026-04-18
 
-**Scope analyzed:** `apps/server/app/models/models.py` and entity-creating flows in `app/api` and `app/services`
+**Scope analyzed:** `apps/server/app/models/models.py`, schema serialization, and route/service usage
 
 **Confidence level:** High
 
@@ -10,94 +10,113 @@
 
 ## `Artist`
 
-- Purpose: canonical artist record for contact data, portal access, release ownership, social connections, and media.
+- Purpose: primary artist record for portal access, profile metadata, releases, inbox association, and media.
 - Important fields: `name`, `email`, `password_hash`, `extra_json`, `is_active`, `last_login_at`, `last_profile_updated_at`.
-- Used by: admin artist management, portal login, demo approval linking, release ownership, invite emails, and inbox threads.
-- Relationships: releases, tasks, social connections, activity logs, media files.
-- Lifecycle: created manually, from approved demos, or from missing catalog artists; may be deactivated during merge.
+- Usage: created from admin actions, demo approval, or catalog backfill; updated by artist self-service and admin editing.
+- Relationships: linked to `Release`, `AutomationTask`, `SocialConnection`, `ArtistActivityLog`, `ArtistMedia`.
+- Lifecycle notes: inactive artists remain in data; login requires active status and password.
+- Business-significant vs technical-only: `extra_json` is business-significant because it stores profile, minisite, and social-link fields.
 
-## `User` and `UserIdentity`
+## `User` And `UserIdentity`
 
-- Purpose: LM-side identity for admins/managers and some artist-linked logins.
-- Important fields: `role`, `artist_id`, `is_active`, `last_login_at`; identity stores `provider`, `provider_subject`.
-- Used by: admin login, OAuth user linking, dashboard stats, permissions.
-- Lifecycle: created by admin flows or OAuth matching; deactivated users are blocked.
+- Purpose: LM-side users for `admin` and `manager`, plus optional linked `artist` users for OAuth or reset flows.
+- Important fields: `role`, `artist_id`, `is_active`, `password_hash`, `last_login_at`.
+- Usage: used for LM authentication and admin/manager authorization.
+- Relationships: optional link to `Artist`; `UserIdentity` stores external-provider subject and email.
+- Lifecycle notes: OAuth login can create a `User` from an existing `Artist`.
 
 ## `DemoSubmission`
 
-- Purpose: intake record for inbound music submissions.
-- Important fields: contact metadata, `links_json`, `fields_json`, `consent_to_emails`, `status`, approval/rejection send timestamps, optional `artist_id`.
-- Used by: public demo form, artist dashboard demo uploads, admin review list, approval conversion to artist and pending release.
-- Lifecycle: starts as `demo`, may move through review states and to `approved`, `rejected`, or `pending_release`.
+- Purpose: stores inbound demo metadata and review state.
+- Important fields: `artist_name`, `contact_name`, `email`, `links_json`, `fields_json`, `status`, `approval_subject`, `approval_body`, `artist_id`.
+- Usage: created by public or artist routes; later reviewed, approved, rejected, or converted to pending release.
+- Relationships: optional link to `Artist`.
+- Lifecycle notes: statuses include `demo`, `in_review`, `approved`, `rejected`, `pending_release`.
 
-## `CampaignRequest`
+## `PendingRelease` And `PendingReleaseToken`
 
-- Purpose: artist-originated request to move a release toward campaign/release work.
-- Important fields: `artist_id`, `release_id`, `message`, `status`, `admin_notes`.
-- Used by: artist request submission and admin approval/rejection.
-- Lifecycle: `pending` to `approved` or `rejected`; approval creates a `PendingReleaseToken`.
+- Purpose: capture approved release work awaiting completion or processing.
+- Important fields: `artist_name`, `artist_email`, `artist_data_json`, `release_title`, `release_data_json`, `status`.
+- Usage: created from approved demos or approved `CampaignRequest`s; enriched by artist submissions and admin edits.
+- Relationships: optional links to `CampaignRequest`, `DemoSubmission`, `Artist`; comments via `PendingReleaseComment`.
+- Lifecycle notes: token rows gate public form access; business status is effectively `pending` or `processed`.
 
-## `PendingRelease` and `PendingReleaseComment`
+## `PendingReleaseComment`
 
-- Purpose: hold release details awaiting label completion or processing.
-- Important fields: artist snapshot, `release_title`, `artist_data_json`, `release_data_json`, `status`.
-- Used by: tokenized forms, artist/admin comments, reference image uploads, reminders, archive/delete handling.
-- Lifecycle: created from approved demo or campaign request, usually begins `pending`, and may move to `processed`.
+- Purpose: persist threaded comments on a pending release.
+- Important fields: `sender`, `body`, `created_at`.
+- Usage: artists and label add comments from portal/admin flows.
+- Relationships: belongs to `PendingRelease`.
+- Business significance: enables release-preparation collaboration separate from the broader inbox.
 
-## `LabelInboxThread` and `LabelInboxMessage`
+## `LabelInboxThread` And `LabelInboxMessage`
 
-- Purpose: artist-label conversation log.
-- Important fields: thread `artist_id`; message `sender`, `body`, `admin_read_at`, `reply_email_sent_at`.
-- Used by: artist-initiated inbox messages, admin replies, and pending-release helper notifications.
+- Purpose: general-purpose artist-label conversation store.
+- Important fields: `sender`, `body`, `admin_read_at`, `reply_email_sent_at`.
+- Usage: artist-initiated messages create threads; pending-release helpers also seed artist-style messages for admin visibility.
+- Relationships: thread belongs to `Artist`; messages belong to thread.
+- Lifecycle notes: admin opening a thread marks artist messages as read; admin replies can also trigger email.
 
 ## `Release`
 
-- Purpose: label release record with ownership, assets, links, and minisite data.
-- Important fields: `artist_id`, `title`, `status`, `platform_links_json`, cover image fields, `minisite_slug`, `minisite_is_public`, `minisite_json`.
-- Used by: artist uploads, admin edits, catalog sync, release-link discovery, public minisite rendering.
-
-## `ReleaseLinkCandidate` and `ReleaseLinkScanRun`
-
-- Purpose: persist discovered release-link options and the scan jobs that found them.
-- Important fields: platform, URL, confidence, review status, run trigger type, summary, error.
-- Used by: manual scans, scheduled scans, admin review/approval, cover-art refresh.
+- Purpose: canonical release record used by artist dashboards, admin release tooling, minisites, and link discovery.
+- Important fields: `artist_id`, `title`, `status`, `platform_links_json`, `cover_image_path`, `minisite_slug`, `minisite_is_public`, `minisite_json`.
+- Usage: created from artist uploads, catalog sync, and admin flows; later enriched by scans and minisite updates.
+- Relationships: one primary artist plus many-to-many `artists`; child `ReleaseLinkCandidate` and `ReleaseLinkScanRun`.
+- Lifecycle notes: status strings are implicit and route-managed, not centralized.
 
 ## `CatalogTrack`
 
-- Purpose: imported label catalog metadata used to sync releases and normalize artist names.
-- Important fields: catalog identifiers, dates, original/remix artist strings, track names.
-- Used by: import, release sync, original-artist normalization, creation of missing artist shells.
+- Purpose: imported catalog metadata for releases/tracks from CSV exports.
+- Important fields: `catalog_number`, `release_title`, `release_date`, `isrc`, `original_artists`, `track_title`.
+- Usage: import, dedupe, artist matching, and release creation/sync.
+- Relationships: no direct FK to `Release`; matching is title/name-based.
 
-## `Campaign`, `CampaignTarget`, and `CampaignDelivery`
+## `CampaignRequest`
 
-- Purpose: model a reusable outbound campaign and per-channel outcomes.
-- Important fields: campaign content, `status`, `scheduled_at`, target `channel_type`, target payload, delivery `status`, provider `external_id`.
-- Used by: admin campaigns UI and worker execution.
+- Purpose: artist-side request asking the label to run a campaign for a release.
+- Important fields: `artist_id`, `release_id`, `message`, `status`, `admin_notes`.
+- Usage: created in the artist portal, approved or rejected by admin.
+- Lifecycle notes: approval creates a pending-release token email rather than a `Campaign` directly.
 
-## `MailSettings`
+## `Campaign`, `CampaignTarget`, And `CampaignDelivery`
 
-- Purpose: editable single-row override for SMTP settings and email templates.
-- Important fields: primary and backup SMTP config, rate limit, footer, and multiple template subject/body pairs.
-- Used by: settings retrieval, mail sends, approval/rejection templates, portal invites, password reset.
+- Purpose: draft/scheduled outbound campaign plus target definitions and delivery outcomes.
+- Important fields: `status`, `scheduled_at`, `sent_at`, `channel_type`, `channel_payload`, `error_message`.
+- Usage: admin creates draft, schedules it, worker claims it, sender records target-level results.
+- Lifecycle notes: aggregate campaign status becomes `failed` if any target fails.
 
-## `SocialConnection`, `HubConnector`, `MailingList`, and `MailingSubscriber`
+## `SocialConnection` And `HubConnector`
 
-- Purpose: store outbound integration endpoints and mailing-audience state.
-- Important fields: provider/account labels, encrypted tokens, connector config JSON, subscriber consent and unsubscribe metadata.
-- Used by: campaign sends, social publish, Mailchimp and WordPress connector testing, demo mailing-list maintenance.
+- Purpose: store credentials or connection metadata for outbound integrations.
+- Important fields: provider/channel identity, encrypted access/refresh tokens, connector config JSON, connection status.
+- Usage: social publishing, Mailchimp target resolution, WordPress publishing.
+- Lifecycle notes: social tokens can be migrated from legacy plaintext to encrypted form.
+
+## `MailSettings`, `MailingList`, And `MailingSubscriber`
+
+- Purpose: support communication settings and simple mailing-list storage.
+- Important fields: SMTP values, template subjects/bodies, `emails_per_hour`, footer text, subscriber consent fields.
+- Usage: admin settings UI, template UI, demo-intake mailing list maintenance.
+- Lifecycle notes: `MailSettings` is a single-row override over environment configuration.
 
 ## `SystemLog`
 
-- Purpose: admin-facing persistent log stream for API, artist portal, and mail/system events.
+- Purpose: persist operational and mail logs visible in the admin UI.
 - Important fields: `level`, `category`, `message`, `details`.
-- Used by: error handlers, admin logs tab, support/diagnostic workflows.
+- Usage: request errors, mail activity, and other events.
+
+## `AutomationTask`
+
+- Purpose: queue-like artist task model.
+- Usage: present in artist dashboard and schema, but `Needs validation` as a live automation feature because the analyzed worker does not process it.
 
 ## Code References
 
-- `apps/server/app/models/models.py` - entity definitions and field-level semantics
-- `apps/server/app/api/routes.py` - creation and mutation of artists, demos, pending releases, releases, settings, and backups
-- `apps/server/app/api/campaign_request_routes.py` - `CampaignRequest` approval behavior
-- `apps/server/app/api/inbox_routes.py` - inbox thread/message lifecycle
-- `apps/server/app/services/campaign_send.py` - `CampaignDelivery` creation
-- `apps/server/app/services/mail_settings.py` - `MailSettings` merge and persistence behavior
-- `apps/server/app/services/release_link_discovery.py` - `ReleaseLinkCandidate` and `ReleaseLinkScanRun` lifecycle
+- `apps/server/app/models/models.py` - entity definitions and relationships
+- `apps/server/app/schemas/schemas.py` - outward entity shaping and derived fields
+- `apps/server/app/api/routes.py` - entity creation and mutation flows
+- `apps/server/app/api/inbox_routes.py` - inbox entities in use
+- `apps/server/app/api/campaign_request_routes.py` - `CampaignRequest` usage
+- `apps/server/app/services/campaign_send.py` - `Campaign`, `CampaignTarget`, `CampaignDelivery` usage
+- `apps/server/app/services/release_link_discovery.py` - `Release`, `ReleaseLinkCandidate`, `ReleaseLinkScanRun` usage

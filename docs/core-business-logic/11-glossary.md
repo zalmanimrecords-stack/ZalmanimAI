@@ -1,36 +1,40 @@
 # Glossary
 
-**Last updated:** 2026-04-17
+**Last updated:** 2026-04-18
 
-**Scope analyzed:** Business terms visible in code, models, routes, and UI text
+**Scope analyzed:** Domain terms visible in models, routes, services, and UI labels
 
-**Confidence level:** Medium
+**Confidence level:** High
 
 ---
 
+## Terms
+
 | Term | Definition | Notes |
 |------|------------|-------|
-| `Artist` | Core person/brand record used for portal access, releases, inbox, and outreach. | Distinct from LM `User`. |
-| `User` | LM-side authenticated account for admin/manager, and sometimes artist-linked identity. | Role-based access anchor. |
-| `DemoSubmission` | Intake record for music sent to the label. | Can originate from public form or artist portal. |
-| `CampaignRequest` | Artist-originated request that can be approved into a pending-release form flow. | Not the same as outbound `Campaign`. |
-| `PendingRelease` | Release-preparation work item holding artist/release details before label processing. | Central queue-like entity. |
-| `Release` | Published or prepared release record with links, cover art, and minisite data. | Can exist as placeholder after catalog sync. |
-| `ReleaseLinkCandidate` | One discovered possible platform URL for a release. | Requires review or auto-rejection. |
-| `ReleaseLinkScanRun` | One background/manual scan execution against music platforms. | Worker processes queued runs. |
-| `Campaign` | Outbound content package sent to social, Mailchimp, and/or WordPress. | Lifecycle: draft to sent/failed. |
-| `CampaignTarget` | Per-channel destination for a campaign. | Stores connector/social IDs plus payload JSON. |
-| `CampaignDelivery` | Result row for one target send attempt. | Used to summarize campaign outcome. |
-| `SocialConnection` | Connected social publishing account. | Stores encrypted tokens. |
-| `HubConnector` | Generic integration record for external tools such as Mailchimp or WordPress. | Connector config lives in JSON. |
-| `MailSettings` | Single-row operational and template settings store. | Combines transport config and message templates. |
-| `LabelInboxThread` | Conversation between artist and label. | Loosely coupled to release workflows. |
-| `AutomationTask` | Artist-associated automation/task record. | Current runtime use is `Needs validation`. |
+| `Artist` | Core artist record used for portal login, profile metadata, releases, media, and inbox linkage | Not always the same thing as a `User` |
+| `User` | LM-side authenticated account, usually `admin` or `manager`, but can also be linked to an artist | Separate table from `Artist` |
+| Demo submission | Inbound music submission captured in `DemoSubmission` | Can originate from public form or artist portal |
+| Pending release | Follow-up work item storing artist/release details after approval | Separate from final `Release` record |
+| Campaign request | Artist request asking the label to run promotion for a release | Approval leads to next-step intake, not immediate publishing |
+| Campaign | Unified outbound publishing object targeting social, Mailchimp, or WordPress | Distinct from `CampaignRequest` |
+| Label inbox | Artist-wide conversation thread between artist and label | Separate from `PendingReleaseComment` |
+| Pending-release comments | Release-specific conversation attached to a `PendingRelease` | Narrower than inbox |
+| Release minisite | Public or preview release page driven by `Release.minisite_*` fields | Admin-managed |
+| Artist minisite / public share page | Artist-facing share page driven mainly by `Artist.extra_json` and public linktree route | Artist-managed in portal |
+| Link candidate | Potential platform URL discovered for a release | Reviewed before becoming active platform link |
+| Scan run | One background or manual attempt to discover links for a release | Stored in `ReleaseLinkScanRun` |
+| Hub connector | Generic stored integration connection such as Mailchimp or WordPress bridge | Distinct from social OAuth connection |
+| Social connection | OAuth-backed connected social account used for publishing | Tokens stored encrypted when possible |
+| Mail settings | Single-row persisted override for SMTP, backup SMTP, and template content | Couples transport and template concerns |
+| `AutomationTask` | Artist-linked task record shown in some surfaces | `Needs validation` as a live automated workflow |
 
 ## Code References
 
-- `apps/server/app/models/models.py` - term definitions through entity names and comments
-- `apps/server/app/api/routes.py` - operational meaning of intake/release/campaign terms
-- `apps/server/app/api/campaign_request_routes.py` - `CampaignRequest` meaning
-- `apps/server/app/api/inbox_routes.py` - inbox terminology
-- `apps/client/lib/features/admin/tabs/settings_tab.dart` - visible admin terminology
+- `apps/server/app/models/models.py` - most domain terms and persisted names
+- `apps/server/app/api/routes.py` - workflow-oriented terms
+- `apps/server/app/api/campaign_request_routes.py` - `CampaignRequest`
+- `apps/server/app/api/inbox_routes.py` - label inbox terminology
+- `apps/server/app/services/release_link_discovery.py` - scan/candidate terminology
+- `apps/artist_portal/lib/features/dashboard/artist_dashboard_page.dart` - artist-facing wording
+- `apps/client/lib/features/admin/tabs/release_links_tab.dart` - admin minisite/link-review wording
