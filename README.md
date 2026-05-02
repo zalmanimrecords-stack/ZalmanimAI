@@ -73,6 +73,8 @@ This runs:
 - `flutter analyze` + `flutter test` for `apps/artist_portal`
 - `pytest` for `apps/server`
 
+For Flutter apps use **`flutter test`**, not plain **`dart test`** (the repo does not depend on `package:test` for VM-only runs). If you already resolved packages and want to avoid touching `pubspec.lock`, run `flutter test --no-pub`.
+
 If you only need part of the suite, you can skip sections:
 
 ```powershell

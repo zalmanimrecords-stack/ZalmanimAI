@@ -2,56 +2,67 @@
 
 Pass date: 2026-05-02 (local).
 
-## Commits created (this pass)
+## Commits created (this loop)
 
-| Commit | Summary |
-|--------|---------|
-| `cdcb9c6` | `chore(server): pytest basetemp and ignore ephemeral dirs` |
+Use `git log` for hashes. Expected split:
 
-## What changed
+1. **`fix(artist_portal)`** — `Color.withOpacity` instead of `withValues`; `DropdownButtonFormField` uses `value` instead of removed `initialValue` (matches pinned Flutter SDK analyzer).
+2. **`chore(ci)`** — README testing note, `pre_release_checks.ps1` uses `flutter test --no-pub`, this report.
 
-- **`apps/server/pytest.ini`** — `addopts = --basetemp=.pytest_basetemp` so session temps stay under a single ignored tree.
-- **Root `.gitignore`** — ignore `apps/server/.pytest_basetemp/`, `.pytest_tmp/`, `pytest-cache-files-*/`.
+## Recommended-next continuation (previous pass)
 
-## Why
-
-- Prior pass flagged git/`git status` warnings from unreadable pytest leftovers on Windows. Basetemp + ignores reduce new stray dirs and document what to exclude.
+| Item | Outcome |
+|------|---------|
+| Run Flutter tests beyond analyze | `flutter test --no-pub`: client **18**, artist portal **1**, all passed |
+| `pre_release_checks.ps1` | Now uses **`flutter test --no-pub`**; full Flutter stage passes (`-SkipServer` verified) |
+| Artist portal analyze | Was **26 errors** on older Color/Dropdown APIs — **fixed** in this loop |
 
 ## Validation
 
-- `cd apps/server && python -m pytest tests/ -q` → **77 passed** (existing warnings only).
-- `cd apps/client && dart analyze --fatal-infos` → **No issues found**.
+| Check | Result |
+|-------|--------|
+| `apps/server` pytest | **77 passed** |
+| `apps/client` flutter analyze | **No issues** (prior pass) |
+| `apps/client` flutter test --no-pub | **18 passed** |
+| `apps/artist_portal` flutter analyze | **No issues** |
+| `apps/artist_portal` flutter test --no-pub | **1 passed** |
+| `scripts/pre_release_checks.ps1 -SkipServer` | **Passed** |
+
+## What changed (summary)
+
+- **Artist portal:** SDK-aligned opacity helpers and dropdown form field parameters (no UI behavior change intended).
+- **README:** Clarify `flutter test` vs `dart test`; mention `--no-pub` for stable lockfiles.
+- **`pre_release_checks.ps1`:** `flutter test --no-pub` for both Flutter apps.
 
 ## Suggested improvements
 
-1. Periodically delete legacy unreadable `pytest-cache-files-*` folders under `apps/server` if warnings return (`worth-refactoring-soon`; manual, outside git).
-2. Consider pinning `python-jose` / JWT helper migration off `datetime.utcnow` deprecation (`worth-refactoring-soon`).
-3. Duplicate **continuous-code-improver** under `Zalmanolator\.cursor\skills\` — keep only `~/.cursor/skills/` copy (`acceptable-as-is` until edited).
+1. JWT `utcnow` deprecation (`python-jose`) — `worth-refactoring-soon`.
+2. Server large-route/module split — only with tests — `unclear-needs-more-evidence`.
 
 ## Topics for treatment
 
-- Broader Flutter/widget/integration coverage (`unclear-needs-more-evidence`).
-- Server route modularization only with tests (`unclear-needs-more-evidence`).
+- E2E / CI parity — `unclear-needs-more-evidence`.
+- Remove duplicate improver skill under **Zalmanolator** — `acceptable-as-is`.
 
 ## New feature ideas
 
-- None from this pass.
+- None.
 
 ## Tests added or updated
 
-- None (config-only).
+- None (fixes restore analyzer compatibility; existing tests green).
 
 ## Dead code removed
 
 - None.
 
-## Docs updated or flagged
+## Docs / scripts updated
 
-- This report (`actively-maintained` for improver trail).
+- `README.md`, `scripts/pre_release_checks.ps1`, this report.
 
 ## UI coverage findings
 
-- Not scanned this pass.
+- Not scanned beyond compile/test validation.
 
 ## Performance findings
 
@@ -59,14 +70,14 @@ Pass date: 2026-05-02 (local).
 
 ## Risks requiring human review
 
-- None for pytest/gitignore-only change.
+- Dropdown `value` vs prior `initialValue` must stay in sync with state — spot-check genre/release/theme pickers in the artist portal manually if anything feels off.
 
 ## Areas intentionally left unchanged
 
-- Auth, billing, schema, production config.
+- Auth rules, billing, schema, secrets.
 
 ## Recommended next loop
 
-1. Run `dart test` (or CI parity) if not already part of default workflow.
-2. Sweep `apps/server` for oversized modules with coverage before extracting helpers.
-3. Remove duplicate improver skill folder in Zalmanolator once convenient.
+1. Run full `pre_release_checks.ps1` including server on your machine or CI.
+2. Optional: `flutter analyze --no-pub` in pre-release if your SDK supports it and skips unwanted resolution.
+3. Narrow server test around one non-sensitive route helper.

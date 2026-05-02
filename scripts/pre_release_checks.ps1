@@ -62,7 +62,7 @@ if (-not $SkipClient) {
   Push-Location (Join-Path $root "apps/client")
   try {
     Invoke-Step "Flutter analyze (client)" { flutter analyze }
-    Invoke-Step "Flutter test (client)" { flutter test }
+    Invoke-Step "Flutter test (client)" { flutter test --no-pub }
   } finally {
     Pop-Location
   }
@@ -72,7 +72,7 @@ if (-not $SkipArtistPortal) {
   Push-Location (Join-Path $root "apps/artist_portal")
   try {
     Invoke-Step "Flutter analyze (artist portal)" { flutter analyze }
-    Invoke-Step "Flutter test (artist portal)" { flutter test }
+    Invoke-Step "Flutter test (artist portal)" { flutter test --no-pub }
   } finally {
     Pop-Location
   }
