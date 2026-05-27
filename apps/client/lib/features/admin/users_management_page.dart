@@ -1,8 +1,15 @@
-part of 'admin_dashboard_page.dart';
+import 'package:flutter/material.dart';
 
+import '../../core/api_client.dart';
+import '../../core/zalmanim_icons.dart';
+
+/// Standalone users & permissions management screen (navigate via [Navigator]).
 class UsersManagementPage extends StatefulWidget {
-  const UsersManagementPage(
-      {super.key, required this.apiClient, required this.token});
+  const UsersManagementPage({
+    super.key,
+    required this.apiClient,
+    required this.token,
+  });
 
   final ApiClient apiClient;
   final String token;
@@ -185,7 +192,7 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
+        SnackBar(content: SelectableText(e.toString())),
       );
     } finally {
       emailController.dispose();
@@ -221,7 +228,7 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_error != null) {
-      return Center(child: Text(_error!));
+      return Center(child: SelectableText(_error!));
     }
     if (_users.isEmpty) {
       return const Center(child: Text('No users configured yet.'));
