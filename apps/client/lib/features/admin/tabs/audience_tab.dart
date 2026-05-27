@@ -27,28 +27,34 @@ class AudienceTab extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.all(12),
         children: [
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Text(
-                      'Audience',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Manage mailing lists, consent metadata, and unsubscribe-ready subscribers before importing from Mailchimp.',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
-                    ),
-                  ],
-                ),
+              const Text(
+                'Audience',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
-              FilledButton.icon(
-                onPressed: delegate.showCreateAudienceDialog,
-                icon: const Icon(ZalmanimIcons.add),
-                label: const Text('New list'),
+              const SizedBox(height: 4),
+              const Text(
+                'Manage mailing lists and import Mailchimp audience exports (.csv or .xlsx).',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: delegate.importMailchimpAudienceCsv,
+                    icon: const Icon(Icons.upload_file_outlined),
+                    label: const Text('Import Mailchimp'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: delegate.showCreateAudienceDialog,
+                    icon: const Icon(ZalmanimIcons.add),
+                    label: const Text('New list'),
+                  ),
+                ],
               ),
             ],
           ),

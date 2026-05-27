@@ -1123,11 +1123,22 @@ def process_release_link_scan_run(db: Session, run_id: int) -> bool:
     run.error_message = None
     db.commit()
     try:
+        from app.services.release_link_backoff import filter_platforms_not_in_backoff, record_platform_scan_results
+
+        requested_platforms = _platforms_from_run(run)
+        eligible_platforms = filter_platforms_not_in_backoff(release, requested_platforms)
+        if not eligible_platforms:
+            run.summary_json = json.dumps({"platforms": [], "skipped": "all_platforms_in_backoff"})
+            run.status = "completed"
+            run.completed_at = datetime.now(timezone.utc)
+            db.commit()
+            return True
         results = discover_release_links(
             release.title,
             _release_artist_names(release),
-            platforms=_platforms_from_run(run),
+            platforms=eligible_platforms,
         )
+        record_platform_scan_results(release, results)
         discovered_candidates: list[DiscoveryCandidate] = []
         for result in results:
             for candidate in result.candidates:

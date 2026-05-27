@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/server/requirements-dev.txt
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Pytest
+        env:
+          DATABASE_URL: sqlite:///test_ci.db
+          JWT_SECRET: ci-jwt-secret-minimum-32-characters-long
+        run: pytest -q
+
+  flutter-client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Flutter analyze
+        run: flutter analyze
+      - name: Flutter test
+        run: flutter test --no-pub
+
+  flutter-artist-portal:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/artist_portal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Flutter analyze
+        run: flutter analyze
+      - name: Flutter test
+        run: flutter test --no-pub

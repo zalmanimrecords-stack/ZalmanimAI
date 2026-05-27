@@ -88,7 +88,7 @@ class _CampaignsTabState extends State<CampaignsTab> {
             return const Padding(
               padding: EdgeInsets.only(top: 4, bottom: 12),
               child: Text(
-                'Send one content to social, Mailchimp, and WordPress. '
+                'Send one content to social, LabelOps email audiences, Mailchimp, and WordPress. '
                 'Create draft, then schedule or send now.',
                 style: TextStyle(color: Colors.grey, fontSize: 12),
               ),
@@ -182,6 +182,20 @@ class _CampaignsTabState extends State<CampaignsTab> {
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (c.status == 'partial' || c.status == 'failed') ...[
+                    if (delegate.can('campaigns:write'))
+                      TextButton(
+                        onPressed: () =>
+                            delegate.retryCampaignFailedTargets(c.id, c.name),
+                        child: const Text('Retry failed'),
+                      ),
+                    if (c.status == 'partial' || c.status == 'failed')
+                      IconButton(
+                        icon: const Icon(ZalmanimIcons.delete, color: Colors.red),
+                        tooltip: 'Delete',
+                        onPressed: () => delegate.deleteCampaign(c.id, c.name),
+                      ),
+                  ],
                   if (c.status == 'draft' || c.status == 'scheduled') ...[
                     if (c.status == 'draft')
                       TextButton(
@@ -199,7 +213,7 @@ class _CampaignsTabState extends State<CampaignsTab> {
                         tooltip: 'Edit',
                         onPressed: () => delegate.showEditCampaignDialog(c.toJson()),
                       ),
-                    if (c.status == 'draft' || c.status == 'failed')
+                    if (c.status == 'draft')
                       IconButton(
                         icon: const Icon(ZalmanimIcons.delete, color: Colors.red),
                         tooltip: 'Delete',

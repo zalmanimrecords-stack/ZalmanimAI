@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import update
 from sqlalchemy.orm import Session, joinedload
 
-from app.models.models import Campaign, CampaignTarget
+from app.models.models import Campaign, CampaignDelivery, CampaignTarget
 
 
 def create_campaign(
@@ -114,11 +114,11 @@ def update_campaign(
 
 
 def delete_campaign(db: Session, campaign_id: int) -> bool:
-    """Delete campaign and its targets/deliveries. Only draft or failed can be deleted."""
+    """Delete campaign and its targets/deliveries. Only draft, failed, or partial can be deleted."""
     campaign = get_campaign(db, campaign_id)
     if not campaign:
         return False
-    if campaign.status not in ("draft", "failed"):
+    if campaign.status not in ("draft", "failed", "partial"):
         return False
     db.delete(campaign)
     db.commit()
@@ -184,6 +184,91 @@ def set_campaign_failed(db: Session, campaign_id: int) -> Campaign | None:
     db.commit()
     db.refresh(campaign)
     return campaign
+
+
+def set_campaign_partial(db: Session, campaign_id: int) -> Campaign | None:
+    campaign = get_campaign(db, campaign_id)
+    if not campaign:
+        return None
+    campaign.status = "partial"
+    campaign.sent_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(campaign)
+    return campaign
+
+
+def latest_delivery_by_target(db: Session, campaign_id: int) -> dict[int, CampaignDelivery]:
+    deliveries = (
+        db.query(CampaignDelivery)
+        .filter(CampaignDelivery.campaign_id == campaign_id)
+        .order_by(CampaignDelivery.created_at.desc(), CampaignDelivery.id.desc())
+        .all()
+    )
+    latest: dict[int, CampaignDelivery] = {}
+    for delivery in deliveries:
+        if delivery.target_id not in latest:
+            latest[delivery.target_id] = delivery
+    return latest
+
+
+def finalize_campaign_send_status(
+    db: Session,
+    campaign_id: int,
+    *,
+    sent_delta: int = 0,
+    failed_delta: int = 0,
+) -> Campaign | None:
+    """
+    Set campaign status from delivery outcomes on this run and prior deliveries.
+    Uses latest delivery per target to decide sent vs partial vs failed.
+    """
+    campaign = get_campaign(db, campaign_id)
+    if not campaign:
+        return None
+    latest = latest_delivery_by_target(db, campaign_id)
+    if not latest:
+        if failed_delta > 0 and sent_delta == 0:
+            campaign.status = "failed"
+        elif sent_delta > 0:
+            campaign.status = "sent"
+            campaign.sent_at = datetime.now(timezone.utc)
+        else:
+            campaign.status = "failed"
+        db.commit()
+        db.refresh(campaign)
+        return campaign
+
+    sent_targets = sum(1 for d in latest.values() if d.status == "sent")
+    failed_targets = sum(1 for d in latest.values() if d.status == "failed")
+    if sent_targets > 0 and failed_targets > 0:
+        campaign.status = "partial"
+        campaign.sent_at = datetime.now(timezone.utc)
+    elif failed_targets > 0:
+        campaign.status = "failed"
+    else:
+        campaign.status = "sent"
+        campaign.sent_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(campaign)
+    return campaign
+
+
+def claim_campaign_for_retry(db: Session, campaign_id: int) -> Campaign | None:
+    result = db.execute(
+        update(Campaign)
+        .where(Campaign.id == campaign_id, Campaign.status.in_(("partial", "failed")))
+        .values(status="sending")
+    )
+    if result.rowcount != 1:
+        db.rollback()
+        return None
+    db.commit()
+    return (
+        db.query(Campaign)
+        .options(joinedload(Campaign.targets))
+        .filter(Campaign.id == campaign_id)
+        .first()
+    )
 
 
 def cancel_schedule(db: Session, campaign_id: int) -> Campaign | None:

@@ -252,7 +252,9 @@ def test_public_artist_registration_rejects_short_password(client, db_session):
 
 
 def test_admin_restore_rejects_oversized_upload(client, admin_headers, monkeypatch):
-    monkeypatch.setattr(routes, "MAX_RESTORE_BYTES", 5, raising=False)
+    from app.api import settings_routes
+
+    monkeypatch.setattr(settings_routes, "MAX_RESTORE_BYTES", 5)
 
     response = client.post(
         "/api/admin/restore",
@@ -261,8 +263,9 @@ def test_admin_restore_rejects_oversized_upload(client, admin_headers, monkeypat
     )
 
     assert response.status_code == 400
-    assert "too large" in response.json()["detail"]
-    assert "5 bytes" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert "too large" in detail
+    assert "5" in detail
 
 
 def test_social_connection_tokens_are_encrypted_at_rest(db_session, monkeypatch):

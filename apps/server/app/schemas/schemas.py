@@ -795,6 +795,13 @@ class DemoSubmissionOut(BaseModel):
     updated_at: datetime | None
 
 
+class DemoSubmissionApproveResponse(BaseModel):
+    """Approve endpoint response; email_warning is set when approval succeeded but email did not send."""
+
+    submission: DemoSubmissionOut
+    email_warning: str | None = None
+
+
 # Artist campaign requests (artist asks label for a release campaign)
 class CampaignRequestCreate(BaseModel):
     """Artist portal: request a campaign for a release."""
@@ -991,11 +998,41 @@ class LabelInboxReply(BaseModel):
     body: str
 
 
-# Campaigns (unified: social + Mailchimp + WordPress)
+# Campaign email templates (native audience sends)
+class EmailCampaignTemplateCreate(BaseModel):
+    name: str
+    description: str = ""
+    subject: str
+    body_text: str = ""
+    body_html: str | None = None
+
+
+class EmailCampaignTemplateUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    subject: str | None = None
+    body_text: str | None = None
+    body_html: str | None = None
+
+
+class EmailCampaignTemplateOut(BaseModel):
+    id: int
+    name: str
+    description: str
+    subject: str
+    body_text: str
+    body_html: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# Campaigns (unified: social + Mailchimp + WordPress + email)
 class CampaignTargetIn(BaseModel):
-    channel_type: str  # social | mailchimp | wordpress
-    external_id: str  # connection or connector id
-    channel_payload: dict = {}  # list_id for mailchimp, post_type/status for wordpress
+    channel_type: str  # social | mailchimp | wordpress | email
+    external_id: str  # connection id, connector id, or mailing_list id
+    channel_payload: dict = {}  # list_id for mailchimp; reply_to for email; etc.
 
 
 class CampaignCreate(BaseModel):

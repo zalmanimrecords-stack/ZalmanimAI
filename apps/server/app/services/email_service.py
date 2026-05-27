@@ -252,6 +252,7 @@ def _send_via_gmail_api(
     subject: str,
     body_text: str,
     body_html: str | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> tuple[bool, str]:
     from_addr = (
         (connection.external_account_id or "").strip()
@@ -264,6 +265,9 @@ def _send_via_gmail_api(
     if from_addr:
         msg["From"] = from_addr
     msg["To"] = to_email
+    for key, value in (extra_headers or {}).items():
+        if key and value:
+            msg[key] = value
     msg.attach(MIMEText(body_text, "plain", "utf-8"))
     if body_html:
         msg.attach(MIMEText(body_html, "html", "utf-8"))
@@ -312,6 +316,7 @@ def _smtp_send_with_config(
     body_text: str,
     body_html: str | None = None,
     log_via: str = "SMTP",
+    extra_headers: dict[str, str] | None = None,
 ) -> tuple[bool, str]:
     from_addr = (cfg.smtp_from_email or cfg.smtp_user or "").strip()
     if not (cfg.smtp_host or "").strip():
@@ -327,6 +332,9 @@ def _smtp_send_with_config(
     msg["Subject"] = subject
     msg["From"] = from_addr
     msg["To"] = to_email
+    for key, value in (extra_headers or {}).items():
+        if key and value:
+            msg[key] = value
     msg.attach(MIMEText(body_text, "plain", "utf-8"))
     if body_html:
         msg.attach(MIMEText(body_html, "html", "utf-8"))
@@ -445,6 +453,7 @@ def send_email(
     subject: str,
     body_text: str,
     body_html: str | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> tuple[bool, str]:
     """
     Send one email via Gmail API or SMTP with rate limiting.
@@ -476,6 +485,7 @@ def send_email(
                 subject=subject,
                 body_text=body_text,
                 body_html=body_html,
+                extra_headers=extra_headers,
             )
             if ok:
                 append_system_log("info", "mail", f"Email sent to {to_email} (Gmail)", details=subject[:200] if subject else None)
@@ -505,6 +515,7 @@ def send_email(
             body_text=body_text,
             body_html=body_html,
             log_via="primary SMTP",
+            extra_headers=extra_headers,
         )
         if ok:
             return True, primary_err
@@ -524,6 +535,7 @@ def send_email(
             body_text=body_text,
             body_html=body_html,
             log_via="backup SMTP",
+            extra_headers=extra_headers,
         )
         if ok:
             return True, backup_err

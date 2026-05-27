@@ -253,7 +253,6 @@ if (-not $NoFlutter -and -not $NoArtistPortal) {
 
 Write-Host "`nSystem restart completed." -ForegroundColor Green
 Write-Host "API: http://localhost:8000" -ForegroundColor Yellow
-Write-Host "MinIO Console: http://localhost:9001" -ForegroundColor Yellow
 if (-not $NoFlutter) {
     if ($FlutterDevice -eq "web-server") {
         Write-Host "Admin app: $([string]::Format('http://{0}:{1}', $WebHost, $WebPort))" -ForegroundColor Yellow

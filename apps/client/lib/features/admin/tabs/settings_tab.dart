@@ -97,8 +97,16 @@ class SettingsTab extends StatelessWidget {
                 MailSettingsSubTab(delegate: delegate),
                 EmailTemplatesTab(delegate: delegate),
                 LogsTab(delegate: delegate),
-                DbTab(delegate: delegate),
-                BackupSubTab(delegate: delegate),
+                _AdminOnlySubTab(
+                  delegate: delegate,
+                  permission: 'settings:write',
+                  child: DbTab(delegate: delegate),
+                ),
+                _AdminOnlySubTab(
+                  delegate: delegate,
+                  permission: 'settings:write',
+                  child: BackupSubTab(delegate: delegate),
+                ),
                 const _GeneralSubTab(),
               ],
             ),
@@ -106,6 +114,34 @@ class SettingsTab extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _AdminOnlySubTab extends StatelessWidget {
+  const _AdminOnlySubTab({
+    required this.delegate,
+    required this.permission,
+    required this.child,
+  });
+
+  final AdminDashboardDelegate delegate;
+  final String permission;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!delegate.can(permission)) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: SelectableText(
+            'This section is available to administrators only.',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    return child;
   }
 }
 

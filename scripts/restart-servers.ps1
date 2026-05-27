@@ -84,4 +84,3 @@ Invoke-Step -Name "Checking API health" -Action {
 
 Write-Host "`nServers restart completed." -ForegroundColor Green
 Write-Host "API: http://localhost:8000" -ForegroundColor Yellow
-Write-Host "MinIO Console: http://localhost:9001" -ForegroundColor Yellow

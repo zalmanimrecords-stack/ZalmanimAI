@@ -1,0 +1,17 @@
+---
+description: Enforce development-standards skill for all coding work in this repository
+alwaysApply: true
+---
+
+# Development Standards (required)
+
+For every implementation, refactor, bug fix, or code review in this repository:
+
+1. **Read and follow** [.cursor/skills/development-standards/SKILL.md](.cursor/skills/development-standards/SKILL.md) before writing or changing code. Treat it as authoritative for this repo.
+2. **On task start:** map what exists, what is missing, what is broken, and what depends on it (skill standard #13).
+3. **TDD by default:** write or update tests before or with implementation; cover meaningful logic changes.
+4. **Validate before finishing:** run relevant build, lint, typecheck, and test commands; report what passed or failed. Do not claim tests passed if they were not run.
+5. **Structure:** keep files small and focused; separate UI, business logic, data access, and validation; preserve existing behavior unless explicitly asked to change it.
+6. **Critical flows:** use proper error handling and logging; no empty catch blocks, no silent failures, no secrets in logs.
+
+If a user request conflicts with these standards, follow the user and state the tradeoff clearly.

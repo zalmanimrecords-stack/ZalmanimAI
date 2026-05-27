@@ -15,11 +15,15 @@ mixin ApiClientAuthOps {
     }
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final perms = data['permissions'];
     return AuthSession(
       token: data['access_token'] as String,
       role: data['role'] as String,
       email: data['email'] as String?,
       fullName: data['full_name'] as String?,
+      permissions: perms is List
+          ? perms.map((e) => e.toString()).toList()
+          : null,
     );
   }
 
@@ -188,6 +192,27 @@ mixin ApiClientAdminOps {
     if (response.statusCode != 200) {
       throw Exception(
         'Approve demo failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  /// Resend approval email for an approved demo (fresh demo-confirm token).
+  Future<Map<String, dynamic>> resendDemoApprovalEmail({
+    required String token,
+    required int id,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/admin/demo-submissions/$id/resend-approval-email'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode == 429) {
+      final m = jsonDecode(response.body) as Map<String, dynamic>?;
+      throw Exception(m?['detail'] ?? 'Rate limit exceeded. Try again later.');
+    }
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Resend approval email failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
       );
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
@@ -849,6 +874,22 @@ mixin ApiClientAdminOps {
     }
   }
 
+  Future<Map<String, dynamic>> retryCampaignFailed({
+    required String token,
+    required int id,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/admin/campaigns/$id/retry-failed'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Retry campaign failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> scheduleCampaign({
     required String token,
     required int id,
@@ -1035,6 +1076,90 @@ mixin ApiClientAdminOps {
       );
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<List<dynamic>> listCampaignEmailTemplates({required String token}) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/admin/campaign-email-templates'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'List campaign templates failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> createCampaignEmailTemplate({
+    required String token,
+    required String name,
+    required String subject,
+    String description = '',
+    String bodyText = '',
+    String? bodyHtml,
+  }) async {
+    final body = <String, dynamic>{
+      'name': name,
+      'subject': subject,
+      'description': description,
+      'body_text': bodyText,
+    };
+    if (bodyHtml != null && bodyHtml.isNotEmpty) body['body_html'] = bodyHtml;
+    final response = await http.post(
+      Uri.parse('$baseUrl/admin/campaign-email-templates'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Create campaign template failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateCampaignEmailTemplate({
+    required String token,
+    required int id,
+    String? name,
+    String? subject,
+    String? description,
+    String? bodyText,
+    String? bodyHtml,
+  }) async {
+    final body = <String, dynamic>{};
+    if (name != null) body['name'] = name;
+    if (subject != null) body['subject'] = subject;
+    if (description != null) body['description'] = description;
+    if (bodyText != null) body['body_text'] = bodyText;
+    if (bodyHtml != null) body['body_html'] = bodyHtml;
+    final response = await http.patch(
+      Uri.parse('$baseUrl/admin/campaign-email-templates/$id'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Update campaign template failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<void> deleteCampaignEmailTemplate({
+    required String token,
+    required int id,
+  }) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/admin/campaign-email-templates/$id'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Delete campaign template failed (${response.statusCode}): ${response.body.isNotEmpty ? response.body : response.reasonPhrase}',
+      );
+    }
   }
 
   /// Download full DB backup as JSON. Returns (bytes, suggested filename).

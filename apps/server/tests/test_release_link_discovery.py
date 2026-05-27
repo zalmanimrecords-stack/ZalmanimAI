@@ -319,7 +319,9 @@ def test_send_release_minisite_to_artist_uses_public_url_when_available(client, 
         sent_messages.append((to_email, subject, body_text))
         return True, None
 
-    monkeypatch.setattr("app.api.routes.send_email_service", fake_send_email_service)
+    from app.api import release_routes
+
+    monkeypatch.setattr(release_routes, "send_email_service", fake_send_email_service)
 
     response = client.post(
         f"/api/admin/releases/{release.id}/minisite/send",

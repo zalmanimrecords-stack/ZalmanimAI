@@ -5,6 +5,7 @@ Editable mail server settings stored in DB; effective config merges DB over env.
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.models import MailSettings
+from app.services.mail_template_settings import get_template_settings_dict, save_template_settings
 
 
 def _get_row():
@@ -45,14 +46,14 @@ def get_effective_mail_config():
         "smtp_backup_user": _str(row.smtp_backup_user if row else None, settings.smtp_backup_user),
         "smtp_backup_password": _str(row.smtp_backup_password if row else None, settings.smtp_backup_password),
         "emails_per_hour": emails_per_hour,
-        "email_footer": (row.email_footer if row else None) or "",
+        "email_footer": get_template_settings_dict().get("email_footer", ""),
     })()
 
 
 def get_effective_mail_config_for_api():
     """Same as get_effective_mail_config but as a dict; never includes password. For API response."""
     c = get_effective_mail_config()
-    row = _get_row()
+    templates = get_template_settings_dict()
     return {
         "smtp_host": c.smtp_host or "",
         "smtp_port": c.smtp_port,
@@ -67,21 +68,7 @@ def get_effective_mail_config_for_api():
         "smtp_backup_use_ssl": c.smtp_backup_use_ssl,
         "smtp_backup_user_configured": bool((c.smtp_backup_user or "").strip()),
         "emails_per_hour": c.emails_per_hour,
-        "email_footer": (getattr(row, "email_footer", None) if row else None) or "",
-        "demo_rejection_subject": (getattr(row, "demo_rejection_subject", None) if row else None) or "",
-        "demo_rejection_body": (getattr(row, "demo_rejection_body", None) if row else None) or "",
-        "demo_approval_subject": (getattr(row, "demo_approval_subject", None) if row else None) or "",
-        "demo_approval_body": (getattr(row, "demo_approval_body", None) if row else None) or "",
-        "demo_receipt_subject": (getattr(row, "demo_receipt_subject", None) if row else None) or "",
-        "demo_receipt_body": (getattr(row, "demo_receipt_body", None) if row else None) or "",
-        "portal_invite_subject": (getattr(row, "portal_invite_subject", None) if row else None) or "",
-        "portal_invite_body": (getattr(row, "portal_invite_body", None) if row else None) or "",
-        "groover_invite_subject": (getattr(row, "groover_invite_subject", None) if row else None) or "",
-        "groover_invite_body": (getattr(row, "groover_invite_body", None) if row else None) or "",
-        "update_profile_invite_subject": (getattr(row, "update_profile_invite_subject", None) if row else None) or "",
-        "update_profile_invite_body": (getattr(row, "update_profile_invite_body", None) if row else None) or "",
-        "password_reset_subject": (getattr(row, "password_reset_subject", None) if row else None) or "",
-        "password_reset_body": (getattr(row, "password_reset_body", None) if row else None) or "",
+        **templates,
     }
 
 
@@ -153,37 +140,41 @@ def save_mail_settings(
             row.smtp_backup_password = smtp_backup_password or None
         if emails_per_hour is not None:
             row.emails_per_hour = emails_per_hour
-        if email_footer is not None:
-            row.email_footer = email_footer.strip() or None
-        if demo_rejection_subject is not None:
-            row.demo_rejection_subject = demo_rejection_subject.strip() or None
-        if demo_rejection_body is not None:
-            row.demo_rejection_body = demo_rejection_body.strip() or None
-        if demo_approval_subject is not None:
-            row.demo_approval_subject = demo_approval_subject.strip() or None
-        if demo_approval_body is not None:
-            row.demo_approval_body = demo_approval_body.strip() or None
-        if demo_receipt_subject is not None:
-            row.demo_receipt_subject = demo_receipt_subject.strip() or None
-        if demo_receipt_body is not None:
-            row.demo_receipt_body = demo_receipt_body.strip() or None
-        if portal_invite_subject is not None:
-            row.portal_invite_subject = portal_invite_subject.strip() or None
-        if portal_invite_body is not None:
-            row.portal_invite_body = portal_invite_body.strip() or None
-        if groover_invite_subject is not None:
-            row.groover_invite_subject = groover_invite_subject.strip() or None
-        if groover_invite_body is not None:
-            row.groover_invite_body = groover_invite_body.strip() or None
-        if update_profile_invite_subject is not None:
-            row.update_profile_invite_subject = update_profile_invite_subject.strip() or None
-        if update_profile_invite_body is not None:
-            row.update_profile_invite_body = update_profile_invite_body.strip() or None
-        if password_reset_subject is not None:
-            row.password_reset_subject = password_reset_subject.strip() or None
-        if password_reset_body is not None:
-            row.password_reset_body = password_reset_body.strip() or None
         db.commit()
+
+    template_updates = {}
+    if email_footer is not None:
+        template_updates["email_footer"] = email_footer.strip() or None
+    if demo_rejection_subject is not None:
+        template_updates["demo_rejection_subject"] = demo_rejection_subject.strip() or None
+    if demo_rejection_body is not None:
+        template_updates["demo_rejection_body"] = demo_rejection_body.strip() or None
+    if demo_approval_subject is not None:
+        template_updates["demo_approval_subject"] = demo_approval_subject.strip() or None
+    if demo_approval_body is not None:
+        template_updates["demo_approval_body"] = demo_approval_body.strip() or None
+    if demo_receipt_subject is not None:
+        template_updates["demo_receipt_subject"] = demo_receipt_subject.strip() or None
+    if demo_receipt_body is not None:
+        template_updates["demo_receipt_body"] = demo_receipt_body.strip() or None
+    if portal_invite_subject is not None:
+        template_updates["portal_invite_subject"] = portal_invite_subject.strip() or None
+    if portal_invite_body is not None:
+        template_updates["portal_invite_body"] = portal_invite_body.strip() or None
+    if groover_invite_subject is not None:
+        template_updates["groover_invite_subject"] = groover_invite_subject.strip() or None
+    if groover_invite_body is not None:
+        template_updates["groover_invite_body"] = groover_invite_body.strip() or None
+    if update_profile_invite_subject is not None:
+        template_updates["update_profile_invite_subject"] = update_profile_invite_subject.strip() or None
+    if update_profile_invite_body is not None:
+        template_updates["update_profile_invite_body"] = update_profile_invite_body.strip() or None
+    if password_reset_subject is not None:
+        template_updates["password_reset_subject"] = password_reset_subject.strip() or None
+    if password_reset_body is not None:
+        template_updates["password_reset_body"] = password_reset_body.strip() or None
+    if template_updates:
+        save_template_settings(**template_updates)
 
 def build_mail_config(
     *,

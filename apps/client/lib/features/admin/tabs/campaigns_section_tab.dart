@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/zalmanim_icons.dart';
 import '../admin_dashboard_delegate.dart';
+import 'campaign_email_templates_tab.dart';
 import 'campaign_requests_tab.dart';
 import 'campaigns_tab.dart';
 
@@ -20,7 +21,7 @@ class _CampaignsSectionTabState extends State<CampaignsSectionTab> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -42,6 +43,10 @@ class _CampaignsSectionTabState extends State<CampaignsSectionTab> {
                   ),
                   text: 'Campaign requests',
                 ),
+                Tab(
+                  icon: const Icon(Icons.email_outlined, size: 20),
+                  text: 'Email templates',
+                ),
               ],
             ),
           ),
@@ -50,6 +55,7 @@ class _CampaignsSectionTabState extends State<CampaignsSectionTab> {
               children: [
                 CampaignsTab(delegate: widget.delegate),
                 CampaignRequestsTab(delegate: widget.delegate),
+                CampaignEmailTemplatesTab(delegate: widget.delegate),
               ],
             ),
           ),

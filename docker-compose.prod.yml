@@ -4,6 +4,7 @@ services:
     restart: unless-stopped
     environment:
       ALLOWED_SENDER_DOMAINS: ${MAILSERVER_ALLOWED_SENDER_DOMAINS:-zalmanim.com}
+      HOSTNAME: ${MAILSERVER_HOSTNAME:-mail.zalmanim.com}
 
   postgres:
     image: postgres:16

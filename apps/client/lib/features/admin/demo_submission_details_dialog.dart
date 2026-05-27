@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api_client.dart';
+import 'demo_submission_dialogs.dart';
 import 'demo_submission_helpers.dart';
 import 'demo_submission_widgets.dart';
 
@@ -25,6 +26,8 @@ Future<void> showDemoSubmissionDetailsDialog({
       ? linkRows.map((e) => e.toString()).toList()
       : <String>[];
   final soundCloudUrls = soundCloudUrlsFromDemoSubmission(submission);
+  final status = (submission['status'] ?? '').toString();
+  final canResendApprovalEmail = status == 'approved';
 
   final result = await showDialog<bool>(
     context: context,
@@ -183,6 +186,21 @@ Future<void> showDemoSubmissionDetailsDialog({
           ),
         ),
         actions: [
+          if (canResendApprovalEmail)
+            TextButton(
+              onPressed: () async {
+                Navigator.of(ctx).pop(false);
+                await showResendDemoApprovalEmail(
+                  context: context,
+                  apiClient: apiClient,
+                  token: token,
+                  submissionId: id,
+                  reloadDemos: onNotesSaved,
+                  onError: onError,
+                );
+              },
+              child: const Text('Resend approval email'),
+            ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
             child: const Text('Close'),

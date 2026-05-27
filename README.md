@@ -38,7 +38,7 @@ git push -u origin main
   - Social OAuth connection flow + queue-post endpoint
   - **Unified campaigns**: one content to social + Mailchimp + WordPress; schedule or send now
 - Containers (`docker-compose.yml`):
-  - api, worker (polls for scheduled campaigns and runs send), postgres, redis, minio
+  - api, worker (polls for scheduled campaigns and runs send), postgres, redis
 
 ## Quick Start
 
@@ -167,6 +167,8 @@ Send order: **Gmail API** (if connected with send scope) → **primary SMTP** �
 
 The default Docker stack now includes a `mailserver` service (`boky/postfix`) that relays outgoing mail for the app. By default it allows sender addresses from `zalmanim.com`, so `info@zalmanim.com` works out of the box inside the stack.
 
+For production deliverability on the Hostinger VPS, configure DNS (MX, SPF, DKIM, DMARC) and PTR for `mail.zalmanim.com` — see **[deploy/EMAIL_ZALMANIM_SELFHOST.md](deploy/EMAIL_ZALMANIM_SELFHOST.md)**.
+
 Admin endpoints: `GET /api/admin/email/rate-limit` (status) and `POST /api/admin/email/send` (send one email). When the hourly limit is reached, send returns `429 Too Many Requests`.
 
 ## Demo Intake Flow
@@ -208,7 +210,7 @@ By default the script:
 
 1. Stops existing Docker containers.
 2. Cleans dev ports (3000, 3001, 8000, 5432) so nothing is left bound from a previous run.
-3. Starts the backend stack (API, Postgres, Redis, MinIO, worker).
+3. Starts the backend stack (API, Postgres, Redis, worker).
 4. Waits for the API health check.
 5. Runs `flutter pub get` for the admin app and starts `flutter run -d web-server --web-port 3000` in a new window; opens `http://127.0.0.1:3000`.
 6. Runs `flutter pub get` for the Artist Portal and starts it on port 3001 in another window; opens `http://127.0.0.1:3001`.

@@ -123,6 +123,8 @@ Create `A` records for both subdomains so they point to the VPS:
 - `artists.zalmanim.com`
 - `lmapi.zalmanim.com`
 
+**Outbound email (self-hosted on the same VPS):** publish MX/SPF/DKIM/DMARC for `zalmanim.com`, set PTR to `mail.zalmanim.com`, and follow **[deploy/EMAIL_ZALMANIM_SELFHOST.md](EMAIL_ZALMANIM_SELFHOST.md)**. PTR for `187.124.22.93` can be set in Hostinger hPanel → VPS; `zalmanim.com` DNS is not in the Hostinger account linked to MCP unless you move the zone there.
+
 ## 3. Deploy
 
 From the project root on the VPS:

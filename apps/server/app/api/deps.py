@@ -109,6 +109,20 @@ def get_current_lm_user(
     )
 
 
+def has_permission(user: UserContext, permission: str) -> bool:
+    if user.role == "admin":
+        return True
+    return permission in (user.permissions or [])
+
+
+def require_permission(user: UserContext, permission: str) -> None:
+    if not has_permission(user, permission):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Missing permission: {permission}",
+        )
+
+
 def require_admin(user: UserContext) -> None:
     if user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")

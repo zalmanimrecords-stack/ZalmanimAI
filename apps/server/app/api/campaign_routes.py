@@ -3,12 +3,14 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from app.api.deps import get_current_lm_user, require_admin
+from app.api.deps import get_current_lm_user, require_permission
 from app.core.config import settings
 from app.db.session import get_db
+from app.models.models import Campaign
 from app.schemas.schemas import CampaignCreate, CampaignOut, CampaignUpdate, ScheduleCampaignRequest, UserContext
+from app.services.campaign_send import run_campaign_retry_failed
 from app.services.campaign_service import (
     cancel_schedule,
     create_campaign as create_campaign_svc,
@@ -24,6 +26,15 @@ router = APIRouter()
 _CAMPAIGN_MEDIA_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
 
+def _get_campaign_with_relations(db: Session, campaign_id: int) -> Campaign | None:
+    return (
+        db.query(Campaign)
+        .options(joinedload(Campaign.targets), joinedload(Campaign.deliveries))
+        .filter(Campaign.id == campaign_id)
+        .first()
+    )
+
+
 @router.get("/admin/campaigns", response_model=list[CampaignOut])
 def list_campaigns(
     db: Session = Depends(get_db),
@@ -32,7 +43,7 @@ def list_campaigns(
     limit: int = Query(100, le=200),
     offset: int = Query(0, ge=0),
 ) -> list[CampaignOut]:
-    require_admin(user)
+    require_permission(user, "campaigns:read")
     campaigns = list_campaigns_svc(db, status=status, limit=limit, offset=offset)
     return [CampaignOut.from_campaign(c) for c in campaigns]
 
@@ -43,8 +54,8 @@ def get_campaign_route(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_lm_user),
 ) -> CampaignOut:
-    require_admin(user)
-    campaign = get_campaign(db, campaign_id)
+    require_permission(user, "campaigns:read")
+    campaign = _get_campaign_with_relations(db, campaign_id)
     if not campaign:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
     return CampaignOut.from_campaign(campaign)
@@ -56,7 +67,7 @@ def create_campaign_route(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_lm_user),
 ) -> CampaignOut:
-    require_admin(user)
+    require_permission(user, "campaigns:write")
     targets = [
         {"channel_type": t.channel_type, "external_id": t.external_id, "channel_payload": t.channel_payload}
         for t in payload.targets
@@ -80,7 +91,7 @@ def upload_campaign_media(
     file: UploadFile = File(...),
     user: UserContext = Depends(get_current_lm_user),
 ) -> dict:
-    require_admin(user)
+    require_permission(user, "campaigns:write")
     ext = (os.path.splitext(file.filename or "")[1] or "").lower()
     if ext not in _CAMPAIGN_MEDIA_EXT:
         raise HTTPException(
@@ -110,7 +121,13 @@ def serve_campaign_media(filename: str):
     path = os.path.join(settings.upload_dir, "campaign_media", filename)
     if not os.path.isfile(path):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    media_types = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"}
+    media_types = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+    }
     return FileResponse(path, media_type=media_types.get(ext, "application/octet-stream"))
 
 
@@ -121,7 +138,7 @@ def update_campaign_route(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_lm_user),
 ) -> CampaignOut:
-    require_admin(user)
+    require_permission(user, "campaigns:write")
     kwargs = payload.model_dump(exclude_unset=True)
     campaign = update_campaign_svc(db, campaign_id, **kwargs)
     if not campaign:
@@ -135,7 +152,7 @@ def delete_campaign_route(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_lm_user),
 ) -> dict:
-    require_admin(user)
+    require_permission(user, "campaigns:write")
     if not delete_campaign(db, campaign_id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Campaign not found or cannot be deleted")
     return {"ok": True}
@@ -148,7 +165,7 @@ def schedule_campaign_route(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_lm_user),
 ) -> CampaignOut:
-    require_admin(user)
+    require_permission(user, "campaigns:write")
     campaign = get_campaign(db, campaign_id)
     if not campaign:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
@@ -166,8 +183,30 @@ def cancel_campaign_schedule_route(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_lm_user),
 ) -> CampaignOut:
-    require_admin(user)
+    require_permission(user, "campaigns:write")
     campaign = cancel_schedule(db, campaign_id)
     if not campaign:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Campaign not found or not scheduled")
+    return CampaignOut.from_campaign(campaign)
+
+
+@router.post("/admin/campaigns/{campaign_id}/retry-failed", response_model=CampaignOut)
+def retry_failed_campaign_route(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> CampaignOut:
+    require_permission(user, "campaigns:write")
+    campaign = get_campaign(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+    if campaign.status not in ("partial", "failed"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only partial or failed campaigns can retry failed targets",
+        )
+    run_campaign_retry_failed(db, campaign_id)
+    campaign = _get_campaign_with_relations(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
     return CampaignOut.from_campaign(campaign)

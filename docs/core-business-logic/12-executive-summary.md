@@ -1,6 +1,6 @@
 # Executive Summary
 
-**Last updated:** 2026-04-18
+**Last updated:** 2026-05-27
 
 **Scope analyzed:** Full repo with business emphasis on `apps/server/app`, worker automation, and matching admin/artist UI surfaces
 
@@ -52,11 +52,15 @@ The implemented product is a label-operations platform for Zalmanim that combine
 
 ## Prioritized Recommendations
 
-- `P0` Move demo approval and pending-release lifecycle logic into dedicated domain services with explicit transition helpers.
-- `P1` Introduce clearer campaign reconciliation for partial success, retry, and operator visibility.
+- `P0` ~~Move demo approval into domain services~~ — **Done** (`demo_service.py`, workflow email, resend).
+- `P1` ~~Campaign partial success + retry~~ — **Done** (`partial` status, `retry-failed` endpoint, admin UI).
+- `P1` ~~Separate SMTP from templates~~ — **Done** (`mail_template_settings` table + migration).
+- `P1` ~~Manager permission alignment~~ — **Partially done** (campaigns + client gating; extend to more routes).
 - `P1` Clarify and document the intended split between artist-wide inbox conversations and pending-release comments.
-- `P1` Separate operational SMTP settings from editable template content at the persistence layer.
-- `P2` Align manager-visible UI with actual route enforcement or broaden route support intentionally.
+- `P4` Further `routes.py` slimming (demos, artists, public minisite HTML).
+- `P3` done: release/catalog/settings routers, permission alignment for managers.
+
+See also [`docs/REMEDIATION-CHANGELOG.md`](../REMEDIATION-CHANGELOG.md) and [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md).
 
 ## Code References
 

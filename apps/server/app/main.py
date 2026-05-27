@@ -8,6 +8,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.audience_routes import router as audience_router
+from app.api.campaign_template_routes import router as campaign_template_router
 from app.api.routes import init_db, router
 from app.core.config import settings
 from app.services.system_log import append_system_log
@@ -134,6 +135,7 @@ app.add_middleware(
 
 app.include_router(router, prefix="/api")
 app.include_router(audience_router, prefix="/api")
+app.include_router(campaign_template_router, prefix="/api")
 
 
 ROBOTS_TXT = b"User-agent: *\nDisallow: /\n"

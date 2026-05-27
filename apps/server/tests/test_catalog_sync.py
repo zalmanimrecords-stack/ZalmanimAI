@@ -32,7 +32,7 @@ def test_sync_from_catalog_creates_release_for_matched_artist_and_queues_scan(
         queued_release_ids.append(release_id)
         return None
 
-    monkeypatch.setattr("app.api.routes.queue_release_link_scan", _fake_queue_release_link_scan)
+    monkeypatch.setattr("app.api.catalog_routes.queue_release_link_scan", _fake_queue_release_link_scan)
 
     response = client.post("/api/admin/releases/sync-from-catalog", headers=admin_headers)
     assert response.status_code == 200
@@ -62,7 +62,7 @@ def test_sync_from_catalog_unmatched_creates_placeholder_and_second_run_skips_du
     )
     db_session.commit()
 
-    monkeypatch.setattr("app.api.routes.queue_release_link_scan", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.api.catalog_routes.queue_release_link_scan", lambda *args, **kwargs: None)
 
     first = client.post("/api/admin/releases/sync-from-catalog", headers=admin_headers)
     assert first.status_code == 200

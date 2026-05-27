@@ -89,6 +89,8 @@ class Settings(BaseSettings):
     password_reset_base_url: str = ""
     artist_portal_base_url: str = "https://artists.zalmanim.com"
     zalmanim_website_url: str = "https://zalmanim.com"
+    # Public API base for unsubscribe links in campaign email (include /api). Empty = derive from oauth_redirect_base.
+    api_public_base_url: str = ""
 
     def is_production(self) -> bool:
         return (self.environment or "").strip().lower() in {"prod", "production"}

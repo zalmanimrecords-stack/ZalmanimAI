@@ -21,6 +21,7 @@ from app.models.models import (
     CampaignTarget,
     CatalogTrack,
     DemoSubmission,
+    EmailCampaignTemplate,
     HubConnector,
     MailSettings,
     MailingList,
@@ -58,6 +59,7 @@ EXPORT_TABLE_ORDER = [
     "campaigns",
     "campaign_targets",
     "campaign_deliveries",
+    "email_campaign_templates",
 ]
 
 # ORM model class per table (None for raw-table like release_artists).
@@ -82,6 +84,7 @@ TABLE_TO_MODEL = {
     "campaigns": Campaign,
     "campaign_targets": CampaignTarget,
     "campaign_deliveries": CampaignDelivery,
+    "email_campaign_templates": EmailCampaignTemplate,
 }
 
 

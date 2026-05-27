@@ -95,6 +95,30 @@ class MailSettings(Base):
     password_reset_body: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
+
+class MailTemplateSettings(Base):
+    """Single-row table: editable email template bodies/subjects (separate from SMTP transport). id=1."""
+    __tablename__ = "mail_template_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    email_footer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    demo_rejection_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    demo_rejection_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    demo_approval_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    demo_approval_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    demo_receipt_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    demo_receipt_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    portal_invite_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    portal_invite_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    groover_invite_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    groover_invite_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    update_profile_invite_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    update_profile_invite_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    password_reset_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    password_reset_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+
+
 # Many-to-many: a release can have multiple artists (e.g. when sync failed and admin assigns, or collab)
 release_artists_table = Table(
     "release_artists",
@@ -270,6 +294,8 @@ class PendingRelease(Base):
     artist_data_json: Mapped[str] = mapped_column(Text, default="{}")  # Same keys as Artist extra_json
     release_title: Mapped[str] = mapped_column(String(300), nullable=False)
     release_data_json: Mapped[str] = mapped_column(Text, default="{}")  # catalog_number, release_date, track_title, etc.
+    selected_image_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    notifications_muted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False, index=True)  # pending | processed
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -388,6 +414,7 @@ class Release(Base):
     status: Mapped[str] = mapped_column(String(30), default="submitted")
     file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     platform_links_json: Mapped[str] = mapped_column(Text, default="{}")
+    link_scan_backoff_json: Mapped[str] = mapped_column(Text, default="{}")
     cover_image_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     cover_image_source_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     cover_image_updated_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -583,6 +610,20 @@ class HubConnector(Base):
 
 
 
+class EmailCampaignTemplate(Base):
+    """Reusable subject/body for native email campaign sends (LabelOps audiences)."""
+    __tablename__ = "email_campaign_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    subject: Mapped[str] = mapped_column(String(300), nullable=False)
+    body_text: Mapped[str] = mapped_column(Text, default="")
+    body_html: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class MailingList(Base):
     __tablename__ = "mailing_lists"
 
@@ -633,7 +674,7 @@ class Campaign(Base):
     body_text: Mapped[str] = mapped_column(Text, default="")
     body_html: Mapped[str | None] = mapped_column(Text, nullable=True)
     media_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    status: Mapped[str] = mapped_column(String(30), default="draft")  # draft | scheduled | sending | sent | failed
+    status: Mapped[str] = mapped_column(String(30), default="draft")  # draft | scheduled | sending | sent | partial | failed
     scheduled_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     sent_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -649,7 +690,7 @@ class CampaignTarget(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id"), nullable=False)
-    channel_type: Mapped[str] = mapped_column(String(30), nullable=False)  # social | mailchimp | wordpress
+    channel_type: Mapped[str] = mapped_column(String(30), nullable=False)  # social | mailchimp | wordpress | email
     external_id: Mapped[str] = mapped_column(String(100), nullable=False)  # social_connection_id or hub_connector_id
     channel_payload: Mapped[str] = mapped_column(Text, default="{}")  # list_id, post_type, etc. as JSON
 

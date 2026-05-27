@@ -20,6 +20,7 @@ import 'tabs/artists_tab.dart';
 import 'tabs/audience_tab.dart';
 import 'tabs/campaigns_section_tab.dart';
 import 'demo_submission_details_dialog.dart';
+import 'demo_submission_dialogs.dart' as demo_dialogs;
 import 'tabs/demos_tab.dart';
 import 'tabs/inbox_tab.dart';
 import 'tabs/releases_section_tab.dart';
@@ -1351,6 +1352,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   }
 
   @override
+  bool can(String permission) => widget.session.can(permission);
+
+  @override
   void showAddArtistDialog() => _showAddArtistDialog();
 
   @override
@@ -1452,6 +1456,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   @override
   void deleteCampaign(int id, String name) => _deleteCampaign(id, name);
+
+  @override
+  Future<void> retryCampaignFailedTargets(int id, String name) =>
+      _retryCampaignFailedTargets(id, name);
 
   @override
   void showCreateAudienceDialog() => _showCreateAudienceDialog();
@@ -1969,205 +1977,25 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   }
 
   Future<void> _showRejectDemoDialog(Map<String, dynamic> submission) async {
-    final id = submission['id'] as int?;
-    if (id == null) return;
-    final artistName = (submission['artist_name'] ?? '').toString().trim();
-    final subjectController = TextEditingController(
-      text: (submission['rejection_subject'] ??
-              'Thank you for your demo submission, ${artistName.isEmpty ? 'there' : artistName}')
-          .toString(),
-    );
-    final bodyController = TextEditingController(
-      text: (submission['rejection_body'] ??
-              'Hi ${artistName.isEmpty ? 'there' : artistName},\n\n'
-                  'Thank you for sending us your music. We received it with respect and appreciate you thinking of us.\n\n'
-                  'After careful consideration, we feel it does not quite fit the musical direction of our labels at this time. '
-                  'We would be happy to receive more demos from you in the future in the hope they may align with our line.\n\n'
-                  'Best regards,\nZalmanim')
-          .toString(),
-    );
-    bool sendEmail = true;
-    final confirmed = await showDialog<bool>(
+    await demo_dialogs.showRejectDemoDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setStateDialog) => AlertDialog(
-          title: const Text('Reject demo'),
-          content: SizedBox(
-            width: 720,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: subjectController,
-                    decoration:
-                        const InputDecoration(labelText: 'Rejection subject'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: bodyController,
-                    maxLines: 10,
-                    decoration: const InputDecoration(
-                      labelText: 'Rejection email body',
-                      alignLabelWithHint: true,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SwitchListTile(
-                    value: sendEmail,
-                    onChanged: (value) =>
-                        setStateDialog(() => sendEmail = value),
-                    title: const Text('Send rejection email now'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Reject'),
-            ),
-          ],
-        ),
-      ),
+      apiClient: widget.apiClient,
+      token: widget.token,
+      submission: submission,
+      reloadDemos: () => _loadDemoSubmissions(withOverlay: false),
+      onError: _setError,
     );
-    if (confirmed != true) {
-      subjectController.dispose();
-      bodyController.dispose();
-      return;
-    }
-    try {
-      await widget.apiClient.updateDemoSubmission(
-        token: widget.token,
-        id: id,
-        body: {
-          'status': 'rejected',
-          'rejection_subject': subjectController.text.trim(),
-          'rejection_body': bodyController.text,
-          'send_rejection_email': sendEmail,
-        },
-      );
-      await _loadDemoSubmissions(withOverlay: false);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            sendEmail ? 'Demo rejected and email sent.' : 'Demo rejected.',
-          ),
-        ),
-      );
-    } catch (e) {
-      _setError(e);
-    } finally {
-      subjectController.dispose();
-      bodyController.dispose();
-    }
   }
 
   Future<void> _showApproveDemoDialog(Map<String, dynamic> submission) async {
-    final id = submission['id'] as int?;
-    if (id == null) return;
-    final artistName = (submission['artist_name'] ?? '').toString();
-    final subjectController = TextEditingController(
-      text: (submission['approval_subject'] ??
-              'Your demo was approved, $artistName')
-          .toString(),
-    );
-    final bodyController = TextEditingController(
-      text: (submission['approval_body'] ??
-              'Hi $artistName,\n\nThanks for sending your demo.\n\nWe reviewed it and would like to move forward with you. Please reply to this email so we can continue the next steps.\n\nBest regards')
-          .toString(),
-    );
-    bool sendEmail = true;
-    final approved = await showDialog<bool>(
+    await demo_dialogs.showApproveDemoDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setStateDialog) => AlertDialog(
-          title: const Text('Approve demo'),
-          content: SizedBox(
-            width: 720,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextField(
-                    controller: subjectController,
-                    decoration:
-                        const InputDecoration(labelText: 'Approval subject'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: bodyController,
-                    maxLines: 10,
-                    decoration: const InputDecoration(
-                      labelText: 'Approval email body',
-                      alignLabelWithHint: true,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'The submitter is added to Artists (new row or linked by email).',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 12),
-                  SwitchListTile(
-                    value: sendEmail,
-                    onChanged: (value) =>
-                        setStateDialog(() => sendEmail = value),
-                    title: const Text('Send approval email now'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Approve'),
-            ),
-          ],
-        ),
-      ),
+      apiClient: widget.apiClient,
+      token: widget.token,
+      submission: submission,
+      reloadDemos: () => _loadDemoSubmissions(withOverlay: false),
+      onError: _setError,
     );
-    if (approved != true) {
-      subjectController.dispose();
-      bodyController.dispose();
-      return;
-    }
-    try {
-      await widget.apiClient.approveDemoSubmission(
-        token: widget.token,
-        id: id,
-        approvalSubject: subjectController.text.trim(),
-        approvalBody: bodyController.text,
-        sendEmail: sendEmail,
-      );
-      await _loadDemoSubmissions(withOverlay: false);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(sendEmail
-                ? 'Demo approved and email sent.'
-                : 'Demo approved.')),
-      );
-    } catch (e) {
-      _setError(e);
-    } finally {
-      subjectController.dispose();
-      bodyController.dispose();
-    }
   }
 
   Future<void> _showDemoDetailsDialog(Map<String, dynamic> submission) async {
@@ -4561,7 +4389,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     int? selectedMailchimpConnectorId;
     String? selectedMailchimpListId;
     int? selectedWordPressConnectorId;
+    int? selectedAudienceId;
+    int? selectedTemplateId;
     List<dynamic> mailchimpLists = [];
+    List<dynamic> campaignEmailTemplates = [];
+    await _loadAudiences(reset: true, withOverlay: false);
+    try {
+      campaignEmailTemplates = await widget.apiClient
+          .listCampaignEmailTemplates(token: widget.token);
+    } catch (_) {}
 
     if (!mounted) return;
     final isSaving = ValueNotifier<bool>(false);
@@ -4603,6 +4439,46 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       decoration: const InputDecoration(labelText: 'Body text'),
                     ),
                     const SizedBox(height: 8),
+                    if (campaignEmailTemplates.isNotEmpty) ...[
+                      const Text('Start from template',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      DropdownButton<int?>(
+                        value: selectedTemplateId,
+                        isExpanded: true,
+                        hint: const Text('Optional template'),
+                        items: [
+                          const DropdownMenuItem(
+                              value: null, child: Text('None')),
+                          ...campaignEmailTemplates.map((t) {
+                            final m = t as Map<String, dynamic>;
+                            return DropdownMenuItem(
+                              value: m['id'] as int?,
+                              child: Text(m['name'] as String? ?? 'Template'),
+                            );
+                          }),
+                        ],
+                        onChanged: (v) {
+                          setDialogState(() {
+                            selectedTemplateId = v;
+                            if (v == null) return;
+                            Map<String, dynamic>? picked;
+                            for (final t in campaignEmailTemplates) {
+                              if ((t as Map<String, dynamic>)['id'] == v) {
+                                picked = t;
+                                break;
+                              }
+                            }
+                            if (picked != null) {
+                              titleController.text =
+                                  picked['subject'] as String? ?? '';
+                              bodyController.text =
+                                  picked['body_text'] as String? ?? '';
+                            }
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                     const Text('Image (optional)',
                         style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
@@ -4676,6 +4552,32 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       onChanged: (_) => setDialogState(() {}),
                     ),
                     const SizedBox(height: 16),
+                    const Text('LabelOps email audience',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    DropdownButton<int?>(
+                      value: selectedAudienceId,
+                      isExpanded: true,
+                      hint: const Text('Select mailing list (optional)'),
+                      items: [
+                        const DropdownMenuItem(
+                            value: null, child: Text('None')),
+                        ...audiences.map((a) {
+                          final m = a as Map<String, dynamic>;
+                          final id = m['id'] as int;
+                          final subs = m['subscribed_count'] ?? 0;
+                          return DropdownMenuItem(
+                            value: id,
+                            child: Text(
+                              '${m['name']} ($subs subscribed)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        }),
+                      ],
+                      onChanged: (v) =>
+                          setDialogState(() => selectedAudienceId = v),
+                    ),
+                    const SizedBox(height: 8),
                     const Text('Social connections',
                         style: TextStyle(fontWeight: FontWeight.bold)),
                     ...connections
@@ -4802,6 +4704,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                             return;
                           }
                           final targets = <Map<String, dynamic>>[];
+                          if (selectedAudienceId != null) {
+                            targets.add({
+                              'channel_type': 'email',
+                              'external_id': selectedAudienceId.toString(),
+                              'channel_payload': <String, dynamic>{},
+                            });
+                          }
                           for (final id in selectedSocialIds) {
                             targets.add({
                               'channel_type': 'social',
@@ -4830,7 +4739,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                           }
                           if (targets.isEmpty) {
                             _showErrorSnackBar(
-                                'Select at least one target (social, Mailchimp, or WordPress).');
+                                'Select at least one target (email audience, social, Mailchimp, or WordPress).');
                             return;
                           }
                           isSaving.value = true;
@@ -4887,6 +4796,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     int? selectedMailchimpConnectorId;
     String? selectedMailchimpListId;
     int? selectedWordPressConnectorId;
+    int? selectedAudienceId;
     List<dynamic> mailchimpLists = [];
 
     for (final t in targetsIn) {
@@ -4895,6 +4805,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       final extId = m['external_id'] as String?;
       if (type == 'social' && extId != null) {
         selectedSocialIds.add(int.tryParse(extId) ?? 0);
+      } else if (type == 'email' && extId != null) {
+        selectedAudienceId = int.tryParse(extId);
       } else if (type == 'mailchimp' && extId != null) {
         selectedMailchimpConnectorId = int.tryParse(extId);
         final payload = m['channel_payload'] as Map<String, dynamic>? ?? {};
@@ -4903,6 +4815,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         selectedWordPressConnectorId = int.tryParse(extId);
       }
     }
+
+    await _loadAudiences(reset: true, withOverlay: false);
 
     void loadMailchimpLists(int connectorId) {
       setState(() {
@@ -4944,6 +4858,32 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       controller: bodyController,
                       maxLines: 4,
                       decoration: const InputDecoration(labelText: 'Body text'),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('LabelOps email audience',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    DropdownButton<int?>(
+                      value: selectedAudienceId,
+                      isExpanded: true,
+                      hint: const Text('Select mailing list (optional)'),
+                      items: [
+                        const DropdownMenuItem(
+                            value: null, child: Text('None')),
+                        ...audiences.map((a) {
+                          final m = a as Map<String, dynamic>;
+                          final aid = m['id'] as int;
+                          final subs = m['subscribed_count'] ?? 0;
+                          return DropdownMenuItem(
+                            value: aid,
+                            child: Text(
+                              '${m['name']} ($subs subscribed)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        }),
+                      ],
+                      onChanged: (v) =>
+                          setDialogState(() => selectedAudienceId = v),
                     ),
                     const SizedBox(height: 8),
                     const Text('Image (optional)',
@@ -5145,6 +5085,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                             return;
                           }
                           final targets = <Map<String, dynamic>>[];
+                          if (selectedAudienceId != null) {
+                            targets.add({
+                              'channel_type': 'email',
+                              'external_id': selectedAudienceId.toString(),
+                              'channel_payload': <String, dynamic>{},
+                            });
+                          }
                           for (final id in selectedSocialIds) {
                             targets.add({
                               'channel_type': 'social',
@@ -5172,7 +5119,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                             });
                           }
                           if (targets.isEmpty) {
-                            _showErrorSnackBar('Select at least one target.');
+                            _showErrorSnackBar(
+                                'Select at least one target (email audience, social, Mailchimp, or WordPress).');
                             return;
                           }
                           isSavingEdit.value = true;
@@ -5337,6 +5285,46 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       await _load();
       if (!mounted) return;
       setState(() => loading = false);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => loading = false);
+      _showErrorSnackBar(e.toString());
+    }
+  }
+
+  Future<void> _retryCampaignFailedTargets(int id, String name) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Retry failed targets'),
+        content: Text(
+          'Resend only the channels that failed for campaign "$name"?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      setState(() => loading = true);
+      await widget.apiClient.retryCampaignFailed(
+        token: widget.token,
+        id: id,
+      );
+      await _loadCampaigns(withOverlay: false);
+      if (!mounted) return;
+      setState(() => loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Retried failed campaign targets.')),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => loading = false);
@@ -5701,14 +5689,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   Future<void> _importMailchimpAudienceCsv() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: const ['csv'],
+      allowedExtensions: const ['csv', 'xlsx'],
       withData: true,
     );
     if (result == null || result.files.isEmpty) return;
     final file = result.files.single;
     final fileBytes = file.bytes;
     if (fileBytes == null || fileBytes.isEmpty) {
-      _showErrorSnackBar('Could not read the CSV file.');
+      _showErrorSnackBar('Could not read the file.');
       return;
     }
 
@@ -5722,7 +5710,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Import Mailchimp CSV'),
+          title: const Text('Import Mailchimp audience'),
           content: SizedBox(
             width: 440,
             child: Column(
@@ -5735,6 +5723,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     fontSize: 12,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Use Mailchimp: Audience → Manage contacts → Export → Export as .csv or .xlsx.',
+                  style: TextStyle(fontSize: 12),
                 ),
                 const SizedBox(height: 12),
                 SwitchListTile(
@@ -5810,7 +5803,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       }
       if (!mounted) return;
       final message =
-          (response['message'] ?? 'Mailchimp CSV imported.').toString();
+          (response['message'] ?? 'Mailchimp audience imported.').toString();
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(message)));
     } catch (e) {

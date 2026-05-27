@@ -1,10 +1,7 @@
-import csv
 import html
-import io
 import json
 import secrets
 from datetime import datetime, timezone
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import HTMLResponse
@@ -15,6 +12,11 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_lm_user, require_admin
 from app.db.session import get_db
 from app.models.models import Artist, ArtistActivityLog, MailingList, MailingSubscriber
+from app.services.mailchimp_audience_import import (
+    ensure_target_list,
+    import_mailchimp_rows,
+    parse_mailchimp_audience_file,
+)
 from app.schemas.schemas import (
     ArtistOut,
     MailingListCreate,
@@ -28,11 +30,6 @@ from app.schemas.schemas import (
 
 router = APIRouter()
 _VALID_SUBSCRIBER_STATUSES = {"subscribed", "unsubscribed", "cleaned"}
-_MAILCHIMP_EMAIL_KEYS = ("email address", "email", "email_address")
-_MAILCHIMP_FIRST_NAME_KEYS = ("first name", "fname", "first_name")
-_MAILCHIMP_LAST_NAME_KEYS = ("last name", "lname", "last_name")
-_MAILCHIMP_STATUS_KEYS = ("status", "email marketing status")
-_MAILCHIMP_CONSENT_KEYS = ("timestamp signup", "optin time", "date added")
 
 
 def _validate_status(value: str) -> str:
@@ -43,98 +40,6 @@ def _validate_status(value: str) -> str:
             detail=f"Invalid subscriber status. Allowed: {', '.join(sorted(_VALID_SUBSCRIBER_STATUSES))}",
         )
     return status_value
-
-
-
-def _normalize_mailchimp_status(value: str | None) -> str:
-    raw = (value or "").strip().lower()
-    if raw in {"", "subscribed"}:
-        return "subscribed"
-    if raw in {"unsubscribed", "archived"}:
-        return "unsubscribed"
-    if raw in {"cleaned", "non-subscribed", "nonsubscribed", "pending", "transactional"}:
-        return "cleaned"
-    return "subscribed"
-
-
-
-def _parse_datetime(value: str | None) -> datetime | None:
-    text = (value or "").strip()
-    if not text:
-        return None
-    for pattern in (
-        "%Y-%m-%d %H:%M:%S",
-        "%m/%d/%Y %H:%M",
-        "%m/%d/%Y %H:%M:%S",
-        "%Y-%m-%dT%H:%M:%S%z",
-        "%Y-%m-%dT%H:%M:%S",
-    ):
-        try:
-            parsed = datetime.strptime(text, pattern)
-            if parsed.tzinfo is None:
-                return parsed.replace(tzinfo=timezone.utc)
-            return parsed.astimezone(timezone.utc)
-        except ValueError:
-            continue
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
-    except ValueError:
-        return None
-
-
-
-def _cell(row: dict[str, str], *keys: str) -> str:
-    normalized = {str(k).strip().lower(): (v or "") for k, v in row.items()}
-    for key in keys:
-        if key in normalized and normalized[key].strip():
-            return normalized[key].strip()
-    return ""
-
-
-
-def _build_full_name(row: dict[str, str]) -> str | None:
-    first_name = _cell(row, *_MAILCHIMP_FIRST_NAME_KEYS)
-    last_name = _cell(row, *_MAILCHIMP_LAST_NAME_KEYS)
-    full_name = " ".join(part for part in [first_name, last_name] if part).strip()
-    return full_name or None
-
-
-
-def _decode_csv_bytes(data: bytes) -> str:
-    for encoding in ("utf-8-sig", "utf-8", "latin-1"):
-        try:
-            return data.decode(encoding)
-        except UnicodeDecodeError:
-            continue
-    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not decode CSV file")
-
-
-
-def _ensure_target_list(
-    db: Session,
-    *,
-    existing_list_id: int | None,
-    list_name: str | None,
-    filename: str | None,
-) -> MailingList:
-    if existing_list_id is not None:
-        mailing_list = db.get(MailingList, existing_list_id)
-        if not mailing_list:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audience not found")
-        return mailing_list
-
-    resolved_name = (list_name or "").strip()
-    if not resolved_name:
-        resolved_name = Path(filename or "mailchimp-import.csv").stem.replace("_", " ").replace("-", " ").strip() or "Mailchimp Import"
-
-    mailing_list = MailingList(name=resolved_name, description="Imported from Mailchimp CSV")
-    db.add(mailing_list)
-    db.commit()
-    db.refresh(mailing_list)
-    return mailing_list
 
 
 
@@ -251,69 +156,24 @@ async def import_mailchimp_audience(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_lm_user),
 ) -> dict:
+    """Import Mailchimp audience export (.csv or .xlsx)."""
     require_admin(user)
-    if not (file.filename or "").lower().endswith(".csv"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Upload a Mailchimp CSV export")
 
     raw_data = await file.read()
-    if not raw_data:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CSV file is empty")
-
-    mailing_list = _ensure_target_list(
+    rows = parse_mailchimp_audience_file(file.filename, raw_data)
+    mailing_list = ensure_target_list(
         db,
         existing_list_id=existing_list_id,
         list_name=list_name,
         filename=file.filename,
     )
-    csv_text = _decode_csv_bytes(raw_data)
-    reader = csv.DictReader(io.StringIO(csv_text))
-    if not reader.fieldnames:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CSV header row is missing")
-
-    created = 0
-    updated = 0
-    skipped = 0
-    source_label = f"mailchimp_import:{file.filename or 'upload.csv'}"
-
-    for row in reader:
-        email = _cell(row, *_MAILCHIMP_EMAIL_KEYS).lower()
-        if not email:
-            skipped += 1
-            continue
-
-        full_name = _build_full_name(row)
-        status_value = _normalize_mailchimp_status(_cell(row, *_MAILCHIMP_STATUS_KEYS))
-        consent_at = _parse_datetime(_cell(row, *_MAILCHIMP_CONSENT_KEYS))
-        subscriber = (
-            db.query(MailingSubscriber)
-            .filter(MailingSubscriber.list_id == mailing_list.id, MailingSubscriber.email == email)
-            .first()
-        )
-
-        if subscriber:
-            subscriber.full_name = full_name or subscriber.full_name
-            subscriber.status = status_value
-            subscriber.consent_source = subscriber.consent_source or source_label
-            subscriber.consent_at = subscriber.consent_at or consent_at or datetime.now(timezone.utc)
-            subscriber.unsubscribed_at = datetime.now(timezone.utc) if status_value == "unsubscribed" else None
-            updated += 1
-            continue
-
-        db.add(
-            MailingSubscriber(
-                list_id=mailing_list.id,
-                email=email,
-                full_name=full_name,
-                status=status_value,
-                consent_source=source_label,
-                consent_at=consent_at or datetime.now(timezone.utc),
-                unsubscribed_at=datetime.now(timezone.utc) if status_value == "unsubscribed" else None,
-                unsubscribe_token=secrets.token_urlsafe(24),
-            )
-        )
-        created += 1
-
-    db.commit()
+    source_label = f"mailchimp_import:{file.filename or 'upload'}"
+    created, updated, skipped = import_mailchimp_rows(
+        db,
+        mailing_list,
+        rows,
+        source_label=source_label,
+    )
 
     return {
         "ok": True,
@@ -322,7 +182,10 @@ async def import_mailchimp_audience(
         "created": created,
         "updated": updated,
         "skipped": skipped,
-        "message": f"Imported Mailchimp CSV into '{mailing_list.name}': {created} created, {updated} updated, {skipped} skipped.",
+        "message": (
+            f"Imported Mailchimp file into '{mailing_list.name}': "
+            f"{created} created, {updated} updated, {skipped} skipped."
+        ),
         "audience": _list_out(db, mailing_list).model_dump(),
     }
 

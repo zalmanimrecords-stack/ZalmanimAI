@@ -3,6 +3,8 @@ services:
     image: boky/postfix:latest
     environment:
       ALLOWED_SENDER_DOMAINS: ${MAILSERVER_ALLOWED_SENDER_DOMAINS:-zalmanim.com}
+      # EHLO/PTR alignment for zalmanim.com self-hosted mail (see deploy/EMAIL_ZALMANIM_SELFHOST.md)
+      HOSTNAME: ${MAILSERVER_HOSTNAME:-mail.zalmanim.com}
     restart: unless-stopped
 
   postgres:
@@ -25,18 +27,6 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
-
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniopassword}
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - minio_data:/data
 
   api:
     build:
@@ -93,8 +83,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
-      minio:
-        condition: service_started
 
   worker:
     build:
@@ -121,4 +109,3 @@ services:
 
 volumes:
   postgres_data:
-  minio_data:

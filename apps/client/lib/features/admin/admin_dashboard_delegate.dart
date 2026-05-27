@@ -8,6 +8,9 @@ abstract class AdminDashboardDelegate {
   ApiClient get apiClient;
   String get token;
 
+  /// Permission check aligned with server [ROLE_PERMISSIONS] (admin always allowed).
+  bool can(String permission);
+
   bool get isLoading;
   String? get errorMessage;
   void clearError();
@@ -87,6 +90,7 @@ abstract class AdminDashboardDelegate {
   void showScheduleCampaignDialog(int campaignId);
   void cancelCampaignSchedule(int id);
   void deleteCampaign(int id, String name);
+  Future<void> retryCampaignFailedTargets(int id, String name);
 
   // Campaign requests (from artists)
   List<dynamic> get campaignRequestsList;

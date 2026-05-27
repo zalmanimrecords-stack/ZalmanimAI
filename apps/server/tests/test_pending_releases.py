@@ -7,7 +7,7 @@ from urllib.parse import unquote, urlparse
 
 from PIL import Image
 
-from app.api import routes
+from app.api import pending_release_routes, routes
 from app.core.config import settings
 from app.models.models import (
     Artist,
@@ -34,6 +34,7 @@ def test_send_pending_release_reminder_creates_token_and_logs_activity(
         sent_payload["body_html"] = body_html
         return True, "Sent"
 
+    monkeypatch.setattr(pending_release_routes, "send_email_service", fake_send_email_service)
     monkeypatch.setattr(routes, "send_email_service", fake_send_email_service)
 
     artist = Artist(name="Maya Waves", email="maya@example.com", is_active=True)
