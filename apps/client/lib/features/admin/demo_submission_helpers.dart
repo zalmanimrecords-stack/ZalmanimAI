@@ -1,13 +1,9 @@
 import 'dart:convert';
 
+import 'admin_id_helpers.dart';
+
 /// JSON may decode `id` as int or num; list rows may use dynamic maps.
-int? coerceDemoSubmissionId(dynamic v) {
-  if (v == null) return null;
-  if (v is int) return v;
-  if (v is num) return v.toInt();
-  if (v is String) return int.tryParse(v.trim());
-  return null;
-}
+int? coerceDemoSubmissionId(dynamic value) => coerceIntId(value);
 
 String demoFieldsJsonPreview(Map<String, dynamic> submission) {
   final raw = submission['fields'];

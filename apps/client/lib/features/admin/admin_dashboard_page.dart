@@ -15,6 +15,8 @@ import '../../widgets/ambient_underwater_shell.dart';
 import '../../widgets/app_version_badge.dart';
 import '../../widgets/api_connection_indicator.dart';
 import 'admin_dashboard_delegate.dart';
+import 'admin_id_helpers.dart';
+import 'artist_details_tabs.dart';
 import 'tabs/artists_tab.dart';
 import 'tabs/audience_tab.dart';
 import 'tabs/campaigns_section_tab.dart';
@@ -3142,7 +3144,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               .whereType<Map>()
               .map((e) => Map<String, dynamic>.from(e))
               .firstWhere(
-                (item) => _coerceArtistId(item['id']) == id,
+                (item) => coerceIntId(item['id']) == id,
                 orElse: () => <String, dynamic>{},
               );
       final artistData = artist.isNotEmpty
@@ -4234,7 +4236,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                   height: 280,
                   child: TabBarView(
                     children: [
-                      _ArtistInfoTab(
+                      ArtistDetailsInfoTab(
                         artistMap: artistMap!,
                         onEdit: () {
                           Navigator.pop(ctx);
@@ -4242,7 +4244,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                               initialArtist: artistMap);
                         },
                       ),
-                      _ArtistLogsTab(
+                      ArtistDetailsLogsTab(
                         apiClient: widget.apiClient,
                         token: widget.token,
                         artistId: artistId,
