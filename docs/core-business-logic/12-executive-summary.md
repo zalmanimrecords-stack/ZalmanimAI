@@ -59,6 +59,7 @@ The implemented product is a label-operations platform for Zalmanim that combine
 - `P1` Clarify and document the intended split between artist-wide inbox conversations and pending-release comments.
 - `P4` Further `routes.py` slimming (demos, artists, public minisite HTML).
 - `P3` done: release/catalog/settings routers, permission alignment for managers.
+- `P4` done: demo/artist/public/artist-portal routers extracted; `routes.py` holds auth, users, dashboard, OAuth, and startup `init_db()`.
 
 See also [`docs/REMEDIATION-CHANGELOG.md`](../REMEDIATION-CHANGELOG.md) and [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md).
 

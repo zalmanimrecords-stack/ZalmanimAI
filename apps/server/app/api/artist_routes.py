@@ -18,7 +18,13 @@ from app.api.artist_admin_helpers import (
     _last_email_sent_map,
 )
 from app.api.deps import get_current_lm_user, require_permission
-from app.api.mail_templates import _artist_portal_url
+from app.api.mail_templates import (
+    _artist_portal_url,
+    _build_groover_invite_html,
+    _get_groover_invite_subject_and_body,
+    _get_portal_invite_subject_and_body,
+    _get_update_profile_invite_subject_and_body,
+)
 from app.api.pending_release_helpers import _get_valid_artist_registration_token
 from app.schemas.schemas import (
     _artist_extra_from_model,
@@ -42,13 +48,6 @@ from app.db.session import get_db
 from app.models.models import Artist, ArtistActivityLog, ArtistRegistrationToken, Release
 from app.services.auth import hash_password
 from app.services.email_service import send_email as send_email_service
-from app.services.mail_settings import (
-    _build_groover_invite_html,
-    _get_groover_invite_subject_and_body,
-    _get_portal_invite_subject_and_body,
-    _get_update_profile_invite_subject_and_body,
-)
-
 router = APIRouter()
 
 
@@ -445,7 +444,7 @@ def admin_send_portal_invite_all(
     user: UserContext = Depends(get_current_lm_user),
 ) -> ArtistPortalInviteBulkResponse:
     """Send portal access email to all active artists that have an email address."""
-    require_permission(user, "PLACEHOLDER")
+    require_permission(user, "artists:write")
     artists = (
         db.query(Artist)
         .filter(Artist.is_active.is_(True))
@@ -510,7 +509,7 @@ def admin_send_artist_update_profile_invite(
     user: UserContext = Depends(get_current_lm_user),
 ) -> ArtistPortalInviteResponse:
     """Email artist inviting them to update their portal page and see their releases (no password change unless not set)."""
-    require_permission(user, "PLACEHOLDER")
+    require_permission(user, "artists:write")
     artist = db.query(Artist).filter(Artist.id == artist_id).first()
     if not artist:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")

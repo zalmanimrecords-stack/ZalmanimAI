@@ -1,6 +1,7 @@
 """Release minisite HTML rendering."""
 
 import html
+import json
 from typing import Any
 
 from fastapi import Request

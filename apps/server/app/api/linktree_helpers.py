@@ -1,5 +1,13 @@
 """Linktree and public artist page helpers."""
 
+import json
+from typing import Any
+
+from fastapi import Request
+
+from app.models.models import Artist
+from app.schemas.schemas import LinktreeLink
+
 # Label for each extra link key (for public linktree page)
 _LINKTREE_LABELS = {
     "website": "Website",

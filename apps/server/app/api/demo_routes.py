@@ -6,17 +6,17 @@ import json
 import logging
 import os
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_lm_user, require_permission
 from app.api.demo_helpers import (
     _apply_demo_submission_status_transitions,
     _apply_demo_submission_update_payload,
-    _form_bool,
     _normalize_demo_status,
     _request_identity_details,
     _serialize_demo_submission,
@@ -24,6 +24,7 @@ from app.api.demo_helpers import (
 )
 from app.api.inbox_routes import _create_pending_release_inbox_message
 from app.api.mail_templates import (
+    _artist_portal_url,
     _build_demo_receipt_html,
     _get_demo_approval_subject_and_body,
     _get_demo_receipt_subject_and_body,
@@ -249,6 +250,116 @@ def get_demo_submission(
     item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
+    return _serialize_demo_submission(item)
+
+
+@router.patch("/admin/demo-submissions/{submission_id}", response_model=DemoSubmissionOut)
+def update_demo_submission(
+    submission_id: int,
+    payload: DemoSubmissionUpdate,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> DemoSubmissionOut:
+    require_permission(user, "artists:write")
+    item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
+
+    old_status = item.status
+    _apply_demo_submission_update_payload(item, payload)
+    _apply_demo_submission_status_transitions(db, item, payload, old_status=old_status)
+
+    if item.consent_to_emails:
+        _upsert_demo_mailing_subscriber(db, item)
+    db.commit()
+    db.refresh(item)
+    return _serialize_demo_submission(item)
+
+
+@router.get("/admin/demo-submissions/{submission_id}/download", response_model=None)
+def admin_download_demo_file(
+    submission_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> FileResponse | Response:
+    require_permission(user, "artists:read")
+    item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
+    try:
+        fields = json.loads(item.fields_json or "{}")
+        path = fields.get("demo_file_path")
+    except (json.JSONDecodeError, TypeError):
+        path = None
+    if not path or not os.path.isfile(path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No file attached")
+    return FileResponse(path, filename=os.path.basename(path), media_type="audio/mpeg")
+
+
+@router.delete("/admin/demo-submissions/{submission_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_demo_submission(
+    submission_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> None:
+    require_permission(user, "artists:write")
+    item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
+    try:
+        fields = json.loads(item.fields_json or "{}")
+        path = fields.get("demo_file_path")
+    except (json.JSONDecodeError, TypeError):
+        path = None
+    db.delete(item)
+    db.commit()
+    if path and os.path.isfile(path):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+@router.post(
+    "/admin/demo-submissions/{submission_id}/approve",
+    response_model=DemoSubmissionApproveResponse,
+)
+def approve_demo_submission(
+    submission_id: int,
+    payload: DemoSubmissionApproveRequest,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> DemoSubmissionApproveResponse:
+    require_permission(user, "artists:write")
+    item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
+
+    result = approve_demo_submission_service(db, item, payload)
+    db.commit()
+    db.refresh(result.submission)
+    email_warning = None
+    if result.email_delivery is not None and not result.email_delivery.sent:
+        email_warning = result.email_delivery.message
+    return DemoSubmissionApproveResponse(
+        submission=_serialize_demo_submission(result.submission),
+        email_warning=email_warning,
+    )
+
+
+@router.post("/admin/demo-submissions/{submission_id}/resend-approval-email", response_model=DemoSubmissionOut)
+def resend_demo_approval_email(
+    submission_id: int,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_lm_user),
+) -> DemoSubmissionOut:
+    require_permission(user, "artists:write")
+    item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
+    resend_demo_approval_email_service(db, item)
+    db.commit()
+    db.refresh(item)
     return _serialize_demo_submission(item)
 
 

@@ -38,6 +38,7 @@ from app.api.catalog_routes import router as catalog_router
 from app.api.settings_routes import router as settings_router
 from app.api.artist_portal_routes import router as artist_portal_router
 from app.api.artist_routes import router as artist_router
+from app.api.demo_helpers import _log_auth_attempt
 from app.api.demo_routes import router as demo_router
 from app.api.public_routes import router as public_router
 from app.api.mail_templates import (
@@ -272,6 +273,189 @@ router.include_router(demo_router)
 router.include_router(artist_router)
 router.include_router(artist_portal_router)
 router.include_router(public_router)
+
+
+def init_db() -> None:
+    Base.metadata.create_all(bind=engine)
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS extra_json TEXT"))
+            conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true NOT NULL"))
+            conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP WITH TIME ZONE"))
+            conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS last_profile_updated_at TIMESTAMP WITH TIME ZONE"))
+            conn.execute(text("ALTER TABLE social_connections ADD COLUMN IF NOT EXISTS pkce_code_verifier VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE social_connections ADD COLUMN IF NOT EXISTS one_time_token VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE social_connections ADD COLUMN IF NOT EXISTS one_time_expires_at TIMESTAMP WITH TIME ZONE"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true NOT NULL"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP WITH TIME ZONE"))
+            conn.execute(text("ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL"))
+            conn.execute(text("ALTER TABLE demo_submissions ADD COLUMN IF NOT EXISTS consent_to_emails BOOLEAN DEFAULT false NOT NULL"))
+            conn.execute(text("ALTER TABLE demo_submissions ADD COLUMN IF NOT EXISTS consent_at TIMESTAMP WITH TIME ZONE"))
+            conn.execute(text("ALTER TABLE demo_submissions ADD COLUMN IF NOT EXISTS rejection_email_sent_at TIMESTAMP WITH TIME ZONE"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_rejection_subject VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_rejection_body TEXT"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_approval_subject VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_approval_body TEXT"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_receipt_subject VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_receipt_body TEXT"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS portal_invite_subject VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS portal_invite_body TEXT"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS groover_invite_subject VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS groover_invite_body TEXT"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS email_footer TEXT"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS update_profile_invite_subject VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS update_profile_invite_body TEXT"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS password_reset_subject VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS password_reset_body TEXT"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_host VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_port INTEGER"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_from_email VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_use_tls BOOLEAN"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_use_ssl BOOLEAN"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_user VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_password VARCHAR(255)"))
+            conn.execute(text(
+                "ALTER TABLE pending_releases ADD COLUMN IF NOT EXISTS demo_submission_id INTEGER "
+                "REFERENCES demo_submissions(id) ON DELETE SET NULL"
+            ))
+            conn.execute(text(
+                "ALTER TABLE pending_release_tokens ALTER COLUMN campaign_request_id DROP NOT NULL"
+            ))
+            conn.execute(text(
+                "ALTER TABLE pending_release_tokens ALTER COLUMN artist_id DROP NOT NULL"
+            ))
+            conn.execute(text(
+                "ALTER TABLE pending_release_tokens ADD COLUMN IF NOT EXISTS pending_release_id INTEGER "
+                "REFERENCES pending_releases(id) ON DELETE CASCADE"
+            ))
+            conn.execute(text(
+                "ALTER TABLE label_inbox_messages ADD COLUMN IF NOT EXISTS admin_read_at TIMESTAMP WITH TIME ZONE"
+            ))
+            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS platform_links_json TEXT DEFAULT '{}'"))
+            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS cover_image_path VARCHAR(500)"))
+            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS cover_image_source_url VARCHAR(1000)"))
+            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS cover_image_updated_at TIMESTAMP WITH TIME ZONE"))
+            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS minisite_slug VARCHAR(160)"))
+            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS minisite_is_public BOOLEAN DEFAULT false NOT NULL"))
+            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS minisite_json TEXT DEFAULT '{}'"))
+            conn.execute(text(
+                "UPDATE mail_settings SET emails_per_hour = 10 WHERE id = 1 AND (emails_per_hour IS NULL OR emails_per_hour = 5)"
+            ))
+            conn.commit()
+    except Exception as e:
+        logging.getLogger(__name__).warning("DB migration (auth/users): %s", e)
+
+    try:
+        with Session(engine) as db:
+            migrated_connections = migrate_legacy_social_connection_tokens(db)
+        if migrated_connections:
+            append_system_log(
+                "info",
+                "system",
+                "Encrypted legacy social tokens",
+                details=f"Migrated {migrated_connections} social connection rows to encrypted token storage.",
+            )
+    except Exception as e:
+        logging.getLogger(__name__).warning("DB migration (social token encryption): %s", e)
+
+    with Session(engine) as db:
+        admin = db.query(User).filter(User.email == "admin").first()
+        legacy_admin = db.query(User).filter(User.email == "admin@label.local").first()
+        simon_admin = (
+            db.query(User)
+            .filter(func.lower(User.email) == "simon@zalmanim.com")
+            .first()
+        )
+        seed_artist_pw = os.environ.get("SEED_ARTIST_PASSWORD", "").strip()
+        seed_admin_pw = os.environ.get("SEED_ADMIN_PASSWORD", "").strip()
+        seed_simon_pw = os.environ.get("SEED_SIMON_PASSWORD", "").strip()
+
+        artist = db.query(Artist).filter(Artist.email == "artist@label.local").first()
+        if not artist:
+            artist = Artist(
+                name="Demo Artist",
+                email="artist@label.local",
+                notes="Seed artist",
+                is_active=True,
+                password_hash=hash_password(seed_artist_pw) if seed_artist_pw else None,
+            )
+            db.add(artist)
+            db.flush()
+            if not seed_artist_pw:
+                logging.getLogger(__name__).warning("Seed artist created without password; set SEED_ARTIST_PASSWORD in .env or set password in UI")
+        elif not artist.password_hash and seed_artist_pw:
+            artist.password_hash = hash_password(seed_artist_pw)
+        if not admin:
+            if legacy_admin:
+                legacy_admin.email = "admin"
+                legacy_admin.full_name = legacy_admin.full_name or "System Admin"
+                if seed_admin_pw:
+                    legacy_admin.password_hash = hash_password(seed_admin_pw)
+                legacy_admin.role = "admin"
+                legacy_admin.artist_id = None
+                legacy_admin.is_active = True
+            else:
+                db.add(
+                    User(
+                        email="admin",
+                        full_name="System Admin",
+                        password_hash=hash_password(seed_admin_pw) if seed_admin_pw else None,
+                        role="admin",
+                        artist_id=None,
+                        is_active=True,
+                    )
+                )
+                if not seed_admin_pw:
+                    logging.getLogger(__name__).warning("Seed admin created without password; set SEED_ADMIN_PASSWORD in .env or set password in UI")
+        else:
+            admin.full_name = admin.full_name or "System Admin"
+            if seed_admin_pw:
+                admin.password_hash = hash_password(seed_admin_pw)
+            admin.role = "admin"
+            admin.artist_id = None
+            admin.is_active = True
+        if not simon_admin:
+            db.add(
+                User(
+                    email="simon@zalmanim.com",
+                    full_name="Simon",
+                    password_hash=hash_password(seed_simon_pw) if seed_simon_pw else None,
+                    role="admin",
+                    artist_id=None,
+                    is_active=True,
+                )
+            )
+            if not seed_simon_pw:
+                logging.getLogger(__name__).warning("Seed simon@zalmanim.com created without password; set SEED_SIMON_PASSWORD in .env or set password in UI")
+        else:
+            simon_admin.email = "simon@zalmanim.com"
+            simon_admin.full_name = "Simon"
+            if seed_simon_pw:
+                simon_admin.password_hash = hash_password(seed_simon_pw)
+            simon_admin.role = "admin"
+            simon_admin.artist_id = None
+            simon_admin.is_active = True
+        artist_user = db.query(User).filter(User.email == "artist@label.local").first()
+        if not artist_user:
+            db.add(
+                User(
+                    email="artist@label.local",
+                    full_name="Demo Artist",
+                    password_hash=hash_password(seed_artist_pw) if seed_artist_pw else None,
+                    role="artist",
+                    artist_id=artist.id,
+                    is_active=True,
+                )
+            )
+            if not seed_artist_pw:
+                logging.getLogger(__name__).warning("Seed artist user created without password; set SEED_ARTIST_PASSWORD in .env or set password in UI")
+        db.commit()
+
 
 
 @router.post("/auth/login", response_model=TokenResponse)
@@ -548,6 +732,98 @@ def list_users(
     require_admin(user)
     users = db.query(User).options(joinedload(User.artist), joinedload(User.identities)).order_by(User.created_at.desc(), User.id.desc()).all()
     return [_serialize_user(item) for item in users]
+
+
+def _login_stats_threshold(days: int = 30) -> datetime:
+    return datetime.now(timezone.utc) - timedelta(days=days)
+
+
+def _users_logged_in_since(db: Session, threshold: datetime) -> int:
+    return (
+        db.query(User)
+        .filter(User.last_login_at.isnot(None), User.last_login_at >= threshold)
+        .count()
+    )
+
+
+def _artist_activity_keys_since(db: Session, threshold: datetime) -> set[str]:
+    artist_keys: set[str] = set()
+
+    portal_artists = db.query(Artist).filter(
+        Artist.last_login_at.isnot(None),
+        Artist.last_login_at >= threshold,
+    )
+    for artist in portal_artists:
+        artist_keys.add(f"artist:{artist.id}")
+
+    artist_users = db.query(User).filter(
+        User.role == "artist",
+        User.last_login_at.isnot(None),
+        User.last_login_at >= threshold,
+    )
+    for artist_user in artist_users:
+        if artist_user.artist_id is not None:
+            artist_keys.add(f"artist:{artist_user.artist_id}")
+        else:
+            artist_keys.add(f"user-email:{artist_user.email.lower()}")
+
+    return artist_keys
+
+
+def _recent_user_logins(db: Session, limit: int = 10) -> list[LoginActivityOut]:
+    out: list[LoginActivityOut] = []
+    rows = (
+        db.query(User)
+        .filter(User.last_login_at.isnot(None))
+        .order_by(User.last_login_at.desc())
+        .limit(limit)
+        .all()
+    )
+    for recent_user in rows:
+        if recent_user.last_login_at is None:
+            continue
+        out.append(
+            LoginActivityOut(
+                source="user",
+                name=(recent_user.full_name or recent_user.email).strip(),
+                email=recent_user.email,
+                role=recent_user.role,
+                is_active=recent_user.is_active,
+                last_login_at=recent_user.last_login_at,
+            )
+        )
+    return out
+
+
+def _recent_artist_portal_logins(db: Session, limit: int = 10) -> list[LoginActivityOut]:
+    out: list[LoginActivityOut] = []
+    rows = (
+        db.query(Artist)
+        .filter(Artist.last_login_at.isnot(None))
+        .order_by(Artist.last_login_at.desc())
+        .limit(limit)
+        .all()
+    )
+    for recent_artist in rows:
+        if recent_artist.last_login_at is None:
+            continue
+        out.append(
+            LoginActivityOut(
+                source="artist_portal",
+                name=(recent_artist.name or recent_artist.email).strip(),
+                email=recent_artist.email,
+                role="artist",
+                is_active=recent_artist.is_active,
+                last_login_at=recent_artist.last_login_at,
+            )
+        )
+    return out
+
+
+def _combined_recent_logins(db: Session, limit: int = 10) -> list[LoginActivityOut]:
+    recent_logins = _recent_user_logins(db, limit=limit) + _recent_artist_portal_logins(db, limit=limit)
+    recent_logins.sort(key=lambda item: item.last_login_at, reverse=True)
+    return recent_logins[:limit]
 
 
 @router.get("/admin/dashboard/login-stats", response_model=LoginStatsOut)

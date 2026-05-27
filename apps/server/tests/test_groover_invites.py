@@ -10,7 +10,7 @@ def test_admin_can_send_groover_invite_and_create_artist(client, db_session, adm
         sent_payload.update(kwargs)
         return True, "Sent"
 
-    monkeypatch.setattr("app.api.routes.send_email_service", _fake_send_email)
+    monkeypatch.setattr("app.api.artist_routes.send_email_service", _fake_send_email)
 
     response = client.post(
         "/api/admin/artists/send-groover-invite",
@@ -128,7 +128,7 @@ def test_admin_send_groover_invite_reuses_artist_and_updates_missing_fields(
     db_session.commit()
     db_session.refresh(artist)
 
-    monkeypatch.setattr("app.api.routes.send_email_service", lambda **kwargs: (True, "Sent"))
+    monkeypatch.setattr("app.api.artist_routes.send_email_service", lambda **kwargs: (True, "Sent"))
 
     response = client.post(
         "/api/admin/artists/send-groover-invite",
@@ -167,7 +167,7 @@ def test_admin_send_groover_invite_email_limit_error_returns_429(
     db_session.commit()
     db_session.refresh(artist)
 
-    monkeypatch.setattr("app.api.routes.send_email_service", lambda **kwargs: (False, "Limit reached for this hour"))
+    monkeypatch.setattr("app.api.artist_routes.send_email_service", lambda **kwargs: (False, "Limit reached for this hour"))
 
     response = client.post(
         "/api/admin/artists/send-groover-invite",

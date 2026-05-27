@@ -62,3 +62,11 @@
 - **Route extraction** — `release_routes.py`, `catalog_routes.py`, `settings_routes.py`; `release_minisite_helpers.py` for shared minisite URL helpers
 - **Permissions** — `require_permission` on releases, catalog, settings, reports, and users (managers: read settings/releases/reports; write blocked where role lacks permission)
 - **Tests** — extended `test_manager_permissions.py`; catalog/minisite/restore tests target extracted routers
+
+## P4
+
+- **Route extraction** — `demo_routes.py`, `artist_routes.py`, `artist_portal_routes.py`, `public_routes.py`; helpers: `demo_helpers.py`, `artist_admin_helpers.py`, `linktree_helpers.py`, `release_minisite_html.py`
+- **`routes.py`** — auth, users, dashboard, OAuth, agents, and `init_db()` only; includes P2/P3/P4 routers
+- **Permissions** — demo/artist admin routes use `artists:read` / `artists:write` where applicable
+- **Scripts** — `scripts/p4_extract_routes.py`, `rebuild_demo_helpers.py`, `rebuild_artist_admin_helpers.py`, `extract_init_db.py`, `fix_demo_helpers.py` (one-off repair helpers)
+- **Tests** — 95 passed; mocks updated for extracted modules (`demo_helpers`, `artist_routes`, `release_minisite_html`, etc.)

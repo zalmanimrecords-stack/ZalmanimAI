@@ -52,9 +52,9 @@ def main() -> None:
     )
     lines = raw.splitlines()
     s1 = find_line(lines, "def _normalize_demo_status")
-    e1 = find_line(lines, '@router.post("/auth/login"')
+    e1 = find_line(lines, "def init_db")
     s2 = find_line(lines, "def _apply_demo_submission_update_payload")
-    e2 = find_line(lines, '@router.get("/artists/{artist_id}"')
+    e2 = find_line(lines, '@router.patch("/admin/demo-submissions/{submission_id}"')
     block = lines[s1:e1] + [""] + lines[s2:e2]
     OUT.write_text(HEADER + "\n".join(block) + "\n", encoding="utf-8")
     print(f"wrote demo_helpers ({len(block)} lines)")

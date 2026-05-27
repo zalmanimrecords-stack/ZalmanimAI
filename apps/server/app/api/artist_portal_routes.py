@@ -14,13 +14,24 @@ from app.api.pending_release_helpers import (
     _get_valid_pending_release_token,
     _notify_pending_release_artist,
     _pending_release_upload_path_from_public_url,
+    _resolve_pending_release_from_token,
     _save_pending_release_data,
+    _serialize_pending_release,
     _serialize_pending_release_detail,
 )
+from app.api.inbox_routes import _create_pending_release_inbox_message
 from app.api.upload_helpers import _read_upload_bytes
 from app.core.config import settings
 from app.db.session import get_db
-from app.models.models import Artist, ArtistMedia, DemoSubmission, PendingRelease, PendingReleaseComment, Release
+from app.models.models import (
+    Artist,
+    ArtistActivityLog,
+    ArtistMedia,
+    DemoSubmission,
+    PendingRelease,
+    PendingReleaseComment,
+    Release,
+)
 from app.schemas.schemas import (
     _artist_extra_from_model,
     ArtistChangePasswordRequest,

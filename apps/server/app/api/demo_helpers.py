@@ -8,22 +8,28 @@ import secrets
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, Request, status
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.mail_templates import (
+    _apply_demo_rejection_placeholders,
     _get_demo_rejection_subject_and_body,
     _safe_json_dict,
     _safe_json_list,
 )
-from app.core.config import settings
-from app.models.models import Artist, DemoSubmission, PendingRelease
+from app.core.config import _origin_from_url, settings
+from app.models.models import DemoSubmission
 from app.schemas.schemas import DemoSubmissionOut, DemoSubmissionUpdate
+from app.services.demo_service import (
+    create_pending_release_for_demo,
+    link_or_create_artist_for_demo_submission,
+)
+from app.services.email_service import is_email_configured, send_email as send_email_service
 from app.services.system_log import append_system_log
 
 logger = logging.getLogger(__name__)
 
 _ALLOWED_DEMO_STATUSES = {"demo", "in_review", "approved", "rejected", "pending_release"}
+
 
 def _normalize_demo_status(value: str | None, *, allow_empty: bool = False) -> str | None:
     raw = (value or "").strip().lower()
@@ -143,189 +149,6 @@ def _log_auth_attempt(
 
 
 
-def init_db() -> None:
-    Base.metadata.create_all(bind=engine)
-
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS extra_json TEXT"))
-            conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true NOT NULL"))
-            conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)"))
-            conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP WITH TIME ZONE"))
-            conn.execute(text("ALTER TABLE artists ADD COLUMN IF NOT EXISTS last_profile_updated_at TIMESTAMP WITH TIME ZONE"))
-            conn.execute(text("ALTER TABLE social_connections ADD COLUMN IF NOT EXISTS pkce_code_verifier VARCHAR(255)"))
-            conn.execute(text("ALTER TABLE social_connections ADD COLUMN IF NOT EXISTS one_time_token VARCHAR(255)"))
-            conn.execute(text("ALTER TABLE social_connections ADD COLUMN IF NOT EXISTS one_time_expires_at TIMESTAMP WITH TIME ZONE"))
-            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(255)"))
-            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true NOT NULL"))
-            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()"))
-            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()"))
-            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP WITH TIME ZONE"))
-            conn.execute(text("ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL"))
-            conn.execute(text("ALTER TABLE demo_submissions ADD COLUMN IF NOT EXISTS consent_to_emails BOOLEAN DEFAULT false NOT NULL"))
-            conn.execute(text("ALTER TABLE demo_submissions ADD COLUMN IF NOT EXISTS consent_at TIMESTAMP WITH TIME ZONE"))
-            conn.execute(text("ALTER TABLE demo_submissions ADD COLUMN IF NOT EXISTS rejection_email_sent_at TIMESTAMP WITH TIME ZONE"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_rejection_subject VARCHAR(255)"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_rejection_body TEXT"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_approval_subject VARCHAR(255)"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_approval_body TEXT"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_receipt_subject VARCHAR(255)"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS demo_receipt_body TEXT"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS portal_invite_subject VARCHAR(255)"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS portal_invite_body TEXT"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS groover_invite_subject VARCHAR(255)"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS groover_invite_body TEXT"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS email_footer TEXT"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS update_profile_invite_subject VARCHAR(255)"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS update_profile_invite_body TEXT"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS password_reset_subject VARCHAR(255)"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS password_reset_body TEXT"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_host VARCHAR(255)"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_port INTEGER"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_from_email VARCHAR(255)"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_use_tls BOOLEAN"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_use_ssl BOOLEAN"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_user VARCHAR(255)"))
-            conn.execute(text("ALTER TABLE mail_settings ADD COLUMN IF NOT EXISTS smtp_backup_password VARCHAR(255)"))
-            conn.execute(text(
-                "ALTER TABLE pending_releases ADD COLUMN IF NOT EXISTS demo_submission_id INTEGER "
-                "REFERENCES demo_submissions(id) ON DELETE SET NULL"
-            ))
-            conn.execute(text(
-                "ALTER TABLE pending_release_tokens ALTER COLUMN campaign_request_id DROP NOT NULL"
-            ))
-            conn.execute(text(
-                "ALTER TABLE pending_release_tokens ALTER COLUMN artist_id DROP NOT NULL"
-            ))
-            conn.execute(text(
-                "ALTER TABLE pending_release_tokens ADD COLUMN IF NOT EXISTS pending_release_id INTEGER "
-                "REFERENCES pending_releases(id) ON DELETE CASCADE"
-            ))
-            conn.execute(text(
-                "ALTER TABLE label_inbox_messages ADD COLUMN IF NOT EXISTS admin_read_at TIMESTAMP WITH TIME ZONE"
-            ))
-            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS platform_links_json TEXT DEFAULT '{}'"))
-            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS cover_image_path VARCHAR(500)"))
-            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS cover_image_source_url VARCHAR(1000)"))
-            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS cover_image_updated_at TIMESTAMP WITH TIME ZONE"))
-            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS minisite_slug VARCHAR(160)"))
-            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS minisite_is_public BOOLEAN DEFAULT false NOT NULL"))
-            conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS minisite_json TEXT DEFAULT '{}'"))
-            conn.execute(text(
-                "UPDATE mail_settings SET emails_per_hour = 10 WHERE id = 1 AND (emails_per_hour IS NULL OR emails_per_hour = 5)"
-            ))
-            conn.commit()
-    except Exception as e:
-        logging.getLogger(__name__).warning("DB migration (auth/users): %s", e)
-
-    try:
-        with Session(engine) as db:
-            migrated_connections = migrate_legacy_social_connection_tokens(db)
-        if migrated_connections:
-            append_system_log(
-                "info",
-                "system",
-                "Encrypted legacy social tokens",
-                details=f"Migrated {migrated_connections} social connection rows to encrypted token storage.",
-            )
-    except Exception as e:
-        logging.getLogger(__name__).warning("DB migration (social token encryption): %s", e)
-
-    with Session(engine) as db:
-        admin = db.query(User).filter(User.email == "admin").first()
-        legacy_admin = db.query(User).filter(User.email == "admin@label.local").first()
-        simon_admin = (
-            db.query(User)
-            .filter(func.lower(User.email) == "simon@zalmanim.com")
-            .first()
-        )
-        seed_artist_pw = os.environ.get("SEED_ARTIST_PASSWORD", "").strip()
-        seed_admin_pw = os.environ.get("SEED_ADMIN_PASSWORD", "").strip()
-        seed_simon_pw = os.environ.get("SEED_SIMON_PASSWORD", "").strip()
-
-        artist = db.query(Artist).filter(Artist.email == "artist@label.local").first()
-        if not artist:
-            artist = Artist(
-                name="Demo Artist",
-                email="artist@label.local",
-                notes="Seed artist",
-                is_active=True,
-                password_hash=hash_password(seed_artist_pw) if seed_artist_pw else None,
-            )
-            db.add(artist)
-            db.flush()
-            if not seed_artist_pw:
-                logging.getLogger(__name__).warning("Seed artist created without password; set SEED_ARTIST_PASSWORD in .env or set password in UI")
-        elif not artist.password_hash and seed_artist_pw:
-            artist.password_hash = hash_password(seed_artist_pw)
-        if not admin:
-            if legacy_admin:
-                legacy_admin.email = "admin"
-                legacy_admin.full_name = legacy_admin.full_name or "System Admin"
-                if seed_admin_pw:
-                    legacy_admin.password_hash = hash_password(seed_admin_pw)
-                legacy_admin.role = "admin"
-                legacy_admin.artist_id = None
-                legacy_admin.is_active = True
-            else:
-                db.add(
-                    User(
-                        email="admin",
-                        full_name="System Admin",
-                        password_hash=hash_password(seed_admin_pw) if seed_admin_pw else None,
-                        role="admin",
-                        artist_id=None,
-                        is_active=True,
-                    )
-                )
-                if not seed_admin_pw:
-                    logging.getLogger(__name__).warning("Seed admin created without password; set SEED_ADMIN_PASSWORD in .env or set password in UI")
-        else:
-            admin.full_name = admin.full_name or "System Admin"
-            if seed_admin_pw:
-                admin.password_hash = hash_password(seed_admin_pw)
-            admin.role = "admin"
-            admin.artist_id = None
-            admin.is_active = True
-        if not simon_admin:
-            db.add(
-                User(
-                    email="simon@zalmanim.com",
-                    full_name="Simon",
-                    password_hash=hash_password(seed_simon_pw) if seed_simon_pw else None,
-                    role="admin",
-                    artist_id=None,
-                    is_active=True,
-                )
-            )
-            if not seed_simon_pw:
-                logging.getLogger(__name__).warning("Seed simon@zalmanim.com created without password; set SEED_SIMON_PASSWORD in .env or set password in UI")
-        else:
-            simon_admin.email = "simon@zalmanim.com"
-            simon_admin.full_name = "Simon"
-            if seed_simon_pw:
-                simon_admin.password_hash = hash_password(seed_simon_pw)
-            simon_admin.role = "admin"
-            simon_admin.artist_id = None
-            simon_admin.is_active = True
-        artist_user = db.query(User).filter(User.email == "artist@label.local").first()
-        if not artist_user:
-            db.add(
-                User(
-                    email="artist@label.local",
-                    full_name="Demo Artist",
-                    password_hash=hash_password(seed_artist_pw) if seed_artist_pw else None,
-                    role="artist",
-                    artist_id=artist.id,
-                    is_active=True,
-                )
-            )
-            if not seed_artist_pw:
-                logging.getLogger(__name__).warning("Seed artist user created without password; set SEED_ARTIST_PASSWORD in .env or set password in UI")
-        db.commit()
-
-
-
 def _apply_demo_submission_update_payload(item: DemoSubmission, payload: DemoSubmissionUpdate) -> None:
     if payload.artist_name is not None:
         item.artist_name = payload.artist_name.strip()
@@ -403,156 +226,9 @@ def _apply_demo_submission_status_transitions(
     old_status: str,
 ) -> None:
     if item.status == "approved" and old_status != "approved":
-        _link_or_create_artist_for_demo_submission(db, item)
-        _create_pending_release_for_demo(db, item)
+        link_or_create_artist_for_demo_submission(db, item)
+        create_pending_release_for_demo(db, item)
     if item.status == "rejected" and old_status != "rejected":
         _maybe_send_rejection_email(item, payload)
-
-
-@router.patch("/admin/demo-submissions/{submission_id}", response_model=DemoSubmissionOut)
-def update_demo_submission(
-    submission_id: int,
-    payload: DemoSubmissionUpdate,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-) -> DemoSubmissionOut:
-    require_admin(user)
-    item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
-    if not item:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
-
-    old_status = item.status
-    _apply_demo_submission_update_payload(item, payload)
-    _apply_demo_submission_status_transitions(db, item, payload, old_status=old_status)
-
-    if item.consent_to_emails:
-        _upsert_demo_mailing_subscriber(db, item)
-    db.commit()
-    db.refresh(item)
-    return _serialize_demo_submission(item)
-
-
-@router.get("/admin/demo-submissions/{submission_id}/download", response_model=None)
-def admin_download_demo_file(
-    submission_id: int,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-) -> FileResponse | Response:
-    """Stream or download the attached MP3 for a demo submission (admin only)."""
-    require_admin(user)
-    item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
-    if not item:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
-    try:
-        fields = json.loads(item.fields_json or "{}")
-        path = fields.get("demo_file_path")
-    except (json.JSONDecodeError, TypeError):
-        path = None
-    if not path or not os.path.isfile(path):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No file attached")
-    return FileResponse(path, filename=os.path.basename(path), media_type="audio/mpeg")
-
-
-@router.delete("/admin/demo-submissions/{submission_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_demo_submission(
-    submission_id: int,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-) -> None:
-    """Delete a demo submission. Optionally removes the attached file from disk."""
-    require_admin(user)
-    item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
-    if not item:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
-    try:
-        fields = json.loads(item.fields_json or "{}")
-        path = fields.get("demo_file_path")
-    except (json.JSONDecodeError, TypeError):
-        path = None
-    db.delete(item)
-    db.commit()
-    if path and os.path.isfile(path):
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-
-
-@router.post("/admin/demo-submissions/{submission_id}/approve", response_model=DemoSubmissionOut)
-def approve_demo_submission(
-    submission_id: int,
-    payload: DemoSubmissionApproveRequest,
-    db: Session = Depends(get_db),
-    user: UserContext = Depends(get_current_lm_user),
-) -> DemoSubmissionOut:
-    require_admin(user)
-    item = db.query(DemoSubmission).filter(DemoSubmission.id == submission_id).first()
-    if not item:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo submission not found")
-
-    if payload.approval_subject is not None:
-        item.approval_subject = payload.approval_subject.strip() or None
-    if payload.approval_body is not None:
-        item.approval_body = payload.approval_body
-    if not item.approval_subject or not item.approval_body:
-        default_subj, default_body = _get_demo_approval_subject_and_body(item.artist_name)
-        if not item.approval_subject:
-            item.approval_subject = default_subj
-        if not item.approval_body:
-            item.approval_body = default_body
-
-    # Always ensure an Artist exists when a demo is approved (list in /artists).
-    if item.artist_id is None:
-        _link_or_create_artist_for_demo_submission(db, item)
-
-    # Create one-time token for artist to confirm details (form link in approval email).
-    demo_confirm_form_link: str | None = None
-    raw_token = secrets.token_urlsafe(32)
-    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-    portal_url = (_artist_portal_url()).rstrip("/")
-    # Use hash URL so the link works when the server only serves index.html at / (no SPA fallback).
-    demo_confirm_form_link = f"{portal_url}/#/demo-confirm?token={raw_token}"
-    expires_at = datetime.now(timezone.utc) + timedelta(days=30)
-    demo_confirm_token_row = DemoConfirmationToken(
-        demo_submission_id=item.id,
-        token_hash=token_hash,
-        expires_at=expires_at,
-    )
-    db.add(demo_confirm_token_row)
-    db.flush()
-
-    if payload.send_email:
-        body_text = (item.approval_body or "").strip()
-        if body_text:
-            body_text += "\n\n"
-        body_text += (
-            "Please confirm your details and complete any missing fields here:\n"
-            f"{demo_confirm_form_link}\n\n"
-            "Once you submit the form, your track will move to PENDING RELEASE until we release it."
-        )
-        success, message = send_email_service(
-            to_email=item.email,
-            subject=item.approval_subject,
-            body_text=body_text,
-        )
-        if not success:
-            if "limit" in message.lower():
-                raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message)
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
-        item.approval_email_sent_at = datetime.now(timezone.utc)
-        if item.artist_id is not None:
-            db.add(
-                ArtistActivityLog(
-                    artist_id=item.artist_id,
-                    activity_type="demo_approval_email",
-                    details=f"Demo submission #{item.id}",
-                )
-            )
-
-    item.status = "approved"
-    _create_pending_release_for_demo(db, item)
-    db.commit()
-    db.refresh(item)
-    return _serialize_demo_submission(item)
 
 

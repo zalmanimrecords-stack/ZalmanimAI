@@ -170,8 +170,10 @@ def test_trusted_host_list_derives_known_production_domains():
 
 
 def test_public_demo_submission_allows_configured_origin_without_secret_header(client, monkeypatch):
-    monkeypatch.setattr(routes.settings, "demo_submission_token", "shared-secret-demo-token", raising=False)
-    monkeypatch.setattr(routes.settings, "public_demo_allowed_origins", "https://artists.zalmanim.com", raising=False)
+    from app.core.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "demo_submission_token", "shared-secret-demo-token", raising=False)
+    monkeypatch.setattr(app_settings, "public_demo_allowed_origins", "https://artists.zalmanim.com", raising=False)
 
     response = client.post(
         "/api/public/demo-submissions",
@@ -191,8 +193,10 @@ def test_public_demo_submission_allows_configured_origin_without_secret_header(c
 
 
 def test_public_demo_submission_rejects_unknown_origin_without_secret_header(client, monkeypatch):
-    monkeypatch.setattr(routes.settings, "demo_submission_token", "shared-secret-demo-token", raising=False)
-    monkeypatch.setattr(routes.settings, "public_demo_allowed_origins", "https://artists.zalmanim.com", raising=False)
+    from app.core.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "demo_submission_token", "shared-secret-demo-token", raising=False)
+    monkeypatch.setattr(app_settings, "public_demo_allowed_origins", "https://artists.zalmanim.com", raising=False)
 
     response = client.post(
         "/api/public/demo-submissions",

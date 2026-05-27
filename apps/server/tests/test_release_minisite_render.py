@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from starlette.requests import Request
 
-from app.api import routes
+from app.api import release_minisite_html as minisite_html
 
 
 def _request() -> Request:
@@ -39,7 +39,7 @@ def test_release_minisite_html_renders_core_sections():
         "gallery_urls": ["https://cdn.example.com/alt1.jpg"],
     }
 
-    html_out = routes._release_minisite_html(_request(), release, config)
+    html_out = minisite_html.release_minisite_html(_request(), release, config)
 
     assert "Afterglow EP" in html_out
     assert "Aurora Echo, Night Bloom" in html_out
@@ -66,7 +66,7 @@ def test_release_minisite_html_escapes_untrusted_content():
         "gallery_urls": [],
     }
 
-    html_out = routes._release_minisite_html(_request(), release, config)
+    html_out = minisite_html.release_minisite_html(_request(), release, config)
 
     assert "<script>alert(1)</script>" not in html_out
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html_out
@@ -84,7 +84,7 @@ def test_release_minisite_platform_links_adds_best_candidate_per_platform():
         ],
     )
 
-    links = routes._release_minisite_platform_links(release)
+    links = minisite_html._release_minisite_platform_links(release)
 
     assert links["spotify"] == "https://open.spotify.com/existing"
     assert links["youtube"] == "https://youtube.com/high"
@@ -102,6 +102,6 @@ def test_release_minisite_platform_links_skips_rejected_or_incomplete_candidates
         ],
     )
 
-    links = routes._release_minisite_platform_links(release)
+    links = minisite_html._release_minisite_platform_links(release)
 
     assert links == {"soundcloud": "https://soundcloud.com/live"}

@@ -1,4 +1,4 @@
-from app.api import routes
+from app.api import demo_helpers
 from app.models.models import DemoSubmission
 
 
@@ -17,8 +17,8 @@ def test_reject_demo_allows_custom_email_before_sending(
         sent_payload["body_html"] = body_html
         return True, "Sent"
 
-    monkeypatch.setattr(routes, "send_email_service", fake_send_email_service)
-    monkeypatch.setattr(routes, "is_email_configured", lambda: True)
+    monkeypatch.setattr(demo_helpers, "send_email_service", fake_send_email_service)
+    monkeypatch.setattr(demo_helpers, "is_email_configured", lambda: True)
 
     submission = DemoSubmission(
         artist_name="Maya Waves",
@@ -64,8 +64,8 @@ def test_reject_demo_can_skip_email_send(
         send_calls["count"] += 1
         return True, "Sent"
 
-    monkeypatch.setattr(routes, "send_email_service", fake_send_email_service)
-    monkeypatch.setattr(routes, "is_email_configured", lambda: True)
+    monkeypatch.setattr(demo_helpers, "send_email_service", fake_send_email_service)
+    monkeypatch.setattr(demo_helpers, "is_email_configured", lambda: True)
 
     submission = DemoSubmission(
         artist_name="Noa Lights",
@@ -105,8 +105,8 @@ def test_reject_demo_without_email_configuration_does_not_send(
         send_calls["count"] += 1
         return True, "Sent"
 
-    monkeypatch.setattr(routes, "send_email_service", fake_send_email_service)
-    monkeypatch.setattr(routes, "is_email_configured", lambda: False)
+    monkeypatch.setattr(demo_helpers, "send_email_service", fake_send_email_service)
+    monkeypatch.setattr(demo_helpers, "is_email_configured", lambda: False)
 
     submission = DemoSubmission(
         artist_name="Ariel North",
@@ -140,8 +140,8 @@ def test_reject_demo_email_limit_error_maps_to_429(
     def fake_send_email_service(*, to_email, subject, body_text, body_html=None):
         return False, "Rate limit exceeded"
 
-    monkeypatch.setattr(routes, "send_email_service", fake_send_email_service)
-    monkeypatch.setattr(routes, "is_email_configured", lambda: True)
+    monkeypatch.setattr(demo_helpers, "send_email_service", fake_send_email_service)
+    monkeypatch.setattr(demo_helpers, "is_email_configured", lambda: True)
 
     submission = DemoSubmission(
         artist_name="Lior Sky",
