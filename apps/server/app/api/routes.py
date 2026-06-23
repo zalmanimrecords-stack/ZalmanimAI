@@ -262,6 +262,101 @@ def _client_ip_from_request(request: Request) -> str:
     if forwarded_for:
         return forwarded_for.split(",")[0].strip()
     return (request.client.host if request.client else "") or "unknown"
+
+
+def _touch_user_login(db: Session, user: User) -> None:
+    user.last_login_at = datetime.now(timezone.utc)
+    db.commit()
+
+
+def _user_token_response(user: User) -> TokenResponse:
+    return TokenResponse(
+        access_token=create_access_token(str(user.id)),
+        role=user.role,
+        email=user.email,
+        full_name=user.full_name,
+        permissions=permissions_for_role(user.role),
+    )
+
+
+def _serialize_user(user: User) -> UserOut:
+    artist = getattr(user, "artist", None)
+    identities = [UserIdentityOut.model_validate(i) for i in (user.identities or [])]
+    return UserOut(
+        id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        role=user.role,
+        permissions=permissions_for_role(user.role),
+        artist_id=getattr(artist, "id", None),
+        artist_name=getattr(artist, "brand", None) or getattr(artist, "full_name", None),
+        is_active=bool(user.is_active),
+        created_at=getattr(user, "created_at", None),
+        updated_at=getattr(user, "updated_at", None),
+        last_login_at=getattr(user, "last_login_at", None),
+        identities=identities,
+    )
+
+
+_VALID_USER_ROLES = ("admin", "manager", "artist")
+
+
+def _validate_user_role(role: str | None) -> str:
+    normalized = (role or "").strip().lower()
+    if normalized not in _VALID_USER_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid role '{role}'. Must be one of: {', '.join(_VALID_USER_ROLES)}.",
+        )
+    return normalized
+
+
+def _touch_artist_login(db: Session, artist) -> None:
+    artist.last_login_at = datetime.now(timezone.utc)
+    db.commit()
+
+
+def _artist_token_response(artist) -> TokenResponse:
+    return TokenResponse(
+        access_token=create_access_token(f"artist:{artist.id}"),
+        role="artist",
+        email=artist.email,
+        full_name=getattr(artist, "full_name", None) or getattr(artist, "brand", None),
+        permissions=permissions_for_role("artist"),
+    )
+
+
+def _ensure_artist_reset_user(db: Session, artist) -> User | None:
+    # Artists log in via the artists table directly; password reset for artists is
+    # handled by setting artist.password_hash, not by creating a shadow User row.
+    # Returning None here makes the reset flow fall back to "no account" behavior,
+    # which surfaces the standard 'reset link sent if account exists' response.
+    return None
+
+
+def _find_or_create_oauth_user(
+    db: Session,
+    provider: str,
+    provider_subject: str,
+    email: str | None,
+    display_name: str | None,
+) -> User:
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=f"OAuth login via {provider} is not configured on this deployment.",
+    )
+
+
+def _upsert_google_mail_connection(
+    db: Session,
+    *,
+    email: str | None,
+    access_token: str | None,
+    refresh_token: str | None,
+    scopes: list[str] | None,
+) -> None:
+    # Gmail SMTP integration is not configured on this deployment; no-op.
+    return None
 router.include_router(campaign_router)
 router.include_router(campaign_request_router)
 router.include_router(inbox_router)

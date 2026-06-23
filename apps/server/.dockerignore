@@ -5,5 +5,16 @@ __pycache__
 .env
 .pytest_cache
 test_bootstrap.db
+test_ci.db
 storage/uploads/*
 !storage/uploads/.gitkeep
+.tmp
+.tmp/
+tmp*
+qa-temp
+qa-temp/
+**/.pytest_cache
+**/__pycache__
+**/pytest-*
+**/qa-*
+tests

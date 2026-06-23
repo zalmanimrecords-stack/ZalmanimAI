@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "zalmanim-ai": {
+      "command": "C:\\Users\\SimonRosenfeld\\DEV\\ZalmanimAI\\apps\\mcp\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "zalmanim_mcp"]
+    }
+  }
+}

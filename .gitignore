@@ -37,3 +37,7 @@ apps/artist_portal/.dart_tool/
 apps/artist_portal/build/
 apps/artist_portal/.flutter-plugins
 apps/artist_portal/.flutter-plugins-dependencies
+
+# Zalmanim MCP server local virtualenv (.env is already ignored globally above)
+apps/mcp/.venv/
+apps/mcp/*.egg-info/

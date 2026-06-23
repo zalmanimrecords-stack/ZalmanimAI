@@ -1,0 +1,10 @@
+# SIMONSRV web image: tiny nginx serving the pre-built Flutter admin SPA.
+# Build context must be the repo root so it can see apps/client/build/web/ and deploy/nginx/.
+# Build with:
+#   docker build -f deploy/web/Dockerfile.simonsrv -t zalmanimai-web-simonsrv:latest .
+FROM nginx:1.27-alpine
+
+COPY deploy/nginx/simonsrv.conf /etc/nginx/conf.d/default.conf
+RUN rm -f /etc/nginx/conf.d/default.conf.bak
+
+COPY apps/client/build/web/ /usr/share/nginx/html/

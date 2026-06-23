@@ -1,0 +1,135 @@
+# Internal-only docker stack for the SIMONSRV home server.
+# Brings up the LabelOps admin preview at http://simonsrv:8090
+# with the FastAPI backend internally proxied via nginx.
+#
+# Usage (from repo root, with `simonsrv` docker context active):
+#   1. Build the Flutter web bundle locally:
+#        cd apps/client && flutter build web --release --dart-define="API_BASE_URL=http://simonsrv:8090/"
+#   2. Deploy:
+#        docker compose -f deploy/docker-compose.simonsrv.yml --env-file deploy/.env.simonsrv up -d --build
+#   3. Login at http://simonsrv:8090
+#        admin user:  admin@label.local   password: $SEED_ADMIN_PASSWORD
+#        admin user:  simon@zalmanim.com  password: $SEED_SIMON_PASSWORD
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: zalmanimai-simonsrv-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-labelops}
+      POSTGRES_USER: ${POSTGRES_USER:-label}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-label}
+    volumes:
+      - simonsrv_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-label} -d ${POSTGRES_DB:-labelops}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: zalmanimai-simonsrv-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - simonsrv_redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    image: zalmanimai-simonsrv-api:latest
+    container_name: zalmanimai-simonsrv-api
+    build:
+      context: ../apps/server
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    restart: unless-stopped
+    env_file:
+      - ./.env.simonsrv
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-label}:${POSTGRES_PASSWORD:-label}@postgres:5432/${POSTGRES_DB:-labelops}
+      REDIS_URL: redis://redis:6379/0
+      UPLOAD_DIR: /app/storage/uploads
+      GIT_LAST_UPDATE: ${GIT_LAST_UPDATE:-}
+      BUILD_NUMBER: ${BUILD_NUMBER:-simonsrv}
+    volumes:
+      - simonsrv_server_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${SIMONSRV_API_PORT:-8085}:8000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"from urllib.request import urlopen; import sys; sys.exit(0 if urlopen('http://127.0.0.1:8000/health').status == 200 else 1)\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  worker:
+    image: zalmanimai-simonsrv-api:latest
+    container_name: zalmanimai-simonsrv-worker
+    command: ["python", "worker.py"]
+    restart: unless-stopped
+    env_file:
+      - ./.env.simonsrv
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-label}:${POSTGRES_PASSWORD:-label}@postgres:5432/${POSTGRES_DB:-labelops}
+      REDIS_URL: redis://redis:6379/0
+      UPLOAD_DIR: /app/storage/uploads
+      WORKER_HEARTBEAT_PATH: /tmp/worker-heartbeat.txt
+      WORKER_HEARTBEAT_MAX_AGE_SEC: 600
+    volumes:
+      - simonsrv_server_storage:/app/storage
+    depends_on:
+      api:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import os,time,pathlib,sys; p=pathlib.Path(os.getenv('WORKER_HEARTBEAT_PATH','/tmp/worker-heartbeat.txt')); max_age=int(os.getenv('WORKER_HEARTBEAT_MAX_AGE_SEC','600')); sys.exit(0 if p.exists() and time.time()-p.stat().st_mtime <= max_age else 1)\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
+  web:
+    image: zalmanimai-simonsrv-web:latest
+    container_name: zalmanimai-simonsrv-web
+    build:
+      context: ..
+      dockerfile: ./deploy/web/Dockerfile.simonsrv
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${SIMONSRV_WEB_PORT:-8090}:80"
+    healthcheck:
+      test:
+        ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  simonsrv_postgres_data:
+  simonsrv_redis_data:
+  simonsrv_server_storage:

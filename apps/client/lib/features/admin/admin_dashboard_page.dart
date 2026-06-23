@@ -11,11 +11,15 @@ import '../account/user_settings_sheet.dart';
 import '../../widgets/ambient_underwater_shell.dart';
 import '../../widgets/app_version_badge.dart';
 import '../../widgets/api_connection_indicator.dart';
+import '../../theme/app_theme.dart';
 import 'admin_dashboard_delegate.dart';
 import 'admin_id_helpers.dart';
 import 'artist_details_tabs.dart';
 import 'admin_dashboard_helpers.dart';
 import 'artist_reminders_dialog.dart';
+import 'widgets/admin_sidebar.dart';
+import 'widgets/admin_top_bar.dart';
+import 'widgets/stat_chip.dart';
 import 'tabs/artists_tab.dart';
 import 'tabs/audience_tab.dart';
 import 'tabs/campaigns_section_tab.dart';
@@ -327,6 +331,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   void _onTabChanged() {
     if (_tabController.indexIsChanging) return;
+    if (mounted) setState(() {}); // refresh sidebar selection + top bar title
+    _loadTabIfNeeded();
+  }
+
+  void _selectTab(int index) {
+    if (index == _tabController.index) return;
+    setState(() {
+      _tabController.animateTo(index);
+    });
     _loadTabIfNeeded();
   }
 
@@ -1679,177 +1692,63 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
 
   @override
   Widget build(BuildContext context) {
+    final navItems = _buildNavItems();
+    final currentIndex = _tabController.index;
+    final currentPage = _pageMeta(currentIndex);
+
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Image.asset(
-              'assets/images/zalmanim_logo.png',
-              height: 32,
-              fit: BoxFit.contain,
-            ),
-            const SizedBox(width: 16),
-            Tooltip(
-              message: 'Demos in review and awaiting treatment',
-              child: SelectableText(
-                _loadedDemos
-                    ? '$_demosInReviewCount in review - $_demosPendingCount pending'
-                    : '- in review - - pending',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w500,
-                    ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(left: 8),
-            child: Center(
-              child: AppVersionBadge(
-                tooltipPrefix: 'LM app version',
-                textStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurface,
-                      fontWeight: FontWeight.w700,
-                    ),
-              ),
-            ),
-          ),
-          if (_artistsCount != null || _releasesCount != null)
-            Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: Tooltip(
-                message: 'Active artists and total releases',
-                child: SelectableText(
-                  '${_artistsCount ?? '—'} artists · ${_releasesCount ?? '—'} releases',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w500,
-                      ),
-                ),
-              ),
-            ),
-          if (_loadedPendingReleases)
-            Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: Tooltip(
-                message: 'Releases waiting in Pending Release',
-                child: SelectableText(
-                  '${pendingReleases.length} pending release${pendingReleases.length == 1 ? '' : 's'}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w500,
-                      ),
-                ),
-              ),
-            ),
-          Padding(
-            padding: const EdgeInsets.only(left: 8),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Tooltip(
-                  message: _lastGitUpdate != null
-                      ? 'Last system update (from server): $_lastGitUpdate'
-                      : 'Last system update (set GIT_LAST_UPDATE on server)',
-                  child: SelectableText(
-                    'Updated: ${_lastGitUpdate ?? '—'}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                  ),
-                ),
-                if (_lastGitUpdate != null)
-                  IconButton(
-                    icon: const Icon(ZalmanimIcons.copy, size: 18),
-                    tooltip: 'Copy last update time',
-                    onPressed: () =>
-                        Clipboard.setData(ClipboardData(text: _lastGitUpdate!)),
-                    style: IconButton.styleFrom(
-                      minimumSize: const Size(32, 32),
-                      padding: EdgeInsets.zero,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          ApiConnectionIndicator(
-            apiClient: widget.apiClient,
-            onConnectionRestored: load,
-          ),
-          IconButton(
-            icon: const Icon(ZalmanimIcons.account),
-            tooltip: 'User details',
-            onPressed: _openUserSettings,
-          ),
-          IconButton(
-            icon: const Icon(ZalmanimIcons.logout),
-            tooltip: 'Log out',
-            onPressed: _confirmLogout,
-          ),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: [
-            Tab(
-                icon: ZalmanimIcons.alienIcon(
-                    size: 20,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant),
-                text: 'Artists'),
-            Tab(
-                icon: ZalmanimIcons.jellyfishIcon(
-                    size: 20,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant),
-                text: 'Demos'),
-            Tab(
-                child: InboxTabLabel(
-              iconColor: Theme.of(context).colorScheme.onSurfaceVariant,
-              unreadCount: _unreadInboxCount,
-            )),
-            Tab(
-                icon: ZalmanimIcons.squidIcon(
-                    size: 20,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant),
-                text: 'Releases'),
-            Tab(
-                icon: ZalmanimIcons.alienIcon(
-                    size: 20,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant),
-                text: 'CAMPAIGNS'),
-            Tab(
-                icon: ZalmanimIcons.squidIcon(
-                    size: 20,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant),
-                text: 'Audience'),
-            Tab(
-                icon: ZalmanimIcons.alienIcon(
-                    size: 20,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant),
-                text: 'Reports'),
-            Tab(
-                icon: Icon(ZalmanimIcons.settings,
-                    size: 20,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant),
-                text: 'Settings'),
-          ],
-        ),
-      ),
+      backgroundColor: AppColors.background,
       body: Stack(
         children: [
           const Positioned.fill(child: AmbientBackdrop()),
-          TabBarView(
-            controller: _tabController,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              ArtistsTab(delegate: this),
-              DemosTab(delegate: this),
-              InboxTab(delegate: this),
-              ReleasesSectionTab(delegate: this),
-              CampaignsSectionTab(delegate: this),
-              AudienceTab(delegate: this),
-              ReportsTab(delegate: this),
-              SettingsTab(delegate: this),
+              AdminSidebar(
+                items: navItems,
+                selectedIndex: currentIndex,
+                onItemSelected: _selectTab,
+                brandTitle: 'LabelOps',
+                brandSubtitle: 'ARTIST MANAGEMENT',
+                brandLogo: Image.asset(
+                  'assets/images/zalmanim_logo.png',
+                  fit: BoxFit.contain,
+                ),
+                userName: widget.session.fullName,
+                userEmail: widget.session.email,
+                userRole: widget.session.role,
+                onAccountPressed: _openUserSettings,
+                onLogoutPressed: _confirmLogout,
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    AdminTopBar(
+                      title: currentPage.title,
+                      subtitle: currentPage.subtitle,
+                      stats: _buildTopBarStats(),
+                      actions: _buildTopBarActions(),
+                    ),
+                    Expanded(
+                      child: TabBarView(
+                        controller: _tabController,
+                        physics: const NeverScrollableScrollPhysics(),
+                        children: [
+                          ArtistsTab(delegate: this),
+                          DemosTab(delegate: this),
+                          InboxTab(delegate: this),
+                          ReleasesSectionTab(delegate: this),
+                          CampaignsSectionTab(delegate: this),
+                          AudienceTab(delegate: this),
+                          ReportsTab(delegate: this),
+                          SettingsTab(delegate: this),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
           if (loading)
@@ -1866,14 +1765,18 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               right: 0,
               child: Material(
                 elevation: 4,
+                color: AppColors.dangerSurface,
                 child: Padding(
                   padding: const EdgeInsets.all(12),
                   child: Row(
                     children: [
+                      const Icon(Icons.error_outline_rounded,
+                          color: AppColors.dangerText),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: SelectableText(
                           error!,
-                          style: const TextStyle(color: Colors.red),
+                          style: const TextStyle(color: AppColors.dangerText),
                         ),
                       ),
                       IconButton(
@@ -1894,6 +1797,142 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         ],
       ),
     );
+  }
+
+  List<AdminNavItem> _buildNavItems() {
+    final unread = _unreadInboxCount;
+    return [
+      const AdminNavItem(icon: ZalmanimIcons.artists, label: 'Artists'),
+      const AdminNavItem(icon: ZalmanimIcons.demos, label: 'Demos'),
+      AdminNavItem(
+        icon: Icons.inbox_rounded,
+        label: 'Inbox',
+        badge: unread > 0 ? '$unread' : null,
+      ),
+      const AdminNavItem(icon: ZalmanimIcons.releases, label: 'Releases'),
+      const AdminNavItem(icon: ZalmanimIcons.campaigns, label: 'Campaigns'),
+      const AdminNavItem(icon: ZalmanimIcons.audience, label: 'Audience'),
+      const AdminNavItem(icon: ZalmanimIcons.reports, label: 'Reports'),
+      const AdminNavItem(icon: ZalmanimIcons.settings, label: 'Settings'),
+    ];
+  }
+
+  _PageMeta _pageMeta(int index) {
+    switch (index) {
+      case 0:
+        return const _PageMeta('Artists', 'Roster, releases, and reminders');
+      case 1:
+        return const _PageMeta(
+            'Demo submissions', 'Review incoming demos and respond to artists');
+      case 2:
+        return const _PageMeta(
+            'Inbox', 'Conversations with your artists');
+      case 3:
+        return const _PageMeta(
+            'Releases', 'Catalog, DSP links, and pending releases');
+      case 4:
+        return const _PageMeta(
+            'Campaigns', 'Mailings, templates, and artist requests');
+      case 5:
+        return const _PageMeta('Audience', 'Mailing lists and subscribers');
+      case 6:
+        return const _PageMeta('Reports', 'Exports and label insights');
+      case 7:
+        return const _PageMeta('Settings', 'Users, mail, logs, and database');
+      default:
+        return const _PageMeta('Dashboard', '');
+    }
+  }
+
+  List<Widget> _buildTopBarStats() {
+    final chips = <Widget>[];
+
+    if (_loadedDemos) {
+      final inReviewTone = _demosInReviewCount > 0
+          ? StatChipTone.info
+          : StatChipTone.neutral;
+      chips.add(StatChip(
+        icon: Icons.rate_review_rounded,
+        label: 'IN REVIEW',
+        value: '$_demosInReviewCount',
+        tone: inReviewTone,
+        tooltip: 'Demos currently in review',
+        onTap: () => _selectTab(1),
+      ));
+      if (_demosPendingCount > 0) {
+        chips.add(StatChip(
+          icon: Icons.schedule_rounded,
+          label: 'PENDING',
+          value: '$_demosPendingCount',
+          tone: StatChipTone.warning,
+          tooltip: 'Demos awaiting treatment',
+          onTap: () => _selectTab(1),
+        ));
+      }
+    }
+
+    if (_loadedPendingReleases && pendingReleases.isNotEmpty) {
+      chips.add(StatChip(
+        icon: Icons.album_rounded,
+        label: 'PENDING RELEASES',
+        value: '${pendingReleases.length}',
+        tone: StatChipTone.warning,
+        tooltip: 'Releases waiting in Pending Release',
+        onTap: () => _selectTab(3),
+      ));
+    }
+
+    if (_artistsCount != null || _releasesCount != null) {
+      chips.add(StatChip(
+        icon: Icons.library_music_rounded,
+        label: 'LIBRARY',
+        value:
+            '${_artistsCount ?? '—'} artists · ${_releasesCount ?? '—'} releases',
+        tone: StatChipTone.neutral,
+        tooltip: 'Active artists and total releases',
+      ));
+    }
+
+    return chips;
+  }
+
+  List<Widget> _buildTopBarActions() {
+    return [
+      if (_lastGitUpdate != null)
+        Tooltip(
+          message: 'Last system update: $_lastGitUpdate',
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Text(
+              'Updated $_lastGitUpdate',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: AppColors.textFaint,
+                    letterSpacing: 0.3,
+                  ),
+            ),
+          ),
+        ),
+      ApiConnectionIndicator(
+        apiClient: widget.apiClient,
+        onConnectionRestored: load,
+      ),
+      AppVersionBadge(
+        tooltipPrefix: 'LM app version',
+        textStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: AppColors.textMuted,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.4,
+            ),
+      ),
+      IconButton(
+        icon: const Icon(ZalmanimIcons.account, size: 20),
+        tooltip: 'User details',
+        onPressed: _openUserSettings,
+        style: IconButton.styleFrom(
+          minimumSize: const Size(36, 36),
+        ),
+      ),
+    ];
   }
 
   /// Used by campaign dialogs (connections/hubConnectors not yet loaded from API).
@@ -6150,4 +6189,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   Future<void> _load() async {
     await _reloadAllTabs();
   }
+}
+
+class _PageMeta {
+  const _PageMeta(this.title, this.subtitle);
+  final String title;
+  final String subtitle;
 }
