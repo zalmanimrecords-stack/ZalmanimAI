@@ -422,7 +422,7 @@ class _MailSettingsContentState extends State<MailSettingsContent> {
             color: Theme.of(context)
                 .colorScheme
                 .surfaceContainerHighest
-                .withOpacity(0.45),
+                .withValues(alpha: 0.45),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(

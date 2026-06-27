@@ -450,7 +450,7 @@ class _ReleaseLinksTabState extends State<ReleaseLinksTab> {
                     Text('Minisite', style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
-                      value: selectedTheme,
+                      initialValue: selectedTheme,
                       decoration: const InputDecoration(
                         labelText: 'Theme',
                         border: OutlineInputBorder(),

@@ -102,7 +102,7 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: role,
+                    initialValue: role,
                     decoration: const InputDecoration(
                         labelText: 'Role', border: OutlineInputBorder()),
                     items: const [
@@ -116,7 +116,7 @@ class _UsersManagementPageState extends State<UsersManagementPage> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<int?>(
-                    value: artistId,
+                    initialValue: artistId,
                     decoration: const InputDecoration(
                         labelText: 'Linked artist',
                         border: OutlineInputBorder()),

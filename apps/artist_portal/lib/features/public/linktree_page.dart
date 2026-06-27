@@ -194,7 +194,7 @@ class _LinktreePageState extends State<LinktreePage> {
                                       imageUrl,
                                       fit: BoxFit.cover,
                                       errorBuilder: (_, __, ___) => Container(
-                                        color: palette.primary.withOpacity( 0.08),
+                                        color: palette.primary.withValues(alpha:  0.08),
                                         child: Icon(Icons.broken_image_outlined, color: palette.primary),
                                       ),
                                     ),
@@ -223,7 +223,7 @@ class _LinktreePageState extends State<LinktreePage> {
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(14),
                                   ),
-                                  tileColor: Colors.white.withOpacity( 0.46),
+                                  tileColor: Colors.white.withValues(alpha:  0.46),
                                   title: Text(
                                     release.title,
                                     style: TextStyle(
@@ -271,7 +271,7 @@ class _LinktreePageState extends State<LinktreePage> {
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: palette.primary.withOpacity( 0.12),
+            color: palette.primary.withValues(alpha:  0.12),
             blurRadius: 30,
             offset: const Offset(0, 16),
           ),
@@ -376,7 +376,7 @@ class _LinktreePageState extends State<LinktreePage> {
   Widget _avatarCircle(Color primary, String name) {
     return CircleAvatar(
       radius: 56,
-      backgroundColor: primary.withOpacity( 0.2),
+      backgroundColor: primary.withValues(alpha:  0.2),
       child: Text(
         _avatarInitial(name),
         style: TextStyle(

@@ -258,7 +258,7 @@ class _LandingPageState extends State<LandingPage> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: primary.withOpacity( 0.12),
+            color: primary.withValues(alpha:  0.12),
             borderRadius: BorderRadius.circular(999),
           ),
           child: Text(
@@ -619,7 +619,7 @@ class _LandingPageState extends State<LandingPage> {
 
   Widget _genreField({double? width}) {
     final field = DropdownButtonFormField<String>(
-      value: _selectedGenre,
+      initialValue: _selectedGenre,
       decoration: InputDecoration(
         labelText: 'Musical style',
         filled: true,
@@ -676,7 +676,7 @@ class _FeatureCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity( 0.72),
+        color: Colors.white.withValues(alpha:  0.72),
         borderRadius: BorderRadius.circular(22),
       ),
       child: Column(

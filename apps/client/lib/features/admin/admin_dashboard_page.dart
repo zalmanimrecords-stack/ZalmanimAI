@@ -2254,7 +2254,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                                           color: Theme.of(context)
                                               .colorScheme
                                               .surfaceContainerHighest
-                                              .withOpacity(0.5)),
+                                              .withValues(alpha: 0.5)),
                                   children: [
                                     Padding(
                                       padding: const EdgeInsets.symmetric(
@@ -3363,7 +3363,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                         style: TextStyle(fontWeight: FontWeight.w600)),
                     const SizedBox(height: 6),
                     DropdownButtonFormField<int>(
-                      value: targetId,
+                      initialValue: targetId,
                       decoration: const InputDecoration(
                           border: OutlineInputBorder(), isDense: true),
                       hint: const Text('Select target'),
@@ -4143,7 +4143,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               return Card(
                 margin: const EdgeInsets.only(bottom: 8),
                 color:
-                    hasNoArtist ? Colors.orange.withOpacity(0.12) : null,
+                    hasNoArtist ? Colors.orange.withValues(alpha: 0.12) : null,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                   side: hasNoArtist
@@ -5433,7 +5433,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
-                      value: role,
+                      initialValue: role,
                       decoration: const InputDecoration(labelText: 'Role'),
                       items: _userRoles
                           .map(
@@ -5445,7 +5445,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     if (role == 'artist') ...[
                       const SizedBox(height: 8),
                       DropdownButtonFormField<int?>(
-                        value: artistId,
+                        initialValue: artistId,
                         decoration: const InputDecoration(
                             labelText: 'Artist (optional)'),
                         items: [
@@ -5602,7 +5602,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
-                      value: role,
+                      initialValue: role,
                       decoration: const InputDecoration(labelText: 'Role'),
                       items: _userRoles
                           .map(
@@ -5614,7 +5614,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                     if (role == 'artist') ...[
                       const SizedBox(height: 8),
                       DropdownButtonFormField<int?>(
-                        value: artistId,
+                        initialValue: artistId,
                         decoration: const InputDecoration(
                             labelText: 'Artist (optional)'),
                         items: [
@@ -5790,7 +5790,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                 ] else ...[
                   const SizedBox(height: 8),
                   DropdownButtonFormField<int>(
-                    value: selectedListId,
+                    initialValue: selectedListId,
                     decoration:
                         const InputDecoration(labelText: 'Import into list'),
                     items: audiences.map((audience) {
@@ -6021,7 +6021,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
                       decoration: const InputDecoration(labelText: 'Email')),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
-                    value: statusValue,
+                    initialValue: statusValue,
                     decoration: const InputDecoration(labelText: 'Status'),
                     items: const [
                       DropdownMenuItem(

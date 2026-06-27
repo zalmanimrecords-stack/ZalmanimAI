@@ -92,8 +92,8 @@ class _LoginPageState extends State<LoginPage> {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                primary.withOpacity( 0.12),
-                primary.withOpacity( 0.04),
+                primary.withValues(alpha:  0.12),
+                primary.withValues(alpha:  0.04),
               ],
             ),
           ),

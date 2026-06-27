@@ -416,7 +416,7 @@ class _ArtistDashboardPageState extends State<ArtistDashboardPage>
                     const Text('Select release:'),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<int>(
-                      value: selectedReleaseId,
+                      initialValue: selectedReleaseId,
                       decoration: const InputDecoration(border: OutlineInputBorder()),
                       items: [
                         for (final r in releases)
@@ -1180,16 +1180,16 @@ extension _ArtistDashboardPageUi on _ArtistDashboardPageState {
                 backgroundColor: Theme.of(context)
                     .colorScheme
                     .onPrimary
-                    .withOpacity( 0.10),
+                    .withValues(alpha:  0.10),
                 borderColor: Theme.of(context)
                     .colorScheme
                     .onPrimary
-                    .withOpacity( 0.16),
+                    .withValues(alpha:  0.16),
                 textStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: Theme.of(context)
                           .colorScheme
                           .onPrimary
-                          .withOpacity( 0.92),
+                          .withValues(alpha:  0.92),
                       fontWeight: FontWeight.w700,
                     ),
               ),
@@ -1305,14 +1305,14 @@ extension _ArtistDashboardPageUi on _ArtistDashboardPageState {
               tooltipPrefix: 'Artist portal version',
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               backgroundColor:
-                  Theme.of(context).colorScheme.onPrimary.withOpacity( 0.10),
+                  Theme.of(context).colorScheme.onPrimary.withValues(alpha:  0.10),
               borderColor:
-                  Theme.of(context).colorScheme.onPrimary.withOpacity( 0.16),
+                  Theme.of(context).colorScheme.onPrimary.withValues(alpha:  0.16),
               textStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: Theme.of(context)
                         .colorScheme
                         .onPrimary
-                        .withOpacity( 0.92),
+                        .withValues(alpha:  0.92),
                     fontWeight: FontWeight.w700,
                   ),
             ),
@@ -1610,7 +1610,7 @@ extension _ArtistDashboardPageUi on _ArtistDashboardPageState {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: _selectedDemoGenre,
+              initialValue: _selectedDemoGenre,
               decoration: const InputDecoration(
                 labelText: 'Musical style',
                 border: OutlineInputBorder(),
@@ -2007,7 +2007,7 @@ extension _ArtistDashboardPageUi on _ArtistDashboardPageState {
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                value: _minisiteTheme,
+                initialValue: _minisiteTheme,
                 decoration: const InputDecoration(
                   labelText: 'Theme',
                   border: OutlineInputBorder(),
@@ -2369,7 +2369,7 @@ extension _ArtistDashboardPageUi on _ArtistDashboardPageState {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: primary.withOpacity( 0.08),
+        color: primary.withValues(alpha:  0.08),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -2388,7 +2388,7 @@ extension _ArtistDashboardPageUi on _ArtistDashboardPageState {
       elevation: 1,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(compact ? 16 : 12),
-        side: BorderSide(color: primary.withOpacity( 0.3), width: 1),
+        side: BorderSide(color: primary.withValues(alpha:  0.3), width: 1),
       ),
       child: Padding(
         padding: EdgeInsets.all(compact ? 16 : 20),
