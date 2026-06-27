@@ -81,7 +81,7 @@ class InboxTab extends StatelessWidget {
             child: items.isEmpty
                 ? const Center(
                     child: Text(
-                      'No messages yet. When artists send a message from their portal, they appear here.',
+                      'No messages yet. Artist portal messages and incoming emails to the label both appear here.',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: Colors.grey),
                     ),
@@ -95,6 +95,7 @@ class InboxTab extends StatelessWidget {
                       final artistName = item['artist_name']?.toString() ?? '-';
                       final preview = (item['last_message_preview'] ?? '').toString();
                       final hasReply = item['has_label_reply'] == true;
+                      final isEmail = item['source']?.toString() == 'email';
                       final unreadCount = item['unread_count'] is num
                           ? (item['unread_count'] as num).toInt()
                           : 0;
@@ -103,19 +104,51 @@ class InboxTab extends StatelessWidget {
                         margin: const EdgeInsets.only(bottom: 8),
                         child: ListTile(
                           leading: Icon(
-                            hasUnread
-                                ? Icons.mark_email_unread
-                                : hasReply
-                                    ? Icons.mark_email_read
-                                    : Icons.mail_outline,
-                            color: Theme.of(context).colorScheme.primary,
+                            isEmail
+                                ? (hasUnread ? Icons.mark_email_unread : Icons.email)
+                                : hasUnread
+                                    ? Icons.mark_email_unread
+                                    : hasReply
+                                        ? Icons.mark_email_read
+                                        : Icons.mail_outline,
+                            color: isEmail
+                                ? Colors.teal.shade600
+                                : Theme.of(context).colorScheme.primary,
                           ),
-                          title: Text(
-                            artistName,
-                            style: TextStyle(
-                              fontWeight:
-                                  hasUnread ? FontWeight.w700 : FontWeight.w500,
-                            ),
+                          title: Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  artistName,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontWeight: hasUnread
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              if (isEmail) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.teal.shade50,
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(color: Colors.teal.shade200),
+                                  ),
+                                  child: Text(
+                                    'Email',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.teal.shade800,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                           subtitle: Text(
                             preview.isEmpty ? 'No subject' : preview.length > 80 ? '${preview.substring(0, 80)}...' : preview,

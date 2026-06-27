@@ -84,6 +84,19 @@ class Settings(BaseSettings):
     smtp_backup_from_email: str = ""  # If empty, primary smtp_from_email is used when sending via backup
     emails_per_hour: int = 10  # Max emails per hour; 0 = no limit (not recommended)
     redis_url: str = "redis://redis:6379/0"  # Used for rate-limit counter
+
+    # Incoming email ingestion: poll a mailbox over IMAP and surface messages in the label inbox.
+    # Disabled unless imap_host and imap_user are set. Reads only; never deletes server-side mail.
+    imap_host: str = ""
+    imap_port: int = 993
+    imap_use_ssl: bool = True  # True for 993 (implicit SSL); False for 143 (plain/STARTTLS)
+    imap_user: str = ""  # Full mailbox address, e.g. simon@zalmanim.com
+    imap_password: str = ""
+    imap_mailbox: str = "INBOX"
+    imap_poll_seconds: int = 120  # How often the worker polls for new mail
+
+    def imap_ingest_enabled(self) -> bool:
+        return bool((self.imap_host or "").strip() and (self.imap_user or "").strip())
     demo_submission_token: str = ""  # Set via env DEMO_SUBMISSION_TOKEN; optional shared secret for demo form
     # Base URL for password reset links in email (client app, not API). If empty, routes use https://lm.zalmanim.com
     password_reset_base_url: str = ""

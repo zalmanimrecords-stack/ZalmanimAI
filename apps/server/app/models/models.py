@@ -329,31 +329,43 @@ class PendingReleaseComment(Base):
 
 
 class LabelInboxThread(Base):
-    """One conversation between an artist and the label (inbox)."""
+    """One conversation in the label inbox.
+
+    Two sources: portal threads are tied to an artist; email threads ingest real
+    mail delivered to the label mailbox and may have no matching artist (artist_id NULL).
+    """
     __tablename__ = "label_inbox_threads"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Nullable since external email may arrive from a sender that is not a known artist.
+    artist_id: Mapped[int | None] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), nullable=True, index=True)
+    source: Mapped[str] = mapped_column(String(20), nullable=False, server_default="portal", index=True)  # 'portal' | 'email'
+    external_from: Mapped[str | None] = mapped_column(String(320), nullable=True, index=True)  # sender address for email threads
+    subject: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    artist: Mapped["Artist"] = relationship()
+    artist: Mapped["Artist | None"] = relationship()
     messages: Mapped[list["LabelInboxMessage"]] = relationship(
         back_populates="thread", order_by="LabelInboxMessage.created_at", cascade="all, delete-orphan"
     )
 
 
 class LabelInboxMessage(Base):
-    """One message in a label inbox thread (from artist or from label)."""
+    """One message in a label inbox thread (from artist, label, or an external email)."""
     __tablename__ = "label_inbox_messages"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     thread_id: Mapped[int] = mapped_column(ForeignKey("label_inbox_threads.id", ondelete="CASCADE"), nullable=False, index=True)
-    sender: Mapped[str] = mapped_column(String(20), nullable=False, index=True)  # 'artist' | 'label'
+    sender: Mapped[str] = mapped_column(String(20), nullable=False, index=True)  # 'artist' | 'label' | 'external_email'
     body: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     admin_read_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reply_email_sent_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Populated only for ingested external email (sender == 'external_email').
+    external_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)  # RFC Message-ID, for dedup
+    external_from: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    external_subject: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     thread: Mapped["LabelInboxThread"] = relationship(back_populates="messages")
 

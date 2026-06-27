@@ -431,6 +431,15 @@ def init_db() -> None:
             conn.execute(text(
                 "ALTER TABLE label_inbox_messages ADD COLUMN IF NOT EXISTS admin_read_at TIMESTAMP WITH TIME ZONE"
             ))
+            # Incoming email ingestion: external mail surfaced in the label inbox.
+            conn.execute(text("ALTER TABLE label_inbox_threads ALTER COLUMN artist_id DROP NOT NULL"))
+            conn.execute(text("ALTER TABLE label_inbox_threads ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'portal' NOT NULL"))
+            conn.execute(text("ALTER TABLE label_inbox_threads ADD COLUMN IF NOT EXISTS external_from VARCHAR(320)"))
+            conn.execute(text("ALTER TABLE label_inbox_threads ADD COLUMN IF NOT EXISTS subject VARCHAR(500)"))
+            conn.execute(text("ALTER TABLE label_inbox_messages ADD COLUMN IF NOT EXISTS external_message_id VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE label_inbox_messages ADD COLUMN IF NOT EXISTS external_from VARCHAR(320)"))
+            conn.execute(text("ALTER TABLE label_inbox_messages ADD COLUMN IF NOT EXISTS external_subject VARCHAR(500)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_label_inbox_messages_external_message_id ON label_inbox_messages (external_message_id)"))
             conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS platform_links_json TEXT DEFAULT '{}'"))
             conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS cover_image_path VARCHAR(500)"))
             conn.execute(text("ALTER TABLE releases ADD COLUMN IF NOT EXISTS cover_image_source_url VARCHAR(1000)"))

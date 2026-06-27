@@ -87,6 +87,29 @@ EMAILS_PER_HOUR=30
 
 No change required if the stack runs on the VPS with the `mailserver` service. After DNS + DKIM are live, send a test from **Settings → Mail settings**.
 
+### Incoming email → admin Inbox (IMAP ingestion)
+
+Mail addressed to the label (MX → `mail.familyzone.online`, the docker-mailserver on the VPS) can be
+surfaced in the admin **Inbox** tab, tagged **Email** alongside artist portal messages. The worker
+polls the mailbox over IMAP (read-only — it never deletes server mail) and stores each new message,
+deduplicated by RFC `Message-ID`.
+
+1. Create the mailbox on docker-mailserver:
+   ```bash
+   docker exec -ti mailserver setup email add simon@zalmanim.com
+   ```
+2. Set in `deploy/.env.production` (the worker reads these via `env_file`):
+   ```env
+   IMAP_HOST=mail.familyzone.online
+   IMAP_PORT=993
+   IMAP_USE_SSL=true
+   IMAP_USER=simon@zalmanim.com
+   IMAP_PASSWORD=<the mailbox password>
+   IMAP_MAILBOX=INBOX
+   IMAP_POLL_SECONDS=120
+   ```
+   Leave `IMAP_HOST` empty to disable ingestion. Restart the `worker` service to apply.
+
 ## 3. DKIM signing on the VPS
 
 The `boky/postfix` container sends mail but does **not** add DKIM signatures. Receivers often treat unsigned mail as spam when SPF/DMARC are strict.

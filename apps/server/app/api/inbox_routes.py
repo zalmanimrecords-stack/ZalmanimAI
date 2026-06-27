@@ -29,7 +29,17 @@ def _label_inbox_message_out(m: LabelInboxMessage) -> LabelInboxMessageOut:
         created_at=m.created_at,
         admin_read_at=m.admin_read_at,
         reply_email_sent_at=m.reply_email_sent_at,
+        external_from=m.external_from,
+        external_subject=m.external_subject,
     )
+
+
+def _thread_display_identity(thread: LabelInboxThread, artist: Artist | None) -> tuple[str, str]:
+    """(name, email) for the thread header — falls back to the email sender when no artist."""
+    if artist:
+        return artist.name or "", artist.email or ""
+    sender = thread.external_from or ""
+    return sender or "Email", sender
 
 
 def _label_inbox_unread_count(messages: list[LabelInboxMessage]) -> int:
@@ -38,18 +48,19 @@ def _label_inbox_unread_count(messages: list[LabelInboxMessage]) -> int:
 
 def _label_inbox_thread_out(
     thread: LabelInboxThread,
-    artist: Artist,
+    artist: Artist | None,
     last_message_preview: str,
     last_message_at: datetime,
     message_count: int,
     has_label_reply: bool,
     unread_count: int,
 ) -> LabelInboxThreadOut:
+    name, email_addr = _thread_display_identity(thread, artist)
     return LabelInboxThreadOut(
         id=thread.id,
         artist_id=thread.artist_id,
-        artist_name=artist.name or "",
-        artist_email=artist.email or "",
+        artist_name=name,
+        artist_email=email_addr,
         last_message_preview=last_message_preview,
         last_message_at=last_message_at,
         created_at=thread.created_at,
@@ -57,26 +68,31 @@ def _label_inbox_thread_out(
         message_count=message_count,
         has_label_reply=has_label_reply,
         unread_count=unread_count,
+        source=thread.source,
+        subject=thread.subject,
     )
 
 
 def _label_inbox_thread_detail_out(
     thread: LabelInboxThread,
-    artist: Artist,
+    artist: Artist | None,
     messages: list[LabelInboxMessage],
 ) -> LabelInboxThreadDetailOut:
     has_label_reply = any(m.sender == "label" for m in messages)
     unread_count = _label_inbox_unread_count(messages)
+    name, email_addr = _thread_display_identity(thread, artist)
     return LabelInboxThreadDetailOut(
         id=thread.id,
         artist_id=thread.artist_id,
-        artist_name=artist.name or "",
-        artist_email=artist.email or "",
+        artist_name=name,
+        artist_email=email_addr,
         created_at=thread.created_at,
         updated_at=thread.updated_at,
         message_count=len(messages),
         has_label_reply=has_label_reply,
         unread_count=unread_count,
+        source=thread.source,
+        subject=thread.subject,
         messages=[_label_inbox_message_out(m) for m in messages],
     )
 
@@ -180,10 +196,12 @@ def artist_list_my_inbox(
     artist = db.query(Artist).filter(Artist.id == user.artist_id).first()
     if not artist:
         return []
+    # Portal threads only: external email is a label-side channel, not shown in the artist portal.
     threads = (
         db.query(LabelInboxThread)
         .options(joinedload(LabelInboxThread.messages))
         .filter(LabelInboxThread.artist_id == user.artist_id)
+        .filter(LabelInboxThread.source == "portal")
         .order_by(desc(LabelInboxThread.updated_at))
         .all()
     )
@@ -221,7 +239,11 @@ def artist_get_inbox_thread(
     thread = (
         db.query(LabelInboxThread)
         .options(joinedload(LabelInboxThread.messages), joinedload(LabelInboxThread.artist))
-        .filter(LabelInboxThread.id == thread_id, LabelInboxThread.artist_id == user.artist_id)
+        .filter(
+            LabelInboxThread.id == thread_id,
+            LabelInboxThread.artist_id == user.artist_id,
+            LabelInboxThread.source == "portal",
+        )
         .first()
     )
     if not thread:
@@ -252,7 +274,8 @@ def admin_list_inbox(
     out = []
     for thread in threads:
         artist = thread.artist
-        if not artist:
+        # Portal threads always have an artist; email threads may not. Keep email threads regardless.
+        if not artist and thread.source != "email":
             continue
         msgs = thread.messages or []
         if not msgs:
@@ -292,7 +315,8 @@ def admin_get_inbox_thread(
     if not thread:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
     artist = thread.artist
-    if not artist:
+    # Email threads from a non-artist sender legitimately have no artist.
+    if not artist and thread.source != "email":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
     if _mark_admin_thread_as_read(db, thread=thread):
         db.commit()
@@ -318,8 +342,10 @@ def admin_reply_inbox_thread(
     if not thread:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
     artist = thread.artist
-    if not artist:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    # Reply recipient: the artist for portal threads, the original sender for email threads.
+    reply_to_email = (artist.email if artist else thread.external_from) or ""
+    if not reply_to_email:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No recipient for this thread")
     body = (payload.body or "").strip()
     if not body:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reply body is required")
@@ -335,7 +361,10 @@ def admin_reply_inbox_thread(
     db.flush()
     if is_email_configured():
         label_name = "Zalmanim"
-        subject = f"Re: Your message to {label_name}"
+        if thread.source == "email":
+            subject = f"Re: {thread.subject}" if thread.subject else f"Message from {label_name}"
+        else:
+            subject = f"Re: Your message to {label_name}"
         email_body = (
             "The label has replied to your message.\n\n"
             "---\n\n"
@@ -343,7 +372,7 @@ def admin_reply_inbox_thread(
             "---\n\nBest regards,\n" + label_name
         )
         success, msg = send_email_service(
-            to_email=artist.email,
+            to_email=reply_to_email,
             subject=subject,
             body_text=email_body,
         )
@@ -351,7 +380,7 @@ def admin_reply_inbox_thread(
             reply_msg.reply_email_sent_at = now
         else:
             logging.getLogger(__name__).warning(
-                "Failed to send inbox reply email to %s: %s", artist.email, msg
+                "Failed to send inbox reply email to %s: %s", reply_to_email, msg
             )
     thread.updated_at = now
     db.commit()

@@ -57,4 +57,40 @@ void main() {
 
     expect(delegate.openedThreadId, 7);
   });
+
+  testWidgets('Inbox tab tags incoming email threads with an Email badge', (tester) async {
+    final delegate = FakeAdminDashboardDelegate(
+      inboxThreads: const [
+        {
+          'id': 9,
+          'artist_name': 'fan@example.com',
+          'last_message_preview': 'Loved the new EP!',
+          'has_label_reply': false,
+          'unread_count': 0,
+          'source': 'email',
+        },
+        {
+          'id': 10,
+          'artist_name': 'Maya Waves',
+          'last_message_preview': 'Portal message',
+          'has_label_reply': false,
+          'unread_count': 0,
+          'source': 'portal',
+        },
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: InboxTab(delegate: delegate),
+        ),
+      ),
+    );
+
+    // Only the email-source thread is tagged.
+    expect(find.text('Email'), findsOneWidget);
+    expect(find.text('fan@example.com'), findsOneWidget);
+    expect(find.text('Maya Waves'), findsOneWidget);
+  });
 }

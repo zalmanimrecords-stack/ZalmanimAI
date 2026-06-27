@@ -957,17 +957,19 @@ class LabelInboxSend(BaseModel):
 
 class LabelInboxMessageOut(BaseModel):
     id: int
-    sender: str  # 'artist' | 'label'
+    sender: str  # 'artist' | 'label' | 'external_email'
     body: str
     created_at: datetime
     admin_read_at: datetime | None = None
     reply_email_sent_at: datetime | None = None
+    external_from: str | None = None
+    external_subject: str | None = None
 
 
 class LabelInboxThreadOut(BaseModel):
     """List item for inbox threads."""
     id: int
-    artist_id: int
+    artist_id: int | None = None  # null for external email from a non-artist sender
     artist_name: str
     artist_email: str
     last_message_preview: str
@@ -977,12 +979,14 @@ class LabelInboxThreadOut(BaseModel):
     message_count: int
     has_label_reply: bool
     unread_count: int = 0
+    source: str = "portal"  # 'portal' | 'email'
+    subject: str | None = None
 
 
 class LabelInboxThreadDetailOut(BaseModel):
     """Thread with full messages (for thread view)."""
     id: int
-    artist_id: int
+    artist_id: int | None = None
     artist_name: str
     artist_email: str
     created_at: datetime
@@ -990,6 +994,8 @@ class LabelInboxThreadDetailOut(BaseModel):
     message_count: int
     has_label_reply: bool
     unread_count: int = 0
+    source: str = "portal"
+    subject: str | None = None
     messages: list[LabelInboxMessageOut]
 
 
