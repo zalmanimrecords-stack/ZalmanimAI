@@ -51,6 +51,51 @@ mixin ApiClientAuthOps {
     return startSocialLogin(provider: 'facebook', redirectUri: redirectUri);
   }
 
+  /// Request a passwordless login link emailed to the admin/manager (valid 5 min, single use).
+  Future<void> requestMagicLink({required String email}) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/request-magic-link'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'email': email.trim().toLowerCase(),
+        'audience': 'admin',
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+          response.body.isNotEmpty ? response.body : 'Request failed');
+    }
+  }
+
+  /// Exchange a one-time login token (from the email link) for a session.
+  Future<AuthSession> magicLogin(String token) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/magic-login'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'token': token.trim()}),
+    );
+    if (response.statusCode != 200) {
+      final body = response.body;
+      String detail = 'Login link is invalid or expired (${response.statusCode})';
+      try {
+        final map = jsonDecode(body) as Map<String, dynamic>;
+        if (map['detail'] is String) detail = map['detail'] as String;
+      } catch (_) {}
+      throw Exception(detail);
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final perms = data['permissions'];
+    return AuthSession(
+      token: data['access_token'] as String,
+      role: data['role'] as String,
+      email: data['email'] as String?,
+      fullName: data['full_name'] as String?,
+      permissions: perms is List
+          ? perms.map((e) => e.toString()).toList()
+          : null,
+    );
+  }
+
   Future<void> requestPasswordReset({required String email}) async {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/forgot-password'),

@@ -416,6 +416,21 @@ class PasswordResetToken(Base):
     user: Mapped["User"] = relationship()
 
 
+class LoginToken(Base):
+    """One-time passwordless login token; stored as hash, expires after a few minutes.
+
+    Audience-agnostic: ``subject`` is the same "user:{id}" / "artist:{id}" convention used by
+    the JWT ``sub`` claim, so a single table serves both the admin app and the artist portal.
+    """
+    __tablename__ = "login_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    subject: Mapped[str] = mapped_column(String(64), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    expires_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Release(Base):
     __tablename__ = "releases"
 

@@ -104,6 +104,43 @@ class ApiClient {
     }
   }
 
+  /// Request a passwordless login link emailed to the artist (valid 5 minutes, single use).
+  Future<void> requestMagicLink({required String email}) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/request-magic-link'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'email': email.trim().toLowerCase(),
+        'audience': 'artist',
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+          response.body.isNotEmpty ? response.body : 'Request failed');
+    }
+  }
+
+  /// Exchange a one-time login token (from the email link) for a session.
+  Future<AuthSession> magicLogin(String token) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/magic-login'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'token': token.trim()}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(_detailFromErrorBody(response.body).isNotEmpty
+          ? _detailFromErrorBody(response.body)
+          : 'Login link is invalid or expired (${response.statusCode})');
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return AuthSession(
+      token: data['access_token'] as String,
+      role: data['role'] as String,
+      email: data['email'] as String?,
+      fullName: data['full_name'] as String?,
+    );
+  }
+
   Future<void> requestPasswordReset({required String email}) async {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/forgot-password'),

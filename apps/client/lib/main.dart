@@ -8,6 +8,7 @@ import 'core/session.dart';
 import 'core/session_storage.dart';
 import 'features/admin/admin_dashboard_page.dart';
 import 'features/auth/login_page.dart';
+import 'features/auth/magic_login_page.dart';
 import 'features/auth/reset_password_page.dart';
 import 'features/legal/cookie_consent_page.dart';
 import 'theme/app_theme.dart';
@@ -45,6 +46,7 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
   String? _authError;
   bool _showResetPassword = false;
   String? _resetToken;
+  String? _loginToken;
 
   @override
   void initState() {
@@ -54,6 +56,10 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
     if (resetToken != null && resetToken.isNotEmpty) {
       _showResetPassword = true;
       _resetToken = resetToken;
+    }
+    final loginToken = Uri.base.queryParameters['login_token'];
+    if (loginToken != null && loginToken.isNotEmpty) {
+      _loginToken = loginToken;
     }
     _initializeSession();
   }
@@ -111,6 +117,7 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
       _authError = null;
       _showResetPassword = false;
       _resetToken = null;
+      _loginToken = null;
     });
   }
 
@@ -148,6 +155,18 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
         }),
       );
     }
+    if (_loginToken != null && _session == null) {
+      return MagicLoginPage(
+        apiClient: _apiClient,
+        token: _loginToken!,
+        onLoggedIn: (session) =>
+            _handleLoginSuccess(session, rememberMe: true),
+        onFailed: (message) => setState(() {
+          _loginToken = null;
+          _authError = message;
+        }),
+      );
+    }
     if (_initializing) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
@@ -174,7 +193,6 @@ class _LabelOpsAppState extends State<LabelOpsApp> {
     return LoginPage(
       apiClient: _apiClient,
       initialError: _authError,
-      onLoginSuccess: _handleLoginSuccess,
     );
   }
 }

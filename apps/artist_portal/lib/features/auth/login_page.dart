@@ -3,24 +3,19 @@ import 'package:flutter/services.dart';
 
 import '../../core/api_client.dart';
 import '../../core/app_config.dart';
-import '../../core/session.dart';
-import '../../core/session_storage.dart';
 import '../../core/zalmanim_icons.dart';
 import '../../widgets/app_version_badge.dart';
 import '../legal/privacy_policy_page.dart';
 import '../legal/terms_of_use_page.dart';
-import 'forgot_password_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({
     super.key,
     required this.apiClient,
-    required this.onLoggedIn,
     this.onBack,
   });
 
   final ApiClient apiClient;
-  final ValueChanged<AuthSession> onLoggedIn;
   final VoidCallback? onBack;
 
   @override
@@ -29,24 +24,20 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final emailController = TextEditingController();
-  final passwordController = TextEditingController();
-  bool rememberMe = true;
   bool loading = false;
-  bool obscurePassword = true;
+  bool linkSent = false;
   String? error;
 
   @override
   void dispose() {
     emailController.dispose();
-    passwordController.dispose();
     super.dispose();
   }
 
-  Future<void> _login() async {
+  Future<void> _sendLink() async {
     final email = emailController.text.trim();
-    final password = passwordController.text;
-    if (email.isEmpty || password.isEmpty) {
-      setState(() => error = 'Please enter email and password');
+    if (email.isEmpty) {
+      setState(() => error = 'Please enter your email');
       return;
     }
     setState(() {
@@ -54,19 +45,12 @@ class _LoginPageState extends State<LoginPage> {
       error = null;
     });
     try {
-      final session =
-          await widget.apiClient.login(email: email, password: password);
-      if (session.role != 'artist') {
-        setState(() {
-          error =
-              'This portal is for artists only. Use the management app for admin access.';
-          loading = false;
-        });
-        return;
-      }
+      await widget.apiClient.requestMagicLink(email: email);
       TextInput.finishAutofillContext(shouldSave: true);
-      await saveSession(session, rememberMe: rememberMe);
-      widget.onLoggedIn(session);
+      setState(() {
+        linkSent = true;
+        loading = false;
+      });
     } catch (e) {
       setState(() {
         error = e.toString().replaceFirst('Exception: ', '');
@@ -185,51 +169,21 @@ class _LoginPageState extends State<LoginPage> {
                                     prefixIcon: Icon(ZalmanimIcons.email),
                                   ),
                                   keyboardType: TextInputType.emailAddress,
-                                  textInputAction: TextInputAction.next,
+                                  textInputAction: TextInputAction.done,
                                   autofillHints: const [
                                     AutofillHints.username,
                                     AutofillHints.email,
                                   ],
-                                ),
-                                const SizedBox(height: 16),
-                                TextField(
-                                  controller: passwordController,
-                                  decoration: InputDecoration(
-                                    labelText: 'Password',
-                                    border: const OutlineInputBorder(),
-                                    prefixIcon: const Icon(ZalmanimIcons.lock),
-                                    suffixIcon: IconButton(
-                                      onPressed: () => setState(
-                                        () =>
-                                            obscurePassword = !obscurePassword,
-                                      ),
-                                      icon: Icon(
-                                        obscurePassword
-                                            ? ZalmanimIcons.visibility
-                                            : ZalmanimIcons.visibilityOff,
-                                      ),
-                                    ),
-                                  ),
-                                  obscureText: obscurePassword,
-                                  textInputAction: TextInputAction.done,
-                                  autofillHints: const [
-                                    AutofillHints.password,
-                                  ],
-                                  onSubmitted: (_) => _login(),
+                                  enabled: !linkSent,
+                                  onSubmitted: (_) => _sendLink(),
                                 ),
                                 const SizedBox(height: 8),
-                                CheckboxListTile(
-                                  value: rememberMe,
-                                  onChanged: loading
-                                      ? null
-                                      : (value) => setState(
-                                            () => rememberMe = value ?? false,
-                                          ),
-                                  contentPadding: EdgeInsets.zero,
-                                  controlAffinity:
-                                      ListTileControlAffinity.leading,
-                                  title: const Text('Remember me'),
-                                  dense: true,
+                                Text(
+                                  "We'll email you a sign-in link. No password needed.",
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(color: Colors.grey[600]),
                                 ),
                                 if (error != null) ...[
                                   const SizedBox(height: 16),
@@ -268,55 +222,62 @@ class _LoginPageState extends State<LoginPage> {
                                     ],
                                   ),
                                 ],
-                                const SizedBox(height: 8),
-                                Align(
-                                  alignment: Alignment.centerRight,
-                                  child: TextButton(
+                                if (linkSent) ...[
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(
+                                        ZalmanimIcons.email,
+                                        size: 20,
+                                        color: primary,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'Check your email. The sign-in link is '
+                                          'valid for 5 minutes.',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodyMedium,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  TextButton(
                                     onPressed: loading
                                         ? null
-                                        : () => Navigator.of(context).push(
-                                              MaterialPageRoute(
-                                                builder: (_) =>
-                                                    ForgotPasswordPage(
-                                                  apiClient: widget.apiClient,
-                                                  initialEmail: emailController
-                                                          .text
-                                                          .trim()
-                                                          .isNotEmpty
-                                                      ? emailController.text
-                                                          .trim()
-                                                      : null,
-                                                  onBack: () =>
-                                                      Navigator.of(context)
-                                                          .pop(),
-                                                ),
-                                              ),
+                                        : () =>
+                                            setState(() => linkSent = false),
+                                    child: const Text('Use a different email'),
+                                  ),
+                                ] else ...[
+                                  const SizedBox(height: 16),
+                                  FilledButton(
+                                    onPressed: loading ? null : _sendLink,
+                                    style: FilledButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(10),
+                                      ),
+                                    ),
+                                    child: loading
+                                        ? const SizedBox(
+                                            height: 22,
+                                            width: 22,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Colors.white,
                                             ),
-                                    child: const Text('Forgot password?'),
+                                          )
+                                        : const Text('Send me a login link'),
                                   ),
-                                ),
-                                const SizedBox(height: 16),
-                                FilledButton(
-                                  onPressed: loading ? null : _login,
-                                  style: FilledButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 14,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                  ),
-                                  child: loading
-                                      ? const SizedBox(
-                                          height: 22,
-                                          width: 22,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white,
-                                          ),
-                                        )
-                                      : const Text('Sign in'),
-                                ),
+                                ],
                               ],
                             ),
                           ),

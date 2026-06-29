@@ -63,6 +63,17 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
 
 
+class MagicLinkRequest(BaseModel):
+    """Request a passwordless login link. audience picks which account table + app URL."""
+    email: str
+    audience: Literal["artist", "admin"] = "artist"
+
+
+class MagicLoginRequest(BaseModel):
+    """Exchange a one-time login token for an access token."""
+    token: str
+
+
 class UserContext(BaseModel):
     user_id: int
     role: str

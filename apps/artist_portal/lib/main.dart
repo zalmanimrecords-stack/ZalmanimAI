@@ -9,6 +9,7 @@ import 'core/zalmanim_icons.dart';
 import 'core/session_storage.dart';
 import 'core/session.dart';
 import 'features/auth/login_page.dart';
+import 'features/auth/magic_login_page.dart';
 import 'features/auth/reset_password_page.dart';
 import 'features/dashboard/artist_dashboard_page.dart';
 import 'features/legal/cookie_consent_page.dart';
@@ -53,6 +54,7 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
   bool? _cookieConsentGiven;
   bool _showResetPassword = false;
   String? _resetToken;
+  String? _loginToken;
   bool _showLogin = false;
 
   @override
@@ -68,6 +70,10 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
     if (resetToken != null && resetToken.isNotEmpty) {
       _showResetPassword = true;
       _resetToken = resetToken;
+    }
+    final loginToken = Uri.base.queryParameters['login_token'];
+    if (loginToken != null && loginToken.isNotEmpty) {
+      _loginToken = loginToken;
     }
     if (Uri.base.queryParameters['view'] == 'signin') {
       _showLogin = true;
@@ -206,6 +212,25 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
               }),
             );
           }
+          if (_loginToken != null) {
+            return MagicLoginPage(
+              apiClient: _apiClient,
+              token: _loginToken!,
+              onLoggedIn: (session) => setState(() {
+                _loginToken = null;
+                _activeSession = session;
+                _initFuture = Future(() async {
+                  final s = await loadSession();
+                  final c = await getCookieConsent();
+                  return (s, c);
+                });
+              }),
+              onFailed: (_) => setState(() {
+                _loginToken = null;
+                _showLogin = true;
+              }),
+            );
+          }
           if (snapshot.connectionState == ConnectionState.waiting) {
             return Scaffold(
               body: Center(
@@ -299,14 +324,6 @@ class _ArtistPortalAppState extends State<ArtistPortalApp> {
           if (_showLogin) {
             return LoginPage(
               apiClient: _apiClient,
-              onLoggedIn: (session) => setState(() {
-                _activeSession = session;
-                _initFuture = Future(() async {
-                  final s = await loadSession();
-                  final c = await getCookieConsent();
-                  return (s, c);
-                });
-              }),
               onBack: () => setState(() => _showLogin = false),
             );
           }

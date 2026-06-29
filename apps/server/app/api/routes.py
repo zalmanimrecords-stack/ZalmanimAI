@@ -90,6 +90,7 @@ from app.models.models import (
     DemoConfirmationToken,
     DemoSubmission,
     HubConnector,
+    LoginToken,
     MailingList,
     MailingSubscriber,
     PasswordResetToken,
@@ -194,6 +195,8 @@ from app.schemas.schemas import (
     AdminDashboardStatsOut,
     LoginStatsOut,
     LoginRequest,
+    MagicLinkRequest,
+    MagicLoginRequest,
     PendingReleaseFormInfo,
     PendingReleaseActionResponse,
     PendingReleaseCommentCreate,
@@ -729,6 +732,152 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     db.commit()
     append_system_log("info", "auth", "Password reset succeeded", details=f"email={_mask_email(user.email)}")
     return {"message": "Password has been reset. You can sign in with your new password."}
+
+
+_MAGIC_LINK_EXPIRY_MINUTES = 5
+_MAGIC_LINK_GENERIC_MESSAGE = "If an account exists with this email, a login link is on its way."
+
+
+def _login_token_hash(token: str) -> str:
+    salt = (settings.jwt_secret or "magic").encode()
+    return hashlib.sha256(salt + token.encode()).hexdigest()
+
+
+def _magic_link_base_url(audience: str) -> str:
+    if audience == "admin":
+        base = (
+            (settings.admin_app_base_url or "").strip()
+            or (settings.password_reset_base_url or "").strip()
+            or "https://lm.zalmanim.com"
+        )
+    else:
+        base = (settings.artist_portal_base_url or "").strip() or "https://artists.zalmanim.com"
+    return base.rstrip("/")
+
+
+@router.post("/auth/request-magic-link")
+def request_magic_link(
+    payload: MagicLinkRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Email a one-time, 5-minute passwordless login link.
+
+    Always returns the same generic message so the endpoint cannot be used to probe which
+    emails have accounts. ``audience`` selects the account table (artist portal vs admin app)
+    and the URL the link points back to.
+    """
+    generic = {"message": _MAGIC_LINK_GENERIC_MESSAGE}
+    email = (payload.email or "").strip().lower()
+    audience = payload.audience if payload.audience in ("artist", "admin") else "artist"
+    client_ip = _client_ip_from_request(request)
+
+    allowed, retry_after = auth_rate_limit.check_login_allowed(email=email, client_ip=client_ip)
+    if not allowed:
+        _log_auth_attempt(request, event="Magic link rate limited", email=email, level="warning")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many attempts. Try again in about {retry_after or 1} seconds.",
+        )
+    if not email:
+        return generic
+
+    subject: str | None = None
+    to_email: str | None = None
+    if audience == "admin":
+        user = (
+            db.query(User)
+            .filter(func.lower(User.email) == email, User.is_active == True)  # noqa: E712
+            .first()
+        )
+        if user:
+            subject, to_email = f"user:{user.id}", user.email
+    else:
+        artist = (
+            db.query(Artist)
+            .filter(func.lower(Artist.email) == email, Artist.is_active == True)  # noqa: E712
+            .first()
+        )
+        if artist:
+            subject, to_email = f"artist:{artist.id}", artist.email
+
+    if not subject or not to_email:
+        _log_auth_attempt(request, event="Magic link requested for unknown account", email=email, level="warning")
+        return generic
+
+    raw_token = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=_MAGIC_LINK_EXPIRY_MINUTES)
+    db.add(LoginToken(subject=subject, token_hash=_login_token_hash(raw_token), expires_at=expires_at))
+    db.commit()
+
+    login_link = f"{_magic_link_base_url(audience)}?login_token={raw_token}"
+    subject_line = "Your Zalmanim login link"
+    body_text = (
+        f"Click the link below to sign in. It is valid for {_MAGIC_LINK_EXPIRY_MINUTES} minutes "
+        "and can be used once.\n\n"
+        f"{login_link}\n\n"
+        "If you did not request this, you can ignore this email."
+    )
+    body_html = (
+        "<p>" + html.escape(body_text).replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
+    ).replace(
+        html.escape(login_link),
+        f'<a href="{html.escape(login_link)}">{html.escape(login_link)}</a>',
+    )
+
+    ok, _ = send_email_service(to_email=to_email, subject=subject_line, body_text=body_text, body_html=body_html)
+    if not ok:
+        logging.getLogger(__name__).warning("Failed to send magic login email to %s", to_email)
+        _log_auth_attempt(request, event="Magic link email send failed", email=to_email, level="warning")
+    else:
+        _log_auth_attempt(request, event="Magic link email sent", email=to_email)
+    return generic
+
+
+@router.post("/auth/magic-login", response_model=TokenResponse)
+def magic_login(payload: MagicLoginRequest, request: Request, db: Session = Depends(get_db)) -> TokenResponse:
+    """Exchange a one-time login token for an access token. Single-use; token is deleted on use."""
+    invalid = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Invalid or expired login link. Request a new one.",
+    )
+    token = (payload.token or "").strip()
+    if not token:
+        raise invalid
+    now = datetime.now(timezone.utc)
+    row = (
+        db.query(LoginToken)
+        .filter(LoginToken.token_hash == _login_token_hash(token), LoginToken.expires_at > now)
+        .first()
+    )
+    if not row:
+        append_system_log("warning", "auth", "Magic login rejected", details="reason=invalid_or_expired_token")
+        raise invalid
+
+    subject = row.subject
+    db.delete(row)  # single-use: consume before issuing the token
+    db.commit()
+
+    kind, _, raw_id = subject.partition(":")
+    if not raw_id.isdigit():
+        raise invalid
+    account_id = int(raw_id)
+
+    if kind == "artist":
+        artist = db.query(Artist).filter(Artist.id == account_id).first()
+        if not artist or not artist.is_active:
+            raise invalid
+        _touch_artist_login(db, artist)
+        _log_auth_attempt(request, event="Magic login succeeded", email=artist.email)
+        return _artist_token_response(artist)
+    if kind == "user":
+        user = db.query(User).filter(User.id == account_id).first()
+        if not user or not user.is_active:
+            raise invalid
+        _touch_user_login(db, user)
+        _log_auth_attempt(request, event="Magic login succeeded", email=user.email)
+        return _user_token_response(user)
+    raise invalid
 
 
 @router.get("/auth/me", response_model=UserOut)

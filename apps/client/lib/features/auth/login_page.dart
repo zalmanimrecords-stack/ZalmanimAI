@@ -2,26 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/api_client.dart';
-import '../../core/session.dart';
 import '../../core/zalmanim_icons.dart';
 import '../../widgets/ambient_underwater_shell.dart';
 import '../../widgets/app_version_badge.dart';
 import '../../widgets/api_connection_indicator.dart';
 import '../legal/privacy_policy_page.dart';
 import '../legal/terms_of_use_page.dart';
-import 'forgot_password_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({
     super.key,
     required this.apiClient,
-    required this.onLoginSuccess,
     this.initialError,
   });
 
   final ApiClient apiClient;
-  final Future<void> Function(AuthSession session, {required bool rememberMe})
-      onLoginSuccess;
   final String? initialError;
 
   @override
@@ -30,9 +25,8 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final emailController = TextEditingController();
-  final passwordController = TextEditingController();
-  bool rememberMe = true;
   bool loading = false;
+  bool linkSent = false;
   String? error;
 
   @override
@@ -126,64 +120,26 @@ class _LoginPageState extends State<LoginPage> {
                             TextField(
                               controller: emailController,
                               keyboardType: TextInputType.emailAddress,
-                              textInputAction: TextInputAction.next,
+                              textInputAction: TextInputAction.done,
                               autofillHints: const [
                                 AutofillHints.username,
                                 AutofillHints.email,
                               ],
+                              enabled: !linkSent,
+                              onEditingComplete: loading ? null : _sendLink,
                               decoration: const InputDecoration(
                                 labelText: 'Email',
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            TextField(
-                              controller: passwordController,
-                              obscureText: true,
-                              textInputAction: TextInputAction.done,
-                              autofillHints: const [AutofillHints.password],
-                              onEditingComplete: loading ? null : _login,
-                              decoration: const InputDecoration(
-                                labelText: 'Password',
                               ),
                             ),
                           ],
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: loading
-                              ? null
-                              : () => Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) => ForgotPasswordPage(
-                                        apiClient: widget.apiClient,
-                                        initialEmail: emailController
-                                                .text
-                                                .trim()
-                                                .isNotEmpty
-                                            ? emailController.text.trim()
-                                            : null,
-                                        onBack: () =>
-                                            Navigator.of(context).pop(),
-                                      ),
-                                    ),
-                                  ),
-                          child: const Text('Forgot password?'),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Align(
+                      const Align(
                         alignment: Alignment.centerLeft,
-                        child: CheckboxListTile(
-                          value: rememberMe,
-                          onChanged: (v) =>
-                              setState(() => rememberMe = v ?? false),
-                          title: const Text('Remember me'),
-                          contentPadding: EdgeInsets.zero,
-                          controlAffinity: ListTileControlAffinity.leading,
-                          dense: true,
+                        child: Text(
+                          "We'll email you a sign-in link. No password needed.",
+                          style: TextStyle(fontSize: 12),
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -206,23 +162,47 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ],
                         ),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: loading ? null : _login,
-                          child: loading
-                              ? const SizedBox(
-                                  height: 18,
-                                  width: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Text('Login'),
+                      if (linkSent) ...[
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              ZalmanimIcons.email,
+                              size: 20,
+                              color: theme.colorScheme.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'Check your email. The sign-in link is valid '
+                                'for 5 minutes.',
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      const Text('Use your system user credentials.'),
+                        const SizedBox(height: 12),
+                        TextButton(
+                          onPressed: loading
+                              ? null
+                              : () => setState(() => linkSent = false),
+                          child: const Text('Use a different email'),
+                        ),
+                      ] else
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            onPressed: loading ? null : _sendLink,
+                            child: loading
+                                ? const SizedBox(
+                                    height: 18,
+                                    width: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text('Send me a login link'),
+                          ),
+                        ),
                       const SizedBox(height: 16),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -263,20 +243,21 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  Future<void> _login() async {
+  Future<void> _sendLink() async {
+    final email = emailController.text.trim();
+    if (email.isEmpty) {
+      setState(() => error = 'Please enter your email');
+      return;
+    }
     setState(() {
       loading = true;
       error = null;
     });
 
     try {
-      final AuthSession session = await widget.apiClient.login(
-        email: emailController.text.trim(),
-        password: passwordController.text,
-      );
-      // Lets the browser (especially Chrome) offer to save/update the password.
+      await widget.apiClient.requestMagicLink(email: email);
       TextInput.finishAutofillContext(shouldSave: true);
-      await _completeLogin(session);
+      if (mounted) setState(() => linkSent = true);
     } catch (e) {
       final msg = e.toString();
       final isConnection = msg.contains('Failed to fetch') ||
@@ -287,15 +268,10 @@ class _LoginPageState extends State<LoginPage> {
             ? 'Cannot reach API at ${widget.apiClient.baseUrl}. '
                 'Production: use API_BASE_URL=https://lm.zalmanim.com/ when building the web image, redeploy web (nginx must proxy /health to the API). '
                 'Local: start the API; full restart the app. Server: docker compose up -d.'
-            : msg,
+            : msg.replaceFirst('Exception: ', ''),
       );
     } finally {
       if (mounted) setState(() => loading = false);
     }
-  }
-
-  Future<void> _completeLogin(AuthSession session) async {
-    if (!mounted) return;
-    await widget.onLoginSuccess(session, rememberMe: rememberMe);
   }
 }
